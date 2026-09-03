@@ -104,6 +104,9 @@ class RemoteHub:
     def reset_poll(self) -> None:
         self._polled.clear()
 
+    def polled(self) -> bool:
+        return self._polled.is_set()
+
     def wait_polled(self, timeout_sec: float) -> bool:
         return self._polled.wait(timeout_sec)
 

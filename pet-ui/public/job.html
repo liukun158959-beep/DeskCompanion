@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>清日常</title>
+    <style>
+      html, body {
+        margin: 0;
+        background: #fff6ec;
+        color: #2c241e;
+        font-family: "Microsoft YaHei", sans-serif;
+        font-size: 14px;
+      }
+      main {
+        padding: 14px 16px 12px;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .row {
+        margin: 0 0 8px;
+        line-height: 1.45;
+      }
+      .k {
+        color: #7a6a5c;
+        margin-right: 6px;
+      }
+      #message, #remote, #queue {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #status.error {
+        color: #c45c4a;
+      }
+      button {
+        margin-top: 8px;
+        font: inherit;
+        cursor: pointer;
+        border: 1px solid #ead9c8;
+        background: #fffdf8;
+        color: inherit;
+        padding: 6px 12px;
+        border-radius: 8px;
+      }
+      button:focus-visible {
+        outline: 2px solid #e8b84a;
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>桌宠看到的清日常</h1>
+      <p class="row"><span class="k">动作</span><span id="status">连接中</span></p>
+      <p class="row"><span class="k">留言</span><span id="message">正在打开小窗。</span></p>
+      <p class="row"><span class="k">远控</span><span id="remote">还没拉到快照。</span></p>
+      <p class="row"><span class="k">队列</span><span id="queue">—</span></p>
+      <button type="button" id="stop">停止</button>
+    </main>
+    <script>
+      const STATUS = {
+        idle: "空闲",
+        daily: "清日常",
+        open: "开游戏",
+        error: "失败",
+      };
+
+      function text(id, value) {
+        document.getElementById(id).textContent = value || "—";
+      }
+
+      function remoteLine(snap) {
+        if (!snap.remote_polled) {
+          return "MAA 还没来拉任务。";
+        }
+        const report = snap.last_report;
+        if (!report || !report.status) {
+          return "已拉任务，等待回报。";
+        }
+        return "已拉任务，最近回报 " + report.status + "。";
+      }
+
+      function queueLine(snap) {
+        const queued = Array.isArray(snap.queued)
+          ? snap.queued.filter((item) => item)
+          : [];
+        if (!queued.length) {
+          return "空";
+        }
+        return queued.join("、");
+      }
+
+      function render(snap) {
+        const status = snap && snap.status ? String(snap.status) : "";
+        const el = document.getElementById("status");
+        el.textContent = STATUS[status] || status || "未知";
+        el.className = status === "error" ? "error" : "";
+        text("message", snap && snap.message);
+        text("remote", remoteLine(snap || {}));
+        text("queue", queueLine(snap || {}));
+      }
+
+      async function tick() {
+        try {
+          const snap = await window.petAPI.call("maa_menu", {});
+          render(snap || {});
+        } catch (err) {
+          text("message", String(err && err.message ? err.message : err));
+        }
+      }
+
+      document.getElementById("stop").addEventListener("click", () => {
+        window.petAPI.call("maa_stop", {}).catch((err) => {
+          text("message", String(err && err.message ? err.message : err));
+        });
+      });
+
+      tick();
+      setInterval(tick, 1000);
+    </script>
+  </body>
+</html>

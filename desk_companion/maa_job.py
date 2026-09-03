@@ -31,6 +31,7 @@ class MaaController:
 
     def snapshot(self) -> dict:
         cfg = load_maa()
+        reports = self.remote.last_reports()
         return {
             "ok": True,
             "launcher_exe": cfg["launcher_exe"],
@@ -43,6 +44,9 @@ class MaaController:
             "status": self.status,
             "message": self.message,
             "running": self._running,
+            "remote_polled": self.remote.polled(),
+            "last_report": reports[-1] if reports else None,
+            "queued": [str(item.get("type") or "") for item in self.remote.snapshot_tasks()],
             "elevate_ready": task_exists(GAME_TASK),
             "path": cfg["path"],
         }
@@ -118,6 +122,8 @@ class MaaController:
             self._cancel.clear()
             self.status = kind
             self.message = notice
+        if kind == "daily":
+            self._host.ui(self._host.begin_daily_overlay)
         self._host.ui(lambda: self._notice(notice, panel="maa"))
         threading.Thread(target=self._run, args=(kind,), daemon=True).start()
         return {"ok": True, "message": notice}
@@ -145,6 +151,8 @@ class MaaController:
         finally:
             with self._lock:
                 self._running = False
+            if kind == "daily":
+                self._host.ui(self._host.end_daily_overlay)
         msg = self.message
         self._host.ui(lambda: self._done(msg, failed))
 

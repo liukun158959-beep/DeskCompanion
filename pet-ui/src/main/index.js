@@ -52,6 +52,7 @@ const BASE_SCALE = 1.5;
 const PIN_LIFT_Y = 24;
 
 let win = null;
+let jobWin = null;
 let bubbleOpen = false;
 let pinned = START_PIN;
 let clickThrough = START_CLICK_THROUGH;
@@ -136,6 +137,14 @@ function onLine(line) {
     }
     if (msg.event === "show_pet") {
       win.show();
+      return;
+    }
+    if (msg.event === "show_job_board") {
+      showJobBoard();
+      return;
+    }
+    if (msg.event === "hide_job_board") {
+      hideJobBoard();
       return;
     }
     if (msg.event === "set_click_through") {
@@ -313,6 +322,52 @@ function applyBubble(open) {
   }
   bubbleOpen = Boolean(open);
   emit(bubbleOpen ? "bubble_opened" : "bubble_closed", {});
+}
+
+function hideJobBoard() {
+  if (!jobWin) {
+    return;
+  }
+  jobWin.close();
+}
+
+function showJobBoard() {
+  if (jobWin) {
+    jobWin.show();
+    return;
+  }
+  const JOB_W = 380;
+  const JOB_H = 280;
+  const work = screen.getPrimaryDisplay().workArea;
+  jobWin = new BrowserWindow({
+    width: JOB_W,
+    height: JOB_H,
+    x: work.x + Math.max(0, work.width - JOB_W - 16),
+    y: work.y + Math.max(0, work.height - JOB_H - 16),
+    title: "清日常",
+    frame: true,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    resizable: true,
+    minimizable: true,
+    backgroundColor: "#fff6ec",
+    webPreferences: {
+      preload: join(__dirname, "../preload/index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false,
+    },
+  });
+  jobWin.setMenuBarVisibility(false);
+  jobWin.on("closed", () => {
+    jobWin = null;
+  });
+  if (process.env.ELECTRON_RENDERER_URL) {
+    const base = process.env.ELECTRON_RENDERER_URL.replace(/\/$/, "");
+    jobWin.loadURL(`${base}/job.html`);
+    return;
+  }
+  jobWin.loadURL("pet://local/ui/job.html");
 }
 
 function createWindow() {

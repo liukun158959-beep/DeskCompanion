@@ -89,6 +89,7 @@ class App:
         self._nudge_busy = False
         self._board_placed = False
         self._card_mode = "chat"
+        self._daily_overlay = False
         self._history_loaded = False
         self._outside_btn_down = False
         self._startup_ok = threading.Event()
@@ -224,6 +225,24 @@ class App:
         if self.pet:
             self.pet.hide()
 
+    def begin_daily_overlay(self) -> None:
+        self._daily_overlay = True
+        try:
+            self.hide_pet()
+            if self.pet:
+                self.pet.emit("show_job_board")
+        except Exception as exc:
+            log(f"daily overlay: {exc}")
+
+    def end_daily_overlay(self) -> None:
+        self._daily_overlay = False
+        try:
+            if self.pet:
+                self.pet.emit("hide_job_board")
+            self.show_pet()
+        except Exception as exc:
+            log(f"daily overlay end: {exc}")
+
     def show_bubble(self, panel: str = "chat") -> None:
         if self.pet is None:
             raise RuntimeError("宠物窗口还在启动，请稍后再点。")
@@ -245,6 +264,8 @@ class App:
             raise RuntimeError("纸条内容为空。")
         if self.pet is None:
             raise RuntimeError("宠物窗口还在启动，请稍后再看纸条。")
+        if self._daily_overlay:
+            return
         if not self.pet.visible():
             self.pet.show()
         self._card_mode = panel
