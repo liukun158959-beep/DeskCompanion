@@ -20,7 +20,7 @@ python -m desk_companion
 
 Live2D Cubism Core 和形象包不在本仓库。Core 放到 `pet-ui/public/Core/live2dcubismcore.js`，皮肤放到 `skins/`。没有这些文件启动会失败并给出路径，不要靠默认形象凑合。
 
-看板「模型」页填写 API Key。看板「明日方舟」同步森空岛前，在本项目 `.env` 写 `SKLAND_TOKEN=`（浏览器登录森空岛后打开 `https://web-api.skland.com/account/info/hg`，复制 `data.content`）。不要把这串发到对话或推进 Git。多个方舟官服时再写 `SKLAND_UID=`。问「今天刷什么」走看板按钮或对话工具，仓必须是今天。
+看板侧边栏「模型」填写 API Key。看板「明日方舟」同步森空岛前，在本项目 `.env` 写 `SKLAND_TOKEN=`（浏览器登录森空岛后打开 `https://web-api.skland.com/account/info/hg`，复制 `data.content`）。不要把这串发到对话或推进 Git。多个方舟官服时再写 `SKLAND_UID=`。问「今天刷什么」走看板按钮或对话工具，仓必须是今天。
 
 ## 仓库里有什么
 

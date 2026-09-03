@@ -44,7 +44,7 @@ def _read_skill_file(name: str) -> tuple[dict, str]:
     path = SKILLS_DIR / name / "SKILL.md"
     if not path.is_file():
         raise RuntimeError(
-            f"没有技能 {name}。打开看板「技能」页查看已有技能，或检查 {path}。"
+                f"没有技能 {name}。打开看板对话「技能」子界面查看已有技能，或检查 {path}。"
         )
     text = path.read_text(encoding="utf-8")
     if not text.startswith("---"):

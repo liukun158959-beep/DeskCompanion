@@ -6,7 +6,7 @@ from .skill_catalog import list_skills, read_skill
 
 def list_skills_tool(_args: dict) -> str:
     items = list_skills()
-    lines = ["已有技能（看板「技能」页也能看见全文）："]
+    lines = ["已有技能（看板对话「技能」子界面也能看见全文）："]
     for item in items:
         lines.append(f"- {item['id']}: {item['description']}")
     lines.append("读某份正文请调用 read_skill，参数 name 用上面的 id。")
@@ -25,7 +25,7 @@ LIST_SKILLS_SPEC = {
     "description": (
         "列出桌宠技能库里全部 SKILL.md 的名字和何时用。"
         "用户问有哪些技能、技能库、分析日志或写飞书总结该用哪份规程时调用。"
-        "本周复盘用 weekly-retro；总结 GitHub 仓库最近用 github-repo-summary。"
+        "本周复盘在对话「复盘」子界面用 weekly-retro；总结 GitHub 仓库最近用 github-repo-summary。"
     ),
     "parameters": {"type": "object", "properties": {}, "required": []},
     "isReadOnly": True,
@@ -38,7 +38,7 @@ READ_SKILL_SPEC = {
         "读取一份技能的正文。"
         "分析日志用 maa-log-analysis（须先 read_recent_errors）；"
         "写今日工作总结用 feishu-doc-writing；"
-        "本周复盘用 weekly-retro；"
+        "本周复盘用 weekly-retro（对话复盘子界面生成，不要用 github_recent 冒充一周）；"
         "总结 GitHub 仓库最近用 github-repo-summary（须先 github_recent）。"
     ),
     "parameters": {

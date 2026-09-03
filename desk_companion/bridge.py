@@ -14,6 +14,24 @@ class Bridge:
     def clear_chat(self) -> None:
         return self._host.clear_chat_history()
 
+    def send_board_chat(self, text: str, chips: dict | None = None) -> dict:
+        return self._host.send_board_chat(text, chips)
+
+    def new_chat_session(self) -> dict:
+        return self._host.new_chat_session()
+
+    def switch_chat_session(self, session_id: str) -> dict:
+        return self._host.switch_chat_session(session_id)
+
+    def load_composer_options(self) -> dict:
+        return self._host.board_composer_options()
+
+    def list_feishu_docs(self) -> dict:
+        return self._host.list_feishu_docs()
+
+    def write_week_review_doc(self, payload: dict) -> dict:
+        return self._host.write_week_review_doc(payload)
+
     def close_bubble(self) -> None:
         self._host.ui(self._host.hide_bubble)
 

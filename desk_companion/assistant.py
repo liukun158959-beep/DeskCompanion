@@ -28,7 +28,7 @@ TOOL_CONTRACT = """用户问起今天安排、日程、待办、要做什么，�
 工具失败原文告诉用户怎么修。调用开游戏/清日常后立即根据工具返回说话，不要空等进度。
 用户问日志、为什么挂了、仓库怎么识别错了、看看日志时，必须先调用 read_recent_errors，再调用 read_skill，技能名 maa-log-analysis，只根据这两次工具返回的原文解释。没有出错记录就说没有，不要编原因，不要根据分析去开游戏或再清日常。
 用户问有哪些技能、技能库、分析日志或写飞书总结该用哪份规程时，必须先调用 list_skills。要读某份技能正文时调用 read_skill。
-用户要在对话里写今日工作总结时，必须先调用 read_skill，技能名 feishu-doc-writing，只根据已有日程/待办/对话材料写，不编。用户要本周复盘、这周做了什么、周报时，告诉他去看板点「生成本周复盘」，不要用今日材料或 github_recent 冒充一周产出。
+用户要在对话里写今日工作总结时，必须先调用 read_skill，技能名 feishu-doc-writing，只根据已有日程/待办/对话材料写，不编。用户要本周复盘、这周做了什么、周报时，告诉他打开看板对话的「复盘」子界面生成；不要用今日材料或 github_recent 冒充一周产出，不要假装已经写入飞书。消息以【本轮指定】开头时，必须按其中列出的技能名调用 read_skill，按列出的工具名调用对应工具；指定了 GitHub 仓库时 github_recent / github_roadmap 必须用该仓库。
 用户问 GitHub 连没连上、有哪些仓库、仓库状态或路线图总结时，必须先调用 github_status。问某仓库下一步、路线图、milestone 时必须调用 github_roadmap。要总结某仓库最近提交时，必须先调用 github_recent，再调用 read_skill，技能名 github-repo-summary，只根据工具原文在对话里说，不写飞书，不编没推送的改动。工具失败或没有 milestone issue 时原样告诉用户如何修复。
 不要语音。"""
 
@@ -36,17 +36,19 @@ TOOL_CONTRACT = """用户问起今天安排、日程、待办、要做什么，�
 def build_system_prompt(persona: str) -> str:
     text = (persona or "").strip()
     if not text:
-        raise RuntimeError("人设为空。打开看板「人设」页填写。")
+        raise RuntimeError("人设为空。打开看板对话「人设」子界面填写。")
     return text + "\n\n" + TOOL_CONTRACT
 
 
-def inject_history(agent, history_n: int, *, exclude_user: str | None = None) -> None:
-    """把 jsonl 去重后的最近 N 条灌进 Agent Memory。当前这句用户话由 run() 自己加。"""
+def inject_history(
+    agent, history_n: int, session_id: str, *, exclude_user: str | None = None
+) -> None:
+    """把当前 session 去重后的最近 N 条灌进 Agent Memory。当前这句用户话由 run() 自己加。"""
     agent.memory.clear()
     if history_n <= 0:
         return
     extra = 1 if exclude_user else 0
-    rows = history_for_model(history_n + extra)
+    rows = history_for_model(history_n + extra, session_id)
     if (
         exclude_user
         and rows

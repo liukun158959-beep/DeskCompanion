@@ -16,6 +16,20 @@
         radial-gradient(circle at 12% 0%, rgba(232, 165, 152, 0.22), transparent 36%),
         var(--paper);
     }
+    .body-row {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      gap: 12px;
+    }
+    .sidebar {
+      width: 132px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow: auto;
+    }
     header {
       display: flex;
       align-items: flex-end;
@@ -25,10 +39,12 @@
     }
     .title h1 { margin: 0; font-size: 24px; letter-spacing: 0.06em; }
     .title p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tabs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 0; }
     .tab {
-      border-radius: 999px;
-      padding: 6px 12px;
+      width: 100%;
+      text-align: left;
+      border-radius: 12px;
+      padding: 8px 12px;
       font-size: 13px;
       color: var(--header);
       border: 1px solid var(--blush);
@@ -327,10 +343,49 @@
       line-height: 1.55;
       margin: 8px 0 0;
     }
-    .board-foot {
-      flex-shrink: 0;
-      padding-top: 8px;
+    .board-foot { display: none; }
+    .chat-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+    .chat-subnav { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+    .chat-sub {
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      color: var(--header);
+      border: 1px solid var(--blush);
+      background: #fff;
     }
+    .chat-sub.active {
+      background: linear-gradient(#f3b3a6, #c45c4a);
+      color: #fff;
+      border-color: transparent;
+    }
+    .chat-subpanel { display: none; flex: 1; min-height: 0; flex-direction: column; }
+    .chat-subpanel.active { display: flex; }
+    .composer { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+    .composer textarea { min-height: 72px; resize: vertical; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .chip-row select { width: auto; min-width: 140px; }
+    .session-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px dashed var(--line);
+      background: transparent;
+      color: inherit;
+    }
+    .session-item.active { background: rgba(196, 92, 74, 0.08); }
+    .session-item .when { font-size: 12px; color: var(--muted); }
+    #retro-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .log-link.alert, .tab.alert { color: var(--header); font-weight: 700; }
     .log-link {
       font-size: 12px;
       color: var(--muted);
@@ -546,17 +601,16 @@
         <button class="btn ghost" id="close" type="button">关闭</button>
       </div>
     </header>
-    <nav class="tabs" id="tabs">
+    <div class="body-row">
+    <nav class="tabs sidebar" id="tabs">
       <button class="tab active" type="button" data-tab="today">今日</button>
       <button class="tab" type="button" data-tab="chat">对话</button>
-      <button class="tab" type="button" data-tab="memory">记忆</button>
-      <button class="tab" type="button" data-tab="persona">人设</button>
-      <button class="tab" type="button" data-tab="skills">技能</button>
+      <button class="tab" type="button" data-tab="maa">明日方舟</button>
+      <button class="tab" type="button" data-tab="github">GitHub</button>
+      <button class="tab" type="button" data-tab="feishu">飞书</button>
+      <button class="tab" type="button" data-tab="log" id="log-link">日志</button>
       <button class="tab" type="button" data-tab="model">模型</button>
       <button class="tab" type="button" data-tab="usage">用量</button>
-      <button class="tab" type="button" data-tab="feishu">飞书</button>
-      <button class="tab" type="button" data-tab="github">GitHub</button>
-      <button class="tab" type="button" data-tab="maa">明日方舟</button>
     </nav>
     <div class="stage">
       <section class="panel active" id="panel-today">
@@ -578,56 +632,104 @@
         <div class="form-actions">
           <button class="btn ghost" id="refresh-today" type="button">刷新</button>
           <button class="btn" id="ask" type="button">让凯尔希讲</button>
-          <button class="btn" id="summary-gen" type="button">生成本周复盘</button>
-          <button class="btn ghost" id="summary-doc" type="button">写入飞书文档</button>
         </div>
+        <p class="hint">本周复盘改在侧边栏「对话」的复盘子界面生成和写入飞书。这里只读已落盘的正文。</p>
         <p class="hint" id="today-msg"></p>
       </section>
       <section class="panel" id="panel-chat">
-        <article class="card" style="flex:1">
-          <h2>历史对话</h2>
-          <div class="list" id="chat-log"></div>
-          <div class="form-actions">
-            <button class="btn ghost" id="clear-chat" type="button">清空对话</button>
+        <div class="chat-shell">
+          <div class="chat-subnav" id="chat-subnav">
+            <button class="chat-sub active" type="button" data-sub="thread">当前会话</button>
+            <button class="chat-sub" type="button" data-sub="history">历史</button>
+            <button class="chat-sub" type="button" data-sub="memory">记忆</button>
+            <button class="chat-sub" type="button" data-sub="persona">人设</button>
+            <button class="chat-sub" type="button" data-sub="skills">技能</button>
+            <button class="chat-sub" type="button" data-sub="retro">复盘</button>
           </div>
-        </article>
-      </section>
-      <section class="panel" id="panel-memory">
-        <article class="card" style="flex:1">
-          <h2>会喂给模型的记忆</h2>
-          <p class="hint" id="memory-meta"></p>
-          <div class="list" id="memory-log"></div>
-        </article>
-      </section>
-      <section class="panel" id="panel-persona">
-        <article class="card" style="flex:1; overflow:auto">
-          <h2>性格 / 说话方式</h2>
-          <textarea id="persona"></textarea>
-          <h2 style="margin-top:16px">锁死的工具协议</h2>
-          <div class="readonly" id="tool-contract"></div>
-          <div class="row2">
-            <div>
-              <label for="history-n">喂给模型的最近对话条数</label>
-              <input id="history-n" type="number" min="0" step="1">
-            </div>
-            <div>
-              <label for="max-steps">单次最多工具轮次 max_steps</label>
-              <input id="max-steps" type="number" min="1" step="1">
-            </div>
+          <div class="chat-subpanel active" id="sub-thread">
+            <article class="card" style="flex:1">
+              <div class="form-actions" style="margin-top:0">
+                <button class="btn ghost" id="new-chat" type="button">新对话</button>
+                <button class="btn ghost" id="clear-chat" type="button">清空当前线程</button>
+              </div>
+              <div class="list" id="chat-log"></div>
+              <div class="composer">
+                <div class="chip-row" id="chip-row">
+                  <select id="chip-skill"><option value="">技能</option></select>
+                  <select id="chip-cli"><option value="">CLI</option></select>
+                  <select id="chip-github"><option value="">GitHub 仓库</option></select>
+                  <select id="chip-maa"><option value="">方舟动作</option></select>
+                </div>
+                <textarea id="chat-input" placeholder="跟凯尔希说…"></textarea>
+                <div class="form-actions">
+                  <button class="btn" id="chat-send" type="button">发送</button>
+                </div>
+                <p class="hint" id="chat-msg"></p>
+              </div>
+            </article>
           </div>
-          <label class="check"><input id="nudge" type="checkbox"> 主动搭话</label>
-          <div class="form-actions">
-            <button class="btn" id="save-persona" type="button">保存人设</button>
+          <div class="chat-subpanel" id="sub-history">
+            <article class="card" style="flex:1">
+              <h2>历史线程</h2>
+              <p class="hint">点一条打开。新对话不会删掉旧线程。</p>
+              <div class="list" id="session-list"></div>
+            </article>
           </div>
-          <p class="hint" id="persona-msg"></p>
-        </article>
-      </section>
-      <section class="panel" id="panel-skills">
-        <article class="card" style="flex:1; overflow:auto">
-          <h2>技能库</h2>
-          <p class="hint">来自 desk-companion/skills 下每份 SKILL.md。点开一张看正文。凯尔希分析日志会读这些规程。不是插件市场。</p>
-          <div id="skills-body"></div>
-        </article>
+          <div class="chat-subpanel" id="sub-memory">
+            <article class="card" style="flex:1">
+              <h2>会喂给模型的记忆</h2>
+              <p class="hint" id="memory-meta"></p>
+              <div class="list" id="memory-log"></div>
+            </article>
+          </div>
+          <div class="chat-subpanel" id="sub-persona">
+            <article class="card" style="flex:1; overflow:auto">
+              <h2>性格 / 说话方式</h2>
+              <textarea id="persona"></textarea>
+              <h2 style="margin-top:16px">锁死的工具协议</h2>
+              <div class="readonly" id="tool-contract"></div>
+              <div class="row2">
+                <div>
+                  <label for="history-n">喂给模型的最近对话条数</label>
+                  <input id="history-n" type="number" min="0" step="1">
+                </div>
+                <div>
+                  <label for="max-steps">单次最多工具轮次 max_steps</label>
+                  <input id="max-steps" type="number" min="1" step="1">
+                </div>
+              </div>
+              <label class="check"><input id="nudge" type="checkbox"> 主动搭话</label>
+              <div class="form-actions">
+                <button class="btn" id="save-persona" type="button">保存人设</button>
+              </div>
+              <p class="hint" id="persona-msg"></p>
+            </article>
+          </div>
+          <div class="chat-subpanel" id="sub-skills">
+            <article class="card" style="flex:1; overflow:auto">
+              <h2>技能库</h2>
+              <p class="hint">来自 desk-companion/skills 下每份 SKILL.md。点开一张看正文。不是插件市场。</p>
+              <div id="skills-body"></div>
+            </article>
+          </div>
+          <div class="chat-subpanel" id="sub-retro">
+            <article class="card" style="flex:1">
+              <h2>本周复盘</h2>
+              <p class="hint">生成走 weekly-retro。写入：拉我创建的 docx，选一篇覆盖，或填标题新建。两者都空不写。</p>
+              <div class="form-actions" style="margin-top:0">
+                <button class="btn" id="retro-gen" type="button">生成复盘</button>
+                <button class="btn ghost" id="retro-docs" type="button">获取飞书文档</button>
+                <button class="btn" id="retro-write" type="button">写入飞书</button>
+              </div>
+              <label for="retro-doc">覆盖已有文档</label>
+              <select id="retro-doc"><option value="">不选，使用下方新标题</option></select>
+              <label for="retro-title">新建文档标题</label>
+              <input id="retro-title" type="text" autocomplete="off" placeholder="例如 2026-09-01～2026-09-03 周复盘">
+              <p class="hint" id="retro-msg"></p>
+              <div id="retro-body"></div>
+            </article>
+          </div>
+        </div>
       </section>
       <section class="panel" id="panel-model">
         <article class="card" style="flex:1; overflow:auto">
@@ -742,9 +844,7 @@
         </article>
       </section>
     </div>
-    <footer class="board-foot">
-      <button class="log-link" id="log-link" type="button">日志</button>
-    </footer>
+    </div>
     <div class="log-overlay" id="log-overlay">
       <div class="log-sheet">
         <div class="log-head">
@@ -834,10 +934,14 @@
     }
 
     function showTab(id) {
-      document.querySelectorAll(".tab").forEach((btn) => {
+      if (id === "log") {
+        openLogSheet();
+        return;
+      }
+      document.querySelectorAll("#tabs .tab").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.tab === id);
       });
-      document.querySelectorAll(".panel").forEach((panel) => {
+      document.querySelectorAll(".stage > .panel").forEach((panel) => {
         const on = panel.id === "panel-" + id;
         panel.classList.toggle("active", on);
         panel.classList.remove("enter");
@@ -847,10 +951,10 @@
         }
       });
       if (id === "today") loadToday(false);
-      if (id === "chat") loadChat();
-      if (id === "memory") loadMemory();
-      if (id === "persona") loadPersona();
-      if (id === "skills") loadSkills();
+      if (id === "chat") {
+        loadChat();
+        loadComposer();
+      }
       if (id === "model") loadModel();
       if (id === "usage") loadUsage();
       if (id === "feishu") loadFeishu(false);
@@ -859,6 +963,21 @@
         loadMaa();
         loadSkland();
       }
+    }
+
+    function showChatSub(id) {
+      document.querySelectorAll(".chat-sub").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.sub === id);
+      });
+      document.querySelectorAll(".chat-subpanel").forEach((panel) => {
+        panel.classList.toggle("active", panel.id === "sub-" + id);
+      });
+      if (id === "thread") loadChat();
+      if (id === "history") loadChat();
+      if (id === "memory") loadMemory();
+      if (id === "persona") loadPersona();
+      if (id === "skills") loadSkills();
+      if (id === "retro") loadRetro();
     }
 
     function renderSection(el, section, emptyText, kind) {
@@ -966,7 +1085,7 @@
       } else {
         const p = document.createElement("p");
         p.className = "empty";
-        p.textContent = "还没有本周复盘。点「生成本周复盘」根据 GitHub 产出和飞书待办/日程来写。";
+        p.textContent = "还没有本周复盘。到对话「复盘」子界面生成。";
         summaryEl.appendChild(p);
       }
     }
@@ -1031,7 +1150,6 @@
       const box = document.getElementById("chat-log");
       box.innerHTML = '<p class="empty">正在读取…</p>';
       const data = await api().load_chat_log();
-      box.innerHTML = "";
       if (!data.ok) {
         box.innerHTML = '<p class="error"></p>';
         box.firstChild.textContent = data.error || "读取失败";
@@ -1039,10 +1157,212 @@
       }
       const items = data.items || [];
       if (!items.length) {
-        box.innerHTML = '<p class="empty">还没有对话。</p>';
+        box.innerHTML = '<p class="empty">还没有对话。在下方输入。</p>';
+      } else {
+        renderMsgList(box, items);
+      }
+      renderSessions(data.sessions || [], data.session_id || "");
+    }
+
+    function renderSessions(sessions, currentId) {
+      const box = document.getElementById("session-list");
+      box.innerHTML = "";
+      if (!sessions.length) {
+        box.innerHTML = '<p class="empty">还没有历史线程。</p>';
         return;
       }
-      renderMsgList(box, items);
+      for (const row of sessions) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "session-item" + (row.id === currentId ? " active" : "");
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = row.title || "新对话";
+        const when = document.createElement("div");
+        when.className = "when";
+        when.textContent = (row.updated || "").replace("T", " ") + " · " + row.count + " 条";
+        btn.appendChild(name);
+        btn.appendChild(when);
+        btn.addEventListener("click", async () => {
+          const data = await api().switch_chat_session(row.id);
+          if (!data.ok) {
+            document.getElementById("chat-msg").className = "error";
+            document.getElementById("chat-msg").textContent = data.error || "切换失败";
+            return;
+          }
+          showChatSub("thread");
+          loadChat();
+        });
+        box.appendChild(btn);
+      }
+    }
+
+    function fillSelect(sel, items, emptyLabel, errorText) {
+      const keep = sel.value;
+      sel.innerHTML = "";
+      const first = document.createElement("option");
+      first.value = "";
+      first.textContent = errorText || emptyLabel;
+      sel.appendChild(first);
+      for (const item of items || []) {
+        const opt = document.createElement("option");
+        opt.value = item.id;
+        opt.textContent = item.label || item.id;
+        sel.appendChild(opt);
+      }
+      if (keep && Array.from(sel.options).some((o) => o.value === keep)) {
+        sel.value = keep;
+      }
+    }
+
+    async function loadComposer() {
+      const msg = document.getElementById("chat-msg");
+      try {
+        const data = await api().load_composer_options();
+        if (!data.ok) {
+          msg.className = "error";
+          msg.textContent = data.error || "点选列表加载失败";
+          return;
+        }
+        fillSelect(document.getElementById("chip-skill"), data.skills, "技能");
+        fillSelect(document.getElementById("chip-cli"), data.cli, "CLI");
+        const gh = data.github || {};
+        fillSelect(
+          document.getElementById("chip-github"),
+          gh.items,
+          "GitHub 仓库",
+          gh.ok === false ? (gh.error || "仓库列表失败") : ""
+        );
+        fillSelect(document.getElementById("chip-maa"), data.maa, "方舟动作");
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    }
+
+    function currentChips() {
+      const skills = document.getElementById("chip-skill").value;
+      const cli = document.getElementById("chip-cli").value;
+      const github = document.getElementById("chip-github").value;
+      const maa = document.getElementById("chip-maa").value;
+      const chips = {};
+      if (skills) chips.skills = [skills];
+      if (cli) chips.cli = [cli];
+      if (github) chips.github = github;
+      if (maa) chips.maa = maa;
+      return chips;
+    }
+
+    async function sendBoard() {
+      const msg = document.getElementById("chat-msg");
+      const input = document.getElementById("chat-input");
+      const chips = currentChips();
+      msg.className = "hint";
+      msg.textContent = "";
+      try {
+        const data = await api().send_board_chat(input.value, chips);
+        if (!data.ok) {
+          msg.className = "error";
+          msg.textContent = data.error || "发送失败";
+          return;
+        }
+        if (chips.maa) {
+          msg.className = "ok";
+          msg.textContent = data.message || "已下发方舟动作。";
+          return;
+        }
+        input.value = "";
+        document.getElementById("chip-skill").value = "";
+        document.getElementById("chip-cli").value = "";
+        document.getElementById("chip-github").value = "";
+        document.getElementById("chip-maa").value = "";
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    }
+
+    let boardStream = null;
+    window.onBoardEvent = function onBoardEvent(payload) {
+      if (!payload || !payload.event) return;
+      const box = document.getElementById("chat-log");
+      if (payload.event === "append_message") {
+        const empty = box.querySelector(".empty, .error");
+        if (empty) box.innerHTML = "";
+        const wrap = document.createElement("div");
+        wrap.className = "msg " + (payload.role === "user" ? "user" : "pet");
+        const who = document.createElement("div");
+        who.className = "who";
+        who.textContent = payload.role === "user" ? "你" : "凯尔希";
+        const body = document.createElement("div");
+        body.className = "body";
+        body.textContent = payload.text || "";
+        wrap.appendChild(who);
+        wrap.appendChild(body);
+        box.appendChild(wrap);
+        box.scrollTop = box.scrollHeight;
+        return;
+      }
+      if (payload.event === "begin_stream") {
+        const empty = box.querySelector(".empty, .error");
+        if (empty) empty.remove();
+        const wrap = document.createElement("div");
+        wrap.className = "msg pet";
+        const who = document.createElement("div");
+        who.className = "who";
+        who.textContent = "凯尔希";
+        const body = document.createElement("div");
+        body.className = "body";
+        wrap.appendChild(who);
+        wrap.appendChild(body);
+        box.appendChild(wrap);
+        boardStream = body;
+        box.scrollTop = box.scrollHeight;
+        return;
+      }
+      if (payload.event === "append_stream" && boardStream) {
+        boardStream.textContent += payload.piece || "";
+        box.scrollTop = box.scrollHeight;
+        return;
+      }
+      if (payload.event === "end_stream") {
+        if (boardStream) {
+          boardStream.textContent = payload.text || boardStream.textContent;
+          boardStream = null;
+        }
+        box.scrollTop = box.scrollHeight;
+        return;
+      }
+      if (payload.event === "load_thread") {
+        boardStream = null;
+        const items = payload.items || [];
+        if (!items.length) {
+          box.innerHTML = '<p class="empty">还没有对话。在下方输入。</p>';
+        } else {
+          renderMsgList(box, items);
+        }
+        renderSessions(payload.sessions || [], payload.session_id || "");
+        return;
+      }
+    };
+
+    async function loadRetro() {
+      const body = document.getElementById("retro-body");
+      const msg = document.getElementById("retro-msg");
+      try {
+        const data = await api().load_board(false);
+        if (data && data.ok && data.summary) {
+          fillMarkdown(body, data.summary);
+        } else {
+          body.textContent = "还没有复盘正文。";
+        }
+        if (data && data.doc_url) {
+          msg.className = "hint";
+          msg.textContent = "上次写入：" + data.doc_url;
+        }
+      } catch (exc) {
+        body.textContent = String(exc);
+      }
     }
 
     async function loadMemory() {
@@ -1061,13 +1381,13 @@
       const total = data.total || 0;
       const items = data.items || [];
       if (n === 0) {
-        meta.textContent = "人设页把喂给模型的条数设成了 0，当前不会把对话写进记忆窗口。全部历史在「对话」页。";
+        meta.textContent = "人设子界面把喂给模型的条数设成了 0，当前不会把对话写进记忆窗口。全部历史在「历史」子界面。";
         box.innerHTML = '<p class="empty">没有会喂给模型的对话。</p>';
         return;
       }
       meta.textContent = "凯尔希没有另一套记忆库。每次说话前会把 chat.jsonl 去重后最多 "
         + n + " 条灌进模型（相同正文只留最近一次）。全部对话 " + total + " 条，下面是当前窗口里的 "
-        + items.length + " 条。条数在「人设」页改。";
+        + items.length + " 条。条数在「人设」子界面改。";
       if (!items.length) {
         box.innerHTML = '<p class="empty">还没有对话，窗口是空的。</p>';
         return;
@@ -1464,11 +1784,34 @@
       if (!btn) return;
       showTab(btn.dataset.tab);
     });
+    document.getElementById("chat-subnav").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".chat-sub");
+      if (!btn) return;
+      showChatSub(btn.dataset.sub);
+    });
     document.getElementById("ask").addEventListener("click", () => api().ask_today());
     document.getElementById("refresh-today").addEventListener("click", () => loadToday(true));
-    document.getElementById("summary-gen").addEventListener("click", async () => {
-      const msg = document.getElementById("today-msg");
-      const btn = document.getElementById("summary-gen");
+    document.getElementById("new-chat").addEventListener("click", async () => {
+      const data = await api().new_chat_session();
+      const msg = document.getElementById("chat-msg");
+      if (!data.ok) {
+        msg.className = "error";
+        msg.textContent = data.error || "开新对话失败";
+        return;
+      }
+      showChatSub("thread");
+      loadChat();
+    });
+    document.getElementById("chat-send").addEventListener("click", sendBoard);
+    document.getElementById("chat-input").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && !ev.shiftKey) {
+        ev.preventDefault();
+        sendBoard();
+      }
+    });
+    document.getElementById("retro-gen").addEventListener("click", async () => {
+      const msg = document.getElementById("retro-msg");
+      const btn = document.getElementById("retro-gen");
       btn.disabled = true;
       msg.className = "hint";
       msg.textContent = "正在拉取本周 GitHub 和飞书…";
@@ -1476,7 +1819,7 @@
         const data = await api().generate_week_review();
         if (data && data.ok) {
           todayCache = data;
-          renderToday(data);
+          if (data.summary) fillMarkdown(document.getElementById("retro-body"), data.summary);
           msg.className = "ok";
           msg.textContent = data.message || "本周复盘已生成。";
         } else {
@@ -1490,17 +1833,43 @@
         btn.disabled = false;
       }
     });
-    document.getElementById("summary-doc").addEventListener("click", async () => {
-      const msg = document.getElementById("today-msg");
-      const btn = document.getElementById("summary-doc");
+    document.getElementById("retro-docs").addEventListener("click", async () => {
+      const msg = document.getElementById("retro-msg");
+      const sel = document.getElementById("retro-doc");
+      msg.className = "hint";
+      msg.textContent = "正在搜索我创建的飞书文档…";
+      try {
+        const data = await api().list_feishu_docs();
+        if (!data.ok) {
+          msg.className = "error";
+          msg.textContent = data.error || "搜索失败";
+          return;
+        }
+        const items = (data.items || []).map((row) => ({
+          id: row.url || row.token,
+          label: row.title,
+        }));
+        fillSelect(sel, items, "不选，使用下方新标题");
+        msg.className = "ok";
+        msg.textContent = items.length ? ("找到 " + items.length + " 篇 docx。") : "没有搜到我创建的 docx。";
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    });
+    document.getElementById("retro-write").addEventListener("click", async () => {
+      const msg = document.getElementById("retro-msg");
+      const btn = document.getElementById("retro-write");
       btn.disabled = true;
       msg.className = "hint";
-      msg.textContent = "正在把复盘写入飞书文档…";
+      msg.textContent = "正在写入飞书…";
       try {
-        const data = await api().write_today_summary_doc();
+        const data = await api().write_week_review_doc({
+          doc: document.getElementById("retro-doc").value,
+          title: document.getElementById("retro-title").value,
+        });
         if (data && data.ok) {
           todayCache = data;
-          renderToday(data);
           msg.className = "ok";
           msg.textContent = data.message || "已写入飞书。";
         } else {

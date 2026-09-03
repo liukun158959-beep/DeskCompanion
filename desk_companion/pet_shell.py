@@ -188,7 +188,7 @@ class PetShell:
         if method == "clear_chat":
             return self.host.clear_chat_history()
         if method == "load_history":
-            return recent_chat(40)
+            return recent_chat(40, self.host.state.session_id)
         if method == "log_error":
             raise RuntimeError(str(params.get("message") or "Electron 渲染错误。"))
         if method == "maa_menu":

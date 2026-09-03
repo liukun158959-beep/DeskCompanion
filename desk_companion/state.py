@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ REQUIRED = (
     "history_n",
     "max_steps",
     "model_prices",
+    "session_id",
 )
 _LOCK = threading.Lock()
 
@@ -41,6 +43,10 @@ def state_path() -> Path:
     return Path(__file__).resolve().parents[1] / STATE_NAME
 
 
+def new_session_id() -> str:
+    return str(uuid.uuid4())
+
+
 @dataclass
 class UserState:
     scale: float
@@ -54,6 +60,7 @@ class UserState:
     history_n: int
     max_steps: int
     model_prices: dict
+    session_id: str
 
     def save(self) -> None:
         data = {
@@ -68,6 +75,7 @@ class UserState:
             "history_n": self.history_n,
             "max_steps": self.max_steps,
             "model_prices": self.model_prices,
+            "session_id": self.session_id,
         }
         path = state_path()
         text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
@@ -90,6 +98,7 @@ def load_state(default_x: int, default_y: int) -> UserState:
             history_n=20,
             max_steps=8,
             model_prices={},
+            session_id=new_session_id(),
         )
         state.save()
         return state
@@ -148,6 +157,9 @@ def load_state(default_x: int, default_y: int) -> UserState:
     if type(max_steps) is not int or max_steps < 1:
         raise RuntimeError(f"{path} 的 max_steps 必须是大于等于 1 的整数。改正或删掉该文件后重启。")
     model_prices = _parse_prices(raw["model_prices"], path)
+    session_id = raw["session_id"]
+    if type(session_id) is not str or not session_id.strip():
+        raise RuntimeError(f"{path} 的 session_id 必须是非空字符串。改正或删掉该文件后重启。")
     return UserState(
         scale=float(scale),
         x=int(raw["x"]),
@@ -160,6 +172,7 @@ def load_state(default_x: int, default_y: int) -> UserState:
         history_n=history_n,
         max_steps=max_steps,
         model_prices=model_prices,
+        session_id=session_id.strip(),
     )
 
 

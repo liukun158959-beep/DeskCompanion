@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import queue
 import random
@@ -18,13 +19,23 @@ import win32con
 import win32gui
 
 from .assistant import TOOL_CONTRACT, build_agent, inject_history, list_providers, token_plugin
+from .board_workbench import BoardWorkbench
 from .bridge import Bridge
 from .maa_job import MaaController
 from .maa_tools import bind_host
 from .envconf import parse_env_file, public_llm_env, write_llm_env
 from .layered import enable_dpi_aware, work_area
 from .logutil import crash, install_crash_hooks, log, mark_ready, start_os_watchdog
-from .memory import TZ, append_chat, clear_chat, history_for_model, list_chat, recent_chat
+from .memory import (
+    TZ,
+    append_chat,
+    clear_session,
+    history_for_model,
+    list_chat,
+    list_sessions,
+    recent_chat,
+    stamp_missing_session,
+)
 from .pet_shell import BASE_PET_H, BASE_PET_W, CMD_QUIT, start_pet_thread
 from .skin import load_skin
 from .state import load_state
@@ -45,8 +56,8 @@ from .winforms_host import (
     show_form,
 )
 
-BOARD_W = 1000
-BOARD_H = 680
+BOARD_W = 1100
+BOARD_H = 720
 TODAY_ASK = "今天干什么？"
 LOG_ASK = "看看日志。"
 DAILY_ASK = """【今日纸条】请先调用 get_today_agenda 和 get_open_tasks。
@@ -70,7 +81,7 @@ ERROR_ALREADY_EXISTS = 183
 _mutex_handle = None
 
 
-class App:
+class App(BoardWorkbench):
     def __init__(self, skin_id: str) -> None:
         self.skin = load_skin(skin_id)
         left, top, right, bottom = work_area()
@@ -122,6 +133,8 @@ class App:
             self._setup_webview_form(self.board, tool=False)
             enable_webview_context_menu(self.board)
             hide_form(self.board)
+            log("stamp_session")
+            stamp_missing_session(self.state.session_id)
             log("load_history")
             self._load_history()
             log("start_tray")
@@ -287,7 +300,7 @@ class App:
     def _load_history(self) -> None:
         if self._history_loaded or self.pet is None:
             return
-        rows = recent_chat(40)
+        rows = recent_chat(40, self.state.session_id)
         self._eval_bubble("load_history", rows=rows)
         self._history_loaded = True
 
@@ -296,11 +309,13 @@ class App:
             return {"ok": False, "error": "凯尔希正在说话，等这句说完再清空。"}
         if self.pet is None:
             raise RuntimeError("宠物窗口还在启动，无法清空。")
-        clear_chat()
+        clear_session(self.state.session_id)
         if self.agent is not None:
             self.agent.memory.clear()
-        self._eval_bubble("load_history", rows=[])
+        rows = []
+        self._eval_bubble("load_history", rows=rows)
         self._eval_bubble("show_panel", panel="chat")
+        self._eval_board("load_thread", items=rows, session_id=self.state.session_id)
         return {"ok": True}
 
     def try_build_agent(self) -> None:
@@ -340,15 +355,22 @@ class App:
 
     def board_chat(self) -> dict:
         try:
-            return {"ok": True, "items": list_chat()}
+            sid = self.state.session_id
+            return {
+                "ok": True,
+                "session_id": sid,
+                "items": list_chat(sid),
+                "sessions": list_sessions(),
+            }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
     def board_memory(self) -> dict:
         try:
-            items = list_chat()
+            sid = self.state.session_id
+            items = list_chat(sid)
             n = self.state.history_n
-            window = history_for_model(n) if n else []
+            window = history_for_model(n, sid) if n else []
             return {
                 "ok": True,
                 "history_n": n,
@@ -715,7 +737,7 @@ class App:
             return {
                 "ok": True,
                 **snap,
-                "message": "本周复盘已写在今日页，并已落盘。",
+                "message": "本周复盘已写在对话「复盘」和今日页，并已落盘。",
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
@@ -732,7 +754,7 @@ class App:
             return {"ok": False, "error": str(exc)}
         markdown = (snap.get("summary") or "").strip()
         if not markdown:
-            return {"ok": False, "error": "还没有复盘。先点「生成本周复盘」。"}
+            return {"ok": False, "error": "还没有复盘。先在对话「复盘」里生成。"}
         try:
             monday, now = week_range()
             title = f"{monday.strftime('%Y-%m-%d')}～{now.strftime('%Y-%m-%d')} 周复盘"
@@ -801,24 +823,31 @@ class App:
             }
         )
 
-    def send_chat(self, text: str) -> None:
+    def send_chat(self, text: str, *, from_board: bool = False) -> None:
         text = (text or "").strip()
         if not text or not self.pet:
             return
         if self.agent is None:
-            msg = self._agent_error or "还没接上模型。打开看板「模型」页填写 API 地址、模型名和 Key。"
-            self.show_bubble("chat")
+            msg = self._agent_error or "还没接上模型。打开看板侧边栏「模型」填写 API 地址、模型名和 Key。"
+            if not from_board:
+                self.show_bubble("chat")
             self._eval_bubble("append_message", role="user", text=text)
             self._eval_bubble("append_message", role="err", text=msg)
             self._eval_bubble("set_busy", busy=False)
+            self._eval_board("append_message", role="user", text=text)
+            self._eval_board("append_message", role="err", text=msg)
+            self._eval_board("set_busy", busy=False)
             return
         if self.pet.busy:
             return
-        self.show_bubble("chat")
+        if not from_board:
+            self.show_bubble("chat")
         self._eval_bubble("append_message", role="user", text=text)
         self._eval_bubble("begin_stream")
+        self._eval_board("append_message", role="user", text=text)
+        self._eval_board("begin_stream")
         self.pet.set_busy(True)
-        append_chat("user", text)
+        append_chat("user", text, self.state.session_id)
         threading.Thread(target=self._run_agent, args=(text,), daemon=True).start()
 
     def _run_agent(self, text: str) -> None:
@@ -829,7 +858,12 @@ class App:
         run_id = str(uuid.uuid4())
         failed = False
         try:
-            inject_history(self.agent, self.state.history_n, exclude_user=text)
+            inject_history(
+                self.agent,
+                self.state.history_n,
+                self.state.session_id,
+                exclude_user=text,
+            )
             answer = str(self.agent.run(text, run_id=run_id))
             self._record_usage(self.agent, run_id)
         except Exception as exc:
@@ -850,12 +884,15 @@ class App:
         role = "err" if failed else "pet"
         if not failed:
             self.pet.review()
-            append_chat("pet", answer)
+            append_chat("pet", answer, self.state.session_id)
         else:
             self.pet.fail()
         self._eval_bubble("end_stream", text=answer, role=role)
         self._eval_bubble("set_busy", busy=False)
-        self.show_bubble("chat")
+        self._eval_board("end_stream", text=answer, role=role)
+        self._eval_board("set_busy", busy=False)
+        if self._card_mode == "chat" or (self.pet and self.pet.bubble_open):
+            self.show_bubble("chat")
 
     def _run_daily(self) -> None:
         if not self.state.nudge_enabled:
@@ -879,7 +916,7 @@ class App:
         run_id = str(uuid.uuid4())
         failed = False
         try:
-            inject_history(self.agent, self.state.history_n)
+            inject_history(self.agent, self.state.history_n, self.state.session_id)
             answer = str(self.agent.run(DAILY_ASK, run_id=run_id)).strip()
             if not answer:
                 raise RuntimeError("今日纸条返回空内容。")
@@ -916,10 +953,11 @@ class App:
         role = "err" if failed else "pet"
         self._eval_bubble("end_stream", text=answer, role=role)
         self._eval_bubble("show_panel", panel="chat")
+        self._eval_board("end_stream", text=answer, role=role)
         if failed:
             return
         self.pet.wave()
-        append_chat("pet", answer)
+        append_chat("pet", answer, self.state.session_id)
         self.state.last_daily_date = today
         self.state.save()
 
@@ -949,11 +987,13 @@ class App:
         if not piece or self.pet is None:
             return
         self._eval_bubble("append_stream", piece=piece)
+        self._eval_board("append_stream", piece=piece)
 
     def on_stream_status(self, text: str) -> None:
         if not text or self.pet is None:
             return
         self._eval_bubble("set_stream_status", text=text)
+        self._eval_board("set_stream_status", text=text)
 
     def _eval_bubble(self, event: str, **params) -> None:
         if self.pet is None:
@@ -963,6 +1003,18 @@ class App:
             self.pet.emit(event, **params)
         except Exception as exc:
             log(f"emit {event}: {exc}")
+
+    def _eval_board(self, event: str, **params) -> None:
+        if self.board is None:
+            return
+        payload = {"event": event, **params}
+        script = "window.onBoardEvent && window.onBoardEvent(" + json.dumps(
+            payload, ensure_ascii=False
+        ) + ")"
+        try:
+            self.board.evaluate_js(script)
+        except Exception as exc:
+            log(f"board emit {event}: {exc}")
 
     def quit(self) -> None:
         if self._quitting:
