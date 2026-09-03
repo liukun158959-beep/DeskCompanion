@@ -491,7 +491,7 @@ class App:
 
     def board_maa(self) -> dict:
         try:
-            return self.maa.board()
+            return self.maa.snapshot()
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
