@@ -40,6 +40,18 @@ def _merge_user_path() -> None:
     _PATH_MERGED = True
 
 
+def _node_bin() -> str:
+    _merge_user_path()
+    found = shutil.which("node")
+    if found:
+        return found
+    raise RuntimeError(
+        "找不到 node.exe。lark-cli 靠 Node 运行。"
+        "当前进程合并用户/系统 PATH 之后仍然没有 node。"
+        "把 Node 安装目录加入用户 PATH 后重启桌宠，不是去飞书页重新登录。"
+    )
+
+
 def _lark_bin() -> str:
     _merge_user_path()
     found = shutil.which("lark-cli")
@@ -52,14 +64,23 @@ def _lark_bin() -> str:
     )
 
 
+def _lark_cmd() -> list[str]:
+    """绕过 npm 的 lark-cli.cmd（它会找 PATH 里的 node，桌宠进程经常没有）。"""
+    shim = Path(_lark_bin())
+    script = shim.parent / "node_modules" / "@larksuite" / "cli" / "scripts" / "run.js"
+    if not script.is_file():
+        raise RuntimeError(
+            f"找不到 {script}。请重装 lark-cli：npm install -g @larksuite/cli"
+        )
+    return [_node_bin(), str(script)]
+
+
 def _run_lark(args: list[str], timeout: int = 60, stdin: str | None = None) -> str:
     creationflags = CREATE_NO_WINDOW if sys.platform == "win32" else 0
-    bin_path = _lark_bin()
-    if bin_path.lower().endswith((".cmd", ".bat")):
-        cmd = ["cmd", "/c", bin_path, *args]
-    else:
-        cmd = [bin_path, *args]
+    cmd = [*_lark_cmd(), *args]
     env = os.environ.copy()
+    node_dir = str(Path(cmd[0]).parent)
+    env["PATH"] = node_dir + os.pathsep + env.get("PATH", "")
     env["LARKSUITE_CLI_NO_UPDATE_NOTIFIER"] = "1"
     env["LARKSUITE_CLI_NO_SKILLS_NOTIFIER"] = "1"
     root = Path(__file__).resolve().parents[1]
@@ -78,8 +99,7 @@ def _run_lark(args: list[str], timeout: int = 60, stdin: str | None = None) -> s
         )
     except FileNotFoundError:
         raise RuntimeError(
-            "找不到 lark-cli。请确认已安装并在 PATH 中，然后执行 "
-            "lark-cli auth login --domain calendar,task,docs"
+            "找不到 node 或 lark-cli。请确认 Node 和 lark-cli 都在 PATH 中。"
         ) from None
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"lark-cli 超时（{timeout}s）。") from None
