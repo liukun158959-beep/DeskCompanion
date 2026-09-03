@@ -141,6 +141,55 @@ def _translate(data: dict, names: dict) -> dict:
     return mapped
 
 
+def merge_skland(skland: dict, sync_raw: str) -> None:
+    """写入森空岛块。不改 inventory / depot_sync。"""
+    if not isinstance(skland, dict):
+        raise RuntimeError("森空岛模型必须是对象。")
+    if type(sync_raw) is not str or not sync_raw.strip():
+        raise RuntimeError("skland_sync 必须是非空字符串。")
+    path = account_path()
+    if path.is_file():
+        data = _read_json_object(path)
+    else:
+        data = {}
+    data["skland"] = skland
+    data["skland_sync"] = sync_raw.strip()
+    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    with _LOCK:
+        path.write_text(text, encoding="utf-8")
+
+
+def read_account_file() -> dict:
+    """账本存在则读出；没有文件返回空对象。"""
+    path = account_path()
+    if not path.is_file():
+        return {}
+    return _read_json_object(path)
+
+
+def require_skland_today() -> dict:
+    """只读森空岛块。skland_sync 必须是本机今天。"""
+    path = account_path()
+    if not path.is_file():
+        raise RuntimeError(
+            f"没有账号快照 {path}。打开看板「明日方舟」点「同步森空岛」。"
+        )
+    data = _read_json_object(path)
+    _require_local_today(
+        data.get("skland_sync"),
+        path,
+        kind="森空岛同步",
+        field="skland_sync",
+        how="打开看板「明日方舟」点「同步森空岛」。",
+    )
+    skland = data.get("skland")
+    if not isinstance(skland, dict):
+        raise RuntimeError(
+            f"{path} 的 skland 必须是对象。打开看板「明日方舟」点「同步森空岛」。"
+        )
+    return skland
+
+
 def _merge_account(path: Path, inventory: dict, sync_raw: str) -> None:
     if path.is_file():
         data = _read_account(path)
@@ -180,26 +229,37 @@ def _read_json_object(path: Path) -> dict:
     return raw
 
 
-def _require_local_today(sync_raw, source: Path) -> None:
-    when = _parse_sync_time(sync_raw, source)
+def _require_local_today(
+    sync_raw,
+    source: Path,
+    *,
+    kind: str = "仓库",
+    field: str = "syncTime",
+    how: str = "先开一次清日常。",
+) -> None:
+    when = _parse_sync_time(sync_raw, source, field=field, how=how)
     local_day = when.astimezone().date()
     today = datetime.now().astimezone().date()
     if local_day != today:
         raise RuntimeError(
-            f"{source} 的仓库日期是 {local_day.isoformat()}，不是今天 {today.isoformat()}。"
-            "先开一次清日常。"
+            f"{source} 的{kind}日期是 {local_day.isoformat()}，不是今天 {today.isoformat()}。"
+            + how
         )
 
 
-def _parse_sync_time(sync_raw, source: Path) -> datetime:
+def _parse_sync_time(
+    sync_raw,
+    source: Path,
+    *,
+    field: str = "syncTime",
+    how: str = "先开一次清日常。",
+) -> datetime:
     if type(sync_raw) is not str or not sync_raw.strip():
-        raise RuntimeError(f"{source} 缺少 syncTime。先开一次清日常。")
+        raise RuntimeError(f"{source} 缺少 {field}。{how}")
     text = sync_raw.strip()
     matched = _SYNC_RE.fullmatch(text)
     if not matched:
-        raise RuntimeError(
-            f"{source} 的 syncTime 无法解析：{text!r}。先开一次清日常。"
-        )
+        raise RuntimeError(f"{source} 的 {field} 无法解析：{text!r}。{how}")
     head, frac, tz = matched.group(1), matched.group(2) or "", matched.group(3)
     if frac:
         digits = frac[1:]
@@ -210,5 +270,5 @@ def _parse_sync_time(sync_raw, source: Path) -> datetime:
         return datetime.fromisoformat(head + frac + tz)
     except ValueError as exc:
         raise RuntimeError(
-            f"{source} 的 syncTime 无法解析：{text!r}。先开一次清日常。"
+            f"{source} 的 {field} 无法解析：{text!r}。{how}"
         ) from exc

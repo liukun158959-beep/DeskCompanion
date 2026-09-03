@@ -319,6 +319,8 @@
     .opt-list { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; }
     .opt-list .check { margin: 2px 0; }
     #panel-maa .card { overflow: auto; }
+    .skland-meta { margin: 0 0 8px; }
+    .skland-stats { margin-bottom: 4px; grid-template-columns: repeat(4, 1fr); }
     .board-foot {
       flex-shrink: 0;
       padding-top: 8px;
@@ -695,7 +697,15 @@
       </section>
       <section class="panel" id="panel-maa">
         <article class="card" style="flex:1">
-          <h2>一键长草（与 MAA 同名）</h2>
+          <h2>森空岛</h2>
+          <p class="hint skland-meta" id="skland-meta"></p>
+          <div class="gh-stats skland-stats" id="skland-stats"></div>
+          <p class="hint" id="skland-extra"></p>
+          <div class="form-actions">
+            <button class="btn" id="skland-sync" type="button">同步森空岛</button>
+          </div>
+          <p class="hint" id="skland-msg"></p>
+          <h2 style="margin-top:16px">一键长草（与 MAA 同名）</h2>
           <p class="hint">勾选这次要跑的项。关卡、吃药、基建班表仍在 MAA 齿轮里。先授权一次计划任务，之后打开 PC 客户端不再弹 UAC。</p>
           <p class="hint">清日常结束会更新仓库（强制带上，不是第 9 个勾选）。八项都不勾也仍会只跑扫仓。</p>
           <div class="opt-list" id="maa-options"></div>
@@ -832,7 +842,10 @@
       if (id === "usage") loadUsage();
       if (id === "feishu") loadFeishu(false);
       if (id === "github") loadGithub(false);
-      if (id === "maa") loadMaa();
+      if (id === "maa") {
+        loadMaa();
+        loadSkland();
+      }
     }
 
     function renderSection(el, section, emptyText, kind) {
@@ -1575,6 +1588,94 @@
       } catch (exc) {
         msg.className = "error";
         msg.textContent = String(exc);
+      }
+    });
+
+    function sklandMsg(data, fallbackOk) {
+      const msg = document.getElementById("skland-msg");
+      if (!data || data.ok === false) {
+        msg.className = "error";
+        msg.textContent = (data && data.error) || "失败";
+        return;
+      }
+      msg.className = "ok";
+      msg.textContent = data.message || fallbackOk || "";
+    }
+
+    function dash(value) {
+      return value === null || value === undefined || value === "" ? "—" : String(value);
+    }
+
+    function renderSkland(data) {
+      const stats = document.getElementById("skland-stats");
+      const meta = document.getElementById("skland-meta");
+      const extra = document.getElementById("skland-extra");
+      stats.innerHTML = "";
+      extra.textContent = "";
+      if (!data || data.ok === false) {
+        meta.className = "error skland-meta";
+        meta.textContent = (data && data.error) || "加载失败";
+        return;
+      }
+      meta.className = "hint skland-meta";
+      meta.textContent = data.hint || "";
+      const items = [
+        { num: data.synced ? dash(data.ap) + " / " + dash(data.ap_max) : "—", lbl: "实时理智" },
+        { num: data.synced ? dash(data.orundum) + " / " + dash(data.orundum_cap) : "—", lbl: "本周剿灭玉" },
+        { num: data.synced ? dash(data.device) + " / " + dash(data.device_total) : "—", lbl: "保全增补仪" },
+        { num: data.synced ? dash(data.strip) + " / " + dash(data.strip_total) : "—", lbl: "保全增补条" },
+      ];
+      for (const item of items) {
+        const box = document.createElement("div");
+        box.className = "gh-stat";
+        const num = document.createElement("p");
+        num.className = "num";
+        num.textContent = item.num;
+        const lbl = document.createElement("p");
+        lbl.className = "lbl";
+        lbl.textContent = item.lbl;
+        box.appendChild(num);
+        box.appendChild(lbl);
+        stats.appendChild(box);
+      }
+      if (data.synced) {
+        let card = "月卡无效";
+        if (data.monthly_card) {
+          card = data.subscription_end ? "月卡有效至 " + data.subscription_end : "月卡有效";
+        }
+        const when = data.sync ? "同步 " + data.sync : "";
+        extra.textContent = [card, when, "干员 " + dash(data.char_count) + " 名（不在此列出）"]
+          .filter(Boolean)
+          .join(" · ");
+      }
+    }
+
+    async function loadSkland() {
+      try {
+        const data = await api().load_skland();
+        renderSkland(data);
+        if (data && data.ok === false) {
+          sklandMsg(data);
+        } else {
+          document.getElementById("skland-msg").textContent = "";
+        }
+      } catch (exc) {
+        renderSkland({ ok: false, error: String(exc) });
+        sklandMsg({ ok: false, error: String(exc) });
+      }
+    }
+
+    document.getElementById("skland-sync").addEventListener("click", async () => {
+      const btn = document.getElementById("skland-sync");
+      btn.disabled = true;
+      try {
+        const data = await api().sync_skland();
+        renderSkland(data);
+        sklandMsg(data, "森空岛已同步。");
+      } catch (exc) {
+        sklandMsg({ ok: false, error: String(exc) });
+      } finally {
+        btn.disabled = false;
       }
     });
 

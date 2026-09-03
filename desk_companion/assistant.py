@@ -6,6 +6,7 @@ from .feishu_tools import AGENDA_SPEC, TASKS_SPEC
 from .github_tools import RECENT_SPEC, ROADMAP_SPEC, STATUS_SPEC
 from .log_tools import ERROR_LOG_SPEC
 from .maa_tools import bind_host, option_specs
+from .skland_tools import OPERATOR_SPEC, STATUS_SPEC as SKLAND_STATUS_SPEC
 from .skill_tools import LIST_SKILLS_SPEC, READ_SKILL_SPEC
 from .memory import history_for_model
 from .state import UserState
@@ -22,6 +23,7 @@ TOOL_CONTRACT = """用户问起今天安排、日程、待办、要做什么，�
 - open_arknights_pc 打开鹰角启动器安装的 PC 客户端，不是安卓模拟器
 - start_arknights_daily 先开游戏再按勾选准备清日常
 - stop_arknights_daily 停止当前动作
+用户问明日方舟理智、本周剿灭合成玉、保全额度、月卡时，必须先调用 get_arknights_skland。问某干员练到哪、精二、专精、模组时，必须先调用 get_arknights_operator，参数用游戏中文名。不要用仓库 inventory 冒充这些数，不要列出全部干员。工具说不是今天或还没同步时，告诉用户去看板「明日方舟」点「同步森空岛」，不要编数字。用户要同步森空岛时也去看板点，对话里不要假装已经同步。
 工具失败原文告诉用户怎么修。调用开游戏/清日常后立即根据工具返回说话，不要空等进度。
 用户问日志、为什么挂了、仓库怎么识别错了、看看日志时，必须先调用 read_recent_errors，再调用 read_skill，技能名 maa-log-analysis，只根据这两次工具返回的原文解释。没有出错记录就说没有，不要编原因，不要根据分析去开游戏或再清日常。
 用户问有哪些技能、技能库、分析日志或写飞书总结该用哪份规程时，必须先调用 list_skills。要读某份技能正文时调用 read_skill。
@@ -117,6 +119,8 @@ def build_agent(host):
     tools.register(**READ_SKILL_SPEC)
     for spec in option_specs():
         tools.register(**spec)
+    tools.register(**SKLAND_STATUS_SPEC)
+    tools.register(**OPERATOR_SPEC)
     agent = Agent(
         llm=LLM(
             api_key=cfg["ATLAS_API_KEY"],

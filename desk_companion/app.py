@@ -548,6 +548,24 @@ class App:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def board_skland(self) -> dict:
+        from .skland import board_snapshot
+
+        try:
+            return board_snapshot()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def sync_skland(self) -> dict:
+        from .skland import sync_from_skland
+
+        try:
+            data = sync_from_skland()
+            data["message"] = "森空岛已同步。"
+            return data
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def _chat_visible(self) -> bool:
         return bool(self.pet and self.pet.bubble_open)
 

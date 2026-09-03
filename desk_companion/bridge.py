@@ -122,3 +122,9 @@ class Bridge:
 
     def maa_authorize(self) -> dict:
         return self._host.maa_authorize()
+
+    def load_skland(self) -> dict:
+        return self._host.board_skland()
+
+    def sync_skland(self) -> dict:
+        return self._host.sync_skland()
