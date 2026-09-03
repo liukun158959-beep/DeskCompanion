@@ -127,15 +127,25 @@ def format_operator_text(name: str) -> str:
     if not isinstance(chars, dict):
         raise RuntimeError("账本 skland.chars 必须是对象。打开看板重新同步森空岛。")
     row = chars.get(key)
-    if not isinstance(row, dict):
-        aliases = [stored for stored in chars if stored == key or stored.startswith(key + "（")]
-        if aliases:
-            raise RuntimeError(
-                f"账本里没有「{key}」。同名干员：" + "、".join(aliases) + "。把名字说全。"
-            )
-        raise RuntimeError(
-            f"账本里没有「{key}」。用游戏里的中文名（精确匹配），不要编造。"
-        )
+    if isinstance(row, dict):
+        return _one_operator_line(key, row)
+    aliases = [stored for stored in chars if stored.startswith(key + "（")]
+    if aliases:
+        lines = [f"「{key}」有 {len(aliases)} 名，全部如下："]
+        for stored in aliases:
+            item = chars.get(stored)
+            if not isinstance(item, dict):
+                raise RuntimeError(
+                    f"账本里「{stored}」不是对象。打开看板重新同步森空岛。"
+                )
+            lines.append(_one_operator_line(stored, item))
+        return "\n".join(lines)
+    raise RuntimeError(
+        f"账本里没有「{key}」。用游戏里的中文名（精确匹配），不要编造。"
+    )
+
+
+def _one_operator_line(key: str, row: dict) -> str:
     elite = ELITE.get(row.get("evolve_phase"))
     if elite is None:
         raise RuntimeError(f"「{key}」的精英阶段无法识别。打开看板重新同步森空岛。")
