@@ -102,6 +102,9 @@ class Bridge:
     def load_maa(self) -> dict:
         return self._host.board_maa()
 
+    def load_github(self) -> dict:
+        return self._host.board_github()
+
     def save_maa_paths(self, payload: dict) -> dict:
         return self._host.save_maa_paths(payload)
 

@@ -25,6 +25,7 @@ LIST_SKILLS_SPEC = {
     "description": (
         "列出桌宠技能库里全部 SKILL.md 的名字和何时用。"
         "用户问有哪些技能、技能库、分析日志或写今日飞书总结该用哪份规程时调用。"
+        "总结 GitHub 仓库最近用 github-repo-summary。"
     ),
     "parameters": {"type": "object", "properties": {}, "required": []},
     "isReadOnly": True,
@@ -36,7 +37,8 @@ READ_SKILL_SPEC = {
     "description": (
         "读取一份技能的正文。"
         "分析日志用 maa-log-analysis（须先 read_recent_errors）；"
-        "写今日工作总结 / 飞书总结文档用 feishu-doc-writing。"
+        "写今日工作总结 / 飞书总结文档用 feishu-doc-writing；"
+        "总结 GitHub 仓库最近用 github-repo-summary（须先 github_recent）。"
     ),
     "parameters": {
         "type": "object",

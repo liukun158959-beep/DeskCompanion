@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .envconf import require_llm_env
 from .feishu_tools import AGENDA_SPEC, TASKS_SPEC
+from .github_tools import RECENT_SPEC, ROADMAP_SPEC, STATUS_SPEC
 from .log_tools import ERROR_LOG_SPEC
 from .maa_tools import bind_host, option_specs
 from .skill_tools import LIST_SKILLS_SPEC, READ_SKILL_SPEC
@@ -25,6 +26,7 @@ TOOL_CONTRACT = """用户问起今天安排、日程、待办、要做什么，�
 用户问日志、为什么挂了、仓库怎么识别错了、看看日志时，必须先调用 read_recent_errors，再调用 read_skill，技能名 maa-log-analysis，只根据这两次工具返回的原文解释。没有出错记录就说没有，不要编原因，不要根据分析去开游戏或再清日常。
 用户问有哪些技能、技能库、分析日志或写今日飞书总结该用哪份规程时，必须先调用 list_skills。要读某份技能正文时调用 read_skill。
 用户要在对话里写今日工作总结时，必须先调用 read_skill，技能名 feishu-doc-writing，只根据已有日程/待办/对话材料写，不编。
+用户问 GitHub 连没连上、有哪些仓库、仓库状态或路线图总结时，必须先调用 github_status。问某仓库下一步、路线图、milestone 时必须调用 github_roadmap。要总结某仓库最近提交时，必须先调用 github_recent，再调用 read_skill，技能名 github-repo-summary，只根据工具原文在对话里说，不写飞书，不编没推送的改动。工具失败或没有 milestone issue 时原样告诉用户如何修复。
 不要语音。"""
 
 
@@ -107,6 +109,9 @@ def build_agent(host):
     tools = Toolkit()
     tools.register(**AGENDA_SPEC)
     tools.register(**TASKS_SPEC)
+    tools.register(**STATUS_SPEC)
+    tools.register(**ROADMAP_SPEC)
+    tools.register(**RECENT_SPEC)
     tools.register(**ERROR_LOG_SPEC)
     tools.register(**LIST_SKILLS_SPEC)
     tools.register(**READ_SKILL_SPEC)

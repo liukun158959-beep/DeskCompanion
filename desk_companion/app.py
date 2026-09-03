@@ -490,7 +490,15 @@ class App:
 
     def board_maa(self) -> dict:
         try:
-            return self.maa.snapshot()
+            return self.maa.board()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def board_github(self) -> dict:
+        from .github import board_snapshot
+
+        try:
+            return board_snapshot()
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
