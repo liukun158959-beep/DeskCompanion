@@ -60,7 +60,14 @@ DAILY_ASK = """【今日纸条】请先调用 get_today_agenda 和 get_open_task
 SUMMARY_ASK = """【今日工作总结】不要调用工具。只根据后面的今日材料写中文 Markdown，不要编造材料里没有的事。
 结构、红线和能用的语法以【技能规程】为准，不要另起章节，不要把整篇包进代码块。"""
 PAPER = "#FFF6EC"
+INK = "#2C241E"
+BLUSH = "#E8A598"
+DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
+DWMWA_BORDER_COLOR = 34
+DWMWA_CAPTION_COLOR = 35
+DWMWA_TEXT_COLOR = 36
 DWMWCP_ROUND = 2
 DWMWCP_DONOTROUND = 1
 MUTEX_NAME = "Local\\DeskCompanion.Kaltsit"
@@ -1026,6 +1033,8 @@ def _prepare_form(
             _set_corner_preference(window, DWMWCP_DONOTROUND)
     else:
         apply_app_window(form)
+        _paint_paper_chrome(window, form)
+        _set_corner_preference(window, DWMWCP_ROUND)
     form.Opacity = 0
     form.Hide()
     form.Visible = False
@@ -1040,6 +1049,56 @@ def _native_hwnd(window) -> int:
     if hasattr(handle, "ToInt64"):
         return as_hwnd(int(handle.ToInt64()))
     return as_hwnd(int(handle))
+
+
+def _rgb_colorref(hex_color: str) -> int:
+    h = hex_color.removeprefix("#")
+    if len(h) != 6:
+        raise RuntimeError(f"颜色必须是 #RRGGBB，收到 {hex_color!r}。")
+    r = int(h[0:2], 16)
+    g = int(h[2:4], 16)
+    b = int(h[4:6], 16)
+    return r | (g << 8) | (b << 16)
+
+
+def _set_dwm_int(window, attr: int, value: int) -> None:
+    hwnd = _native_hwnd(window)
+    buf = ctypes.c_int(value)
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+        hwnd,
+        attr,
+        ctypes.byref(buf),
+        ctypes.sizeof(buf),
+    )
+
+
+def _set_dwm_color(window, attr: int, hex_color: str) -> None:
+    hwnd = _native_hwnd(window)
+    buf = ctypes.c_uint(_rgb_colorref(hex_color))
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+        hwnd,
+        attr,
+        ctypes.byref(buf),
+        ctypes.sizeof(buf),
+    )
+
+
+def _paint_paper_chrome(window, form) -> None:
+    """深色系统主题会把标题栏刷黑。看板刷成奶油纸，不要品红抠图。"""
+    from System.Drawing import ColorTranslator
+
+    paper = ColorTranslator.FromHtml(PAPER)
+    form.BackColor = paper
+    browser = getattr(form, "browser", None)
+    control = getattr(browser, "webview", None) if browser is not None else None
+    if control is None:
+        raise RuntimeError("看板没有 WebView2 控件，无法刷纸色底。")
+    control.DefaultBackgroundColor = paper
+    _set_dwm_int(window, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, 0)
+    _set_dwm_int(window, DWMWA_USE_IMMERSIVE_DARK_MODE, 0)
+    _set_dwm_color(window, DWMWA_BORDER_COLOR, BLUSH)
+    _set_dwm_color(window, DWMWA_CAPTION_COLOR, PAPER)
+    _set_dwm_color(window, DWMWA_TEXT_COLOR, INK)
 
 
 def _set_corner_preference(window, preference: int) -> None:
