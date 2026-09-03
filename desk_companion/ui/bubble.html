@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>咕嘎</title>
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: #ff00ff;
+    }
+    body {
+      display: flex;
+    }
+    body[data-tail="down"] { padding-bottom: 16px; }
+    body[data-tail="left"] { padding-left: 16px; }
+    body[data-tail="right"] { padding-right: 16px; }
+    .shell {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      padding: 16px 18px 14px;
+      display: flex;
+      flex-direction: column;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(232, 184, 74, 0.22), transparent 42%),
+        var(--belly);
+      border: 3px solid var(--pen);
+      border-radius: var(--radius);
+      position: relative;
+    }
+    .tail {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: var(--belly);
+      border: 3px solid var(--pen);
+      pointer-events: none;
+    }
+    body[data-tail="down"] .tail {
+      left: var(--beak-pos, 50%);
+      bottom: -11px;
+      transform: translateX(-50%) rotate(45deg);
+      border-top: 0;
+      border-left: 0;
+    }
+    body[data-tail="left"] .tail {
+      top: var(--beak-pos, 36%);
+      left: -11px;
+      transform: translateY(-50%) rotate(45deg);
+      border-top: 0;
+      border-right: 0;
+    }
+    body[data-tail="right"] .tail {
+      top: var(--beak-pos, 36%);
+      right: -11px;
+      transform: translateY(-50%) rotate(45deg);
+      border-bottom: 0;
+      border-left: 0;
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 400;
+      color: var(--pen);
+      letter-spacing: 0.08em;
+    }
+    header h1::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 8px;
+      margin-right: 6px;
+      vertical-align: 1px;
+      background: var(--beak);
+      border-radius: 2px 2px 6px 6px;
+    }
+    header .close, header .clear { color: var(--muted); font-size: 12px; }
+    header .actions { display: flex; gap: 12px; }
+    #log {
+      flex: 1;
+      overflow: auto;
+      min-height: 0;
+      font-size: 16px;
+      line-height: 1.55;
+      color: var(--ink);
+    }
+    .msg { margin: 0 0 12px; }
+    .msg .who {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+    }
+    .msg.user .who { color: var(--user); }
+    .msg.err .body { color: var(--header); }
+    .msg .status {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .msg.streaming .body { white-space: pre-wrap; }
+    .msg.user .body {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .body { word-break: break-word; }
+    .body p { margin: 0 0 0.6em; }
+    .body p:last-child { margin-bottom: 0; }
+    .body h1, .body h2, .body h3, .body h4 {
+      margin: 0.4em 0 0.35em;
+      font-size: 16px;
+      color: var(--pen);
+    }
+    .body ul, .body ol { margin: 0 0 0.6em; padding-left: 1.3em; }
+    .body li { margin: 0.15em 0; }
+    .body code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      background: #f3ece3;
+      padding: 0 4px;
+      border-radius: 4px;
+    }
+    .body pre {
+      margin: 0 0 0.6em;
+      padding: 8px 10px;
+      background: #f3ece3;
+      border-radius: 8px;
+      overflow: auto;
+    }
+    .body pre code { padding: 0; background: none; }
+    .body a { color: #2a6f97; text-decoration: underline; }
+    .body blockquote {
+      margin: 0 0 0.6em;
+      padding: 8px 10px;
+      border-left: 4px solid var(--beak);
+      background: #fff6e0;
+      border-radius: 0 8px 8px 0;
+      color: var(--ink);
+    }
+    .body table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 0 0 0.6em;
+    }
+    .body th, .body td {
+      border: 1px solid var(--blush);
+      padding: 4px 6px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .body th { background: #f3ece3; }
+    #footer { flex-shrink: 0; margin-top: 12px; }
+    body[data-mode="notice"] #chat-bar,
+    body[data-mode="chat"] #ack { display: none; }
+    #ack {
+      display: block;
+      margin-left: auto;
+      background: var(--pen);
+      color: var(--belly);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-size: 14px;
+    }
+    #ack:hover { background: #2c3036; }
+    #chat-bar {
+      background: var(--card);
+      border: 1px solid var(--blush);
+      border-radius: 16px;
+      padding: 8px 12px;
+    }
+    #input {
+      width: 100%;
+      border: 0;
+      outline: none;
+      font: inherit;
+      background: transparent;
+      color: var(--ink);
+    }
+    .hint {
+      margin: 6px 0 0;
+      text-align: right;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    body[data-mode="notice"] .hint { display: none; }
+  </style>
+</head>
+<body data-mode="chat" data-tail="down">
+  <div class="shell">
+    <div class="tail" aria-hidden="true"></div>
+    <header>
+      <h1>咕嘎</h1>
+      <div class="actions">
+        <button class="clear" id="clear" type="button">清空</button>
+        <button class="close" id="close" type="button">关闭</button>
+      </div>
+    </header>
+    <div id="log"></div>
+    <div id="footer">
+      <button id="ack" type="button">我知道了</button>
+      <div id="chat-bar">
+        <input id="input" type="text" autocomplete="off" placeholder="跟咕嘎说…">
+      </div>
+      <p class="hint">回车发送 · Esc 关闭</p>
+    </div>
+  </div>
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/purify.min.js"></script>
+  <script>
+    const log = document.getElementById("log");
+    const input = document.getElementById("input");
+    const closeBtn = document.getElementById("close");
+    const clearBtn = document.getElementById("clear");
+    const ackBtn = document.getElementById("ack");
+    let streamEl = null;
+    let streamText = "";
+    let streamStatus = "";
+    let fitTimer = null;
+    const PURIFY = {
+      ALLOWED_TAGS: ["p", "br", "strong", "em", "b", "i", "ul", "ol", "li", "code", "pre", "h1", "h2", "h3", "h4", "a", "blockquote", "table", "thead", "tbody", "tr", "th", "td"],
+      ALLOWED_ATTR: ["href"],
+      ALLOWED_URI_REGEXP: /^https:/i,
+      FORBID_TAGS: ["img", "video", "audio", "iframe", "object", "embed", "form", "input", "script", "style"],
+    };
+
+    function parseMarkdown(text) {
+      const lib = window.marked;
+      if (!lib) {
+        throw new Error("缺少 marked，无法渲染咕嘎的 Markdown。");
+      }
+      const parse = typeof lib.parse === "function" ? lib.parse.bind(lib) : lib.marked;
+      if (typeof parse !== "function") {
+        throw new Error("marked 没有 parse，无法渲染 Markdown。");
+      }
+      return parse(text, { breaks: true, gfm: true, async: false });
+    }
+
+    function fillBody(el, role, text) {
+      if (role === "user") {
+        el.textContent = text;
+        return;
+      }
+      if (!window.DOMPurify) {
+        throw new Error("缺少 DOMPurify，无法安全渲染 Markdown。");
+      }
+      const dirty = parseMarkdown(text);
+      el.innerHTML = window.DOMPurify.sanitize(dirty, PURIFY);
+      el.querySelectorAll("a").forEach((a) => {
+        a.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          window.pywebview.api.open_url(a.getAttribute("href"));
+        });
+      });
+    }
+
+    function appendMessage(role, text, fit) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg " + role;
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = role === "user" ? "你" : "咕嘎";
+      const body = document.createElement("div");
+      body.className = "body";
+      fillBody(body, role, text);
+      wrap.appendChild(who);
+      wrap.appendChild(body);
+      log.appendChild(wrap);
+      log.scrollTop = log.scrollHeight;
+      if (fit !== false) requestFit();
+    }
+
+    function loadHistory(rows) {
+      log.innerHTML = "";
+      (rows || []).forEach((rec) => {
+        const role = rec.role === "user" ? "user" : (rec.role === "err" ? "err" : "pet");
+        appendMessage(role, rec.text, false);
+      });
+    }
+
+    function measureCard() {
+      const chars = (log.innerText || "").length;
+      const hasTable = !!log.querySelector("table");
+      const wantW = hasTable || chars > 80 ? 520 : 280;
+      const bodyStyle = getComputedStyle(document.body);
+      const shell = document.querySelector(".shell");
+      const shellStyle = getComputedStyle(shell);
+      const header = document.querySelector("header");
+      const headerStyle = getComputedStyle(header);
+      const footer = document.getElementById("footer");
+      const footerStyle = getComputedStyle(footer);
+      const padY =
+        (parseFloat(bodyStyle.paddingTop) || 0) +
+        (parseFloat(bodyStyle.paddingBottom) || 0) +
+        (parseFloat(shellStyle.paddingTop) || 0) +
+        (parseFloat(shellStyle.paddingBottom) || 0);
+      const borderY =
+        (parseFloat(shellStyle.borderTopWidth) || 0) +
+        (parseFloat(shellStyle.borderBottomWidth) || 0);
+      const headerH = header.offsetHeight + (parseFloat(headerStyle.marginBottom) || 0);
+      const footerH = footer.offsetHeight + (parseFloat(footerStyle.marginTop) || 0);
+      const wantH = Math.ceil(padY + borderY + headerH + footerH + log.scrollHeight);
+      return { w: wantW, h: wantH };
+    }
+
+    function requestFit() {
+      if (fitTimer) return;
+      fitTimer = setTimeout(() => {
+        fitTimer = null;
+        if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.fit_card) {
+          return;
+        }
+        const size = measureCard();
+        window.pywebview.api.fit_card(size.w, size.h);
+      }, 80);
+    }
+
+    function setBusy(busy) {
+      input.disabled = !!busy;
+      if (!busy && document.body.dataset.mode === "chat") input.focus();
+    }
+
+    function setTail(side, beak) {
+      const allowed = { left: 1, right: 1, down: 1 };
+      document.body.dataset.tail = allowed[side] ? side : "down";
+      const t = (typeof beak === "number" && isFinite(beak))
+        ? Math.min(0.85, Math.max(0.15, beak))
+        : (side === "down" ? 0.5 : 0.36);
+      document.body.style.setProperty("--beak-pos", (t * 100).toFixed(1) + "%");
+    }
+
+    function makePetWrap(role) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg " + role;
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = "咕嘎";
+      const status = document.createElement("div");
+      status.className = "status";
+      const body = document.createElement("div");
+      body.className = "body";
+      wrap.appendChild(who);
+      wrap.appendChild(status);
+      wrap.appendChild(body);
+      return wrap;
+    }
+
+    function beginStream() {
+      if (streamEl) endStream(streamText, "pet");
+      streamText = "";
+      streamStatus = "";
+      streamEl = makePetWrap("pet");
+      streamEl.classList.add("streaming");
+      streamEl.querySelector(".body").textContent = "…";
+      log.appendChild(streamEl);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function appendStream(piece) {
+      if (!piece) return;
+      if (!streamEl) beginStream();
+      streamText += piece;
+      streamEl.querySelector(".body").textContent = streamText;
+      log.scrollTop = log.scrollHeight;
+      requestFit();
+    }
+
+    function setStreamStatus(text) {
+      if (!streamEl) beginStream();
+      streamStatus = text || "";
+      const status = streamEl.querySelector(".status");
+      status.textContent = streamStatus;
+      if (!streamText) streamEl.querySelector(".body").textContent = "";
+      log.scrollTop = log.scrollHeight;
+      requestFit();
+    }
+
+    function endStream(finalText, role) {
+      const text = (finalText == null || finalText === "") ? streamText : finalText;
+      const kind = role === "err" ? "err" : "pet";
+      if (!streamEl) {
+        if (text) appendMessage(kind, text);
+        return;
+      }
+      streamEl.className = "msg " + kind;
+      streamEl.classList.remove("streaming");
+      const status = streamEl.querySelector(".status");
+      if (status) status.remove();
+      fillBody(streamEl.querySelector(".body"), kind, text || "");
+      streamEl = null;
+      streamText = "";
+      streamStatus = "";
+      log.scrollTop = log.scrollHeight;
+      requestFit();
+    }
+
+    function focusInput() {
+      if (document.body.dataset.mode === "chat") input.focus();
+    }
+
+    function showNotice() {
+      document.body.dataset.mode = "notice";
+    }
+
+    function showChat() {
+      document.body.dataset.mode = "chat";
+    }
+
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter") return;
+      const text = input.value.trim();
+      if (!text || input.disabled) return;
+      input.value = "";
+      window.pywebview.api.send_chat(text);
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") window.pywebview.api.close_bubble();
+    });
+    closeBtn.addEventListener("click", () => window.pywebview.api.close_bubble());
+    clearBtn.addEventListener("click", () => window.pywebview.api.clear_chat());
+    ackBtn.addEventListener("click", () => window.pywebview.api.ack_notice());
+    window.appendMessage = appendMessage;
+    window.loadHistory = loadHistory;
+    window.setBusy = setBusy;
+    window.setTail = setTail;
+    window.focusInput = focusInput;
+    window.showNotice = showNotice;
+    window.showChat = showChat;
+    window.requestFit = requestFit;
+    window.measureCard = measureCard;
+    window.beginStream = beginStream;
+    window.appendStream = appendStream;
+    window.endStream = endStream;
+    window.setStreamStatus = setStreamStatus;
+  </script>
+</body>
+</html>

@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>看板</title>
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    body { min-height: 100vh; overflow: hidden; }
+    .page {
+      height: 100vh;
+      padding: 18px 22px 16px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(232, 165, 152, 0.22), transparent 36%),
+        var(--paper);
+    }
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .title h1 { margin: 0; font-size: 24px; letter-spacing: 0.06em; }
+    .title p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tab {
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: var(--header);
+      border: 1px solid var(--blush);
+      background: #fff;
+    }
+    .tab.active {
+      background: linear-gradient(#f3b3a6, #c45c4a);
+      color: #fff;
+      border-color: transparent;
+    }
+    .actions { display: flex; gap: 10px; }
+    .btn {
+      border-radius: 12px;
+      padding: 8px 14px;
+      background: linear-gradient(#f3b3a6, #c45c4a);
+      color: #fff;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+    }
+    .btn.ghost {
+      background: #fff;
+      color: var(--header);
+      border: 1px solid var(--blush);
+      box-shadow: none;
+    }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .stage { flex: 1; min-height: 0; position: relative; }
+    .panel {
+      display: none;
+      height: 100%;
+      min-height: 0;
+    }
+    .panel.active { display: flex; flex-direction: column; }
+    .cols {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+      min-height: 0;
+    }
+    .today-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      grid-template-rows: minmax(0, 1.15fr) minmax(0, 0.95fr);
+      gap: 16px;
+      min-height: 0;
+    }
+    .today-summary { grid-column: 1 / -1; }
+    .meta { font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
+    #summary-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .col, .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px 16px 12px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .col h2, .card h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      letter-spacing: 0.16em;
+      color: var(--header);
+    }
+    .list { overflow: auto; flex: 1; }
+    .event, .task, .msg {
+      padding: 10px 4px 12px;
+      border-bottom: 1px dashed var(--line);
+    }
+    .event:last-child, .task:last-child, .msg:last-child { border-bottom: 0; }
+    .when { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+    .event .name, .task .name { font-size: 15px; }
+    .msg .who { font-size: 12px; font-weight: 700; color: var(--muted); }
+    .msg.user .who { color: var(--user); }
+    .msg .body { white-space: pre-wrap; word-break: break-word; font-size: 14px; }
+    .empty, .error, .ok, .hint {
+      font-size: 14px;
+      line-height: 1.6;
+      padding: 8px 4px;
+    }
+    .empty, .hint { color: var(--muted); }
+    .error { color: var(--header); white-space: pre-wrap; }
+    .ok { color: #2a6f55; white-space: pre-wrap; }
+    a.task { display: block; color: inherit; text-decoration: none; }
+    a.task:hover .name { color: var(--header); }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+    input[type="text"], input[type="password"], input[type="number"], select, textarea {
+      width: 100%;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--blush);
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+    textarea { min-height: 140px; resize: vertical; }
+    .readonly {
+      background: #f3ece3;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow: auto;
+      max-height: 160px;
+    }
+    #tool-contract {
+      flex: 1;
+      min-height: 280px;
+      max-height: none;
+    }
+    #panel-feishu .card {
+      overflow: hidden;
+    }
+    #feishu-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #feishu-body .status-box {
+      flex: 1;
+      min-height: 0;
+      max-height: none;
+      overflow: auto;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    #feishu-body .scope {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--line);
+      font-size: 12px;
+      line-height: 1.5;
+      word-break: break-all;
+    }
+    .form-actions { display: flex; gap: 10px; margin-top: 12px; flex-shrink: 0; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      flex: 1;
+    }
+    .stat { min-height: 0; }
+    .stat .num { font-size: 22px; margin: 0 0 8px; }
+    .check { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 14px; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .opt-list { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; }
+    .opt-list .check { margin: 2px 0; }
+    #panel-maa .card { overflow: auto; }
+    .board-foot {
+      flex-shrink: 0;
+      padding-top: 8px;
+    }
+    .log-link {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 0;
+    }
+    .log-link.alert { color: var(--header); font-weight: 700; }
+    .log-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(44, 36, 30, 0.32);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 8;
+      padding: 16px;
+    }
+    .log-overlay.open { display: flex; }
+    .log-sheet {
+      width: 100%;
+      max-height: 88%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 16px 16px 12px;
+    }
+    .log-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .log-sheet h2 { margin: 0; font-size: 14px; letter-spacing: 0.16em; color: var(--header); }
+    .log-highlights {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 10px 0 8px;
+      flex-shrink: 0;
+    }
+    .log-hl {
+      border-left: 3px solid var(--header);
+      padding: 6px 10px;
+      background: rgba(196, 92, 74, 0.1);
+      font-size: 13px;
+      text-align: left;
+    }
+    .log-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+    .log-chip {
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: var(--header);
+      border: 1px solid var(--blush);
+      background: #fff;
+    }
+    .log-chip.active {
+      background: linear-gradient(#f3b3a6, #c45c4a);
+      color: #fff;
+      border-color: transparent;
+    }
+    .log-cols {
+      flex: 1;
+      min-height: 160px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .log-col {
+      min-height: 0;
+      overflow: auto;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .log-col h3 {
+      margin: 0 0 4px;
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      color: var(--header);
+    }
+    .log-item {
+      padding: 8px 0 10px;
+      border-bottom: 1px dashed var(--line);
+    }
+    .log-item:last-child { border-bottom: 0; }
+    .log-item pre {
+      margin: 6px 0 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .skill-card {
+      padding: 10px 0 14px;
+      border-bottom: 1px dashed var(--line);
+    }
+    .skill-card:last-child { border-bottom: 0; }
+    .skill-card summary { cursor: pointer; font-size: 14px; }
+    .skill-card pre {
+      margin: 8px 0 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="pywebview-drag">
+      <div class="title">
+        <h1>看板</h1>
+        <p id="date"></p>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" id="close" type="button">关闭</button>
+      </div>
+    </header>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" type="button" data-tab="today">今日</button>
+      <button class="tab" type="button" data-tab="chat">对话</button>
+      <button class="tab" type="button" data-tab="memory">记忆</button>
+      <button class="tab" type="button" data-tab="persona">人设</button>
+      <button class="tab" type="button" data-tab="skills">技能</button>
+      <button class="tab" type="button" data-tab="model">模型</button>
+      <button class="tab" type="button" data-tab="usage">用量</button>
+      <button class="tab" type="button" data-tab="feishu">飞书</button>
+      <button class="tab" type="button" data-tab="maa">明日方舟</button>
+    </nav>
+    <div class="stage">
+      <section class="panel active" id="panel-today">
+        <div class="today-grid">
+          <article class="col">
+            <h2>日程</h2>
+            <div class="list" id="agenda"></div>
+          </article>
+          <article class="col">
+            <h2>未完成待办</h2>
+            <div class="list" id="tasks"></div>
+          </article>
+          <article class="col today-summary">
+            <h2>总结</h2>
+            <p class="meta" id="today-meta"></p>
+            <div id="summary-body"></div>
+          </article>
+        </div>
+        <div class="form-actions">
+          <button class="btn ghost" id="refresh-today" type="button">刷新</button>
+          <button class="btn" id="ask" type="button">让凯尔希讲</button>
+          <button class="btn" id="summary-gen" type="button">生成总结</button>
+          <button class="btn ghost" id="summary-doc" type="button">写入飞书文档</button>
+        </div>
+        <p class="hint" id="today-msg"></p>
+      </section>
+      <section class="panel" id="panel-chat">
+        <article class="card" style="flex:1">
+          <h2>历史对话</h2>
+          <div class="list" id="chat-log"></div>
+          <div class="form-actions">
+            <button class="btn ghost" id="clear-chat" type="button">清空对话</button>
+          </div>
+        </article>
+      </section>
+      <section class="panel" id="panel-memory">
+        <article class="card" style="flex:1">
+          <h2>会喂给模型的记忆</h2>
+          <p class="hint" id="memory-meta"></p>
+          <div class="list" id="memory-log"></div>
+        </article>
+      </section>
+      <section class="panel" id="panel-persona">
+        <article class="card" style="flex:1; overflow:auto">
+          <h2>性格 / 说话方式</h2>
+          <textarea id="persona"></textarea>
+          <h2 style="margin-top:16px">锁死的工具协议</h2>
+          <div class="readonly" id="tool-contract"></div>
+          <div class="row2">
+            <div>
+              <label for="history-n">喂给模型的最近对话条数</label>
+              <input id="history-n" type="number" min="0" step="1">
+            </div>
+            <div>
+              <label for="max-steps">单次最多工具轮次 max_steps</label>
+              <input id="max-steps" type="number" min="1" step="1">
+            </div>
+          </div>
+          <label class="check"><input id="nudge" type="checkbox"> 主动搭话</label>
+          <div class="form-actions">
+            <button class="btn" id="save-persona" type="button">保存人设</button>
+          </div>
+          <p class="hint" id="persona-msg"></p>
+        </article>
+      </section>
+      <section class="panel" id="panel-skills">
+        <article class="card" style="flex:1; overflow:auto">
+          <h2>技能库</h2>
+          <p class="hint">来自 desk-companion/skills 下每份 SKILL.md。凯尔希分析日志会读这些规程。不是插件市场。</p>
+          <div id="skills-body"></div>
+        </article>
+      </section>
+      <section class="panel" id="panel-model">
+        <article class="card" style="flex:1; overflow:auto">
+          <h2>模型接口</h2>
+          <label for="provider">提供商</label>
+          <select id="provider"></select>
+          <label for="base-url">API 地址</label>
+          <input id="base-url" type="text" autocomplete="off">
+          <label for="model-name">模型名</label>
+          <input id="model-name" type="text" autocomplete="off">
+          <label for="api-key">API Key</label>
+          <input id="api-key" type="password" autocomplete="off" placeholder="">
+          <div class="row2">
+            <div>
+              <label for="price-in">输入单价（元 / 百万 token）</label>
+              <input id="price-in" type="number" min="0" step="0.0001">
+            </div>
+            <div>
+              <label for="price-out">输出单价（元 / 百万 token）</label>
+              <input id="price-out" type="number" min="0" step="0.0001">
+            </div>
+          </div>
+          <p class="hint">单价按模型名分别保存。都留空则只记 token，不算钱。</p>
+          <div class="form-actions">
+            <button class="btn" id="save-model" type="button">保存</button>
+            <button class="btn ghost" id="test-model" type="button">测试连通</button>
+          </div>
+          <p class="hint" id="model-msg"></p>
+        </article>
+      </section>
+      <section class="panel" id="panel-usage">
+        <div class="stats">
+          <article class="card stat">
+            <h2>今日</h2>
+            <p class="num" id="u-today"></p>
+            <div class="list" id="u-today-d"></div>
+          </article>
+          <article class="card stat">
+            <h2>本月</h2>
+            <p class="num" id="u-month"></p>
+            <div class="list" id="u-month-d"></div>
+          </article>
+          <article class="card stat">
+            <h2>累计</h2>
+            <p class="num" id="u-total"></p>
+            <div class="list" id="u-total-d"></div>
+          </article>
+        </div>
+        <p class="hint" id="usage-msg"></p>
+      </section>
+      <section class="panel" id="panel-feishu">
+        <article class="card" style="flex:1">
+          <h2>飞书连接</h2>
+          <div id="feishu-body"></div>
+          <div class="form-actions">
+            <button class="btn ghost" id="feishu-refresh" type="button">刷新</button>
+            <button class="btn" id="feishu-login" type="button">登录</button>
+            <button class="btn ghost" id="feishu-logout" type="button">退出</button>
+          </div>
+          <p class="hint" id="feishu-msg"></p>
+        </article>
+      </section>
+      <section class="panel" id="panel-maa">
+        <article class="card" style="flex:1">
+          <h2>一键长草（与 MAA 同名）</h2>
+          <p class="hint">勾选这次要跑的项。关卡、吃药、基建班表仍在 MAA 齿轮里。先授权一次计划任务，之后打开 PC 客户端不再弹 UAC。</p>
+          <p class="hint">清日常结束会更新仓库（强制带上，不是第 9 个勾选）。八项都不勾也仍会只跑扫仓。</p>
+          <div class="opt-list" id="maa-options"></div>
+          <h2 style="margin-top:16px">PC 客户端路径</h2>
+          <label for="maa-launcher">鹰角启动器 Launcher.exe</label>
+          <input id="maa-launcher" type="text" autocomplete="off">
+          <label for="maa-game">明日方舟 Arknights.exe（不要填终末地或模拟器）</label>
+          <input id="maa-game" type="text" autocomplete="off">
+          <label for="maa-exe">官方 MAA.exe</label>
+          <input id="maa-exe" type="text" autocomplete="off">
+          <label for="maa-timeout">等待游戏窗口秒数</label>
+          <input id="maa-timeout" type="number" min="10" step="1">
+          <div class="form-actions">
+            <button class="btn ghost" id="maa-save" type="button">保存路径</button>
+            <button class="btn ghost" id="maa-auth" type="button">授权一次开游戏（之后不再弹 UAC）</button>
+            <button class="btn" id="maa-open" type="button">打开游戏</button>
+            <button class="btn" id="maa-start" type="button">开始清日常</button>
+            <button class="btn ghost" id="maa-stop" type="button">停止</button>
+          </div>
+          <p class="hint" id="maa-msg"></p>
+        </article>
+      </section>
+    </div>
+    <footer class="board-foot">
+      <button class="log-link" id="log-link" type="button">日志</button>
+    </footer>
+    <div class="log-overlay" id="log-overlay">
+      <div class="log-sheet">
+        <div class="log-head">
+          <h2>日志</h2>
+          <div class="form-actions" style="margin-top:0">
+            <button class="btn" id="log-ask" type="button">让凯尔希分析</button>
+            <button class="btn ghost" id="log-close" type="button">关闭</button>
+          </div>
+        </div>
+        <p class="error" id="log-error" hidden></p>
+        <div class="log-highlights" id="log-highlights"></div>
+        <div class="log-filters" id="log-source-filters"></div>
+        <div class="log-filters" id="log-kind-filters"></div>
+        <div class="log-cols">
+          <article class="log-col">
+            <h3>桌宠</h3>
+            <p class="meta" id="log-desk-path"></p>
+            <div id="log-desk"></div>
+          </article>
+          <article class="log-col">
+            <h3>MAA</h3>
+            <p class="meta" id="log-maa-path"></p>
+            <div id="log-maa"></div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const dateEl = document.getElementById("date");
+    const agendaEl = document.getElementById("agenda");
+    const tasksEl = document.getElementById("tasks");
+    const summaryEl = document.getElementById("summary-body");
+    const todayMetaEl = document.getElementById("today-meta");
+    let providers = [];
+    let fillingProvider = false;
+    let feishuCache = null;
+    let todayCache = null;
+
+    function todayLabel() {
+      const d = new Date();
+      const w = "日一二三四五六"[d.getDay()];
+      return d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日  周" + w;
+    }
+
+    function api() {
+      if (!window.pywebview || !window.pywebview.api) {
+        throw new Error("看板接口还没就绪。");
+      }
+      return window.pywebview.api;
+    }
+
+    function showTab(id) {
+      document.querySelectorAll(".tab").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === id);
+      });
+      document.querySelectorAll(".panel").forEach((panel) => {
+        panel.classList.toggle("active", panel.id === "panel-" + id);
+      });
+      if (id === "today") loadToday(false);
+      if (id === "chat") loadChat();
+      if (id === "memory") loadMemory();
+      if (id === "persona") loadPersona();
+      if (id === "skills") loadSkills();
+      if (id === "model") loadModel();
+      if (id === "usage") loadUsage();
+      if (id === "feishu") loadFeishu(false);
+      if (id === "maa") loadMaa();
+    }
+
+    function renderSection(el, section, emptyText, kind) {
+      el.innerHTML = "";
+      if (!section || !section.ok) {
+        const p = document.createElement("p");
+        p.className = "error";
+        p.textContent = (section && section.error) || "加载失败";
+        el.appendChild(p);
+        if (section && !section.ok) {
+          const btn = document.createElement("button");
+          btn.className = "btn ghost";
+          btn.type = "button";
+          btn.textContent = "去飞书页";
+          btn.addEventListener("click", () => showTab("feishu"));
+          el.appendChild(btn);
+        }
+        return;
+      }
+      const items = section.items || [];
+      if (!items.length) {
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = emptyText;
+        el.appendChild(p);
+        return;
+      }
+      for (const item of items) {
+        if (kind === "event") {
+          const div = document.createElement("div");
+          div.className = "event";
+          const when = document.createElement("div");
+          when.className = "when";
+          when.textContent = item.end ? (item.start + " – " + item.end) : item.start;
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = item.summary;
+          div.appendChild(when);
+          div.appendChild(name);
+          el.appendChild(div);
+        } else {
+          const node = item.url ? document.createElement("a") : document.createElement("div");
+          node.className = "task";
+          if (item.url) node.href = item.url;
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = item.summary;
+          if (item.due_at) {
+            const when = document.createElement("div");
+            when.className = "when";
+            when.textContent = "截止 " + item.due_at.replace("T", " ").slice(0, 16);
+            node.appendChild(when);
+          }
+          node.appendChild(name);
+          if (item.url) {
+            node.addEventListener("click", (ev) => {
+              ev.preventDefault();
+              api().open_url(item.url);
+            });
+          }
+          el.appendChild(node);
+        }
+      }
+    }
+
+    function todayDateKey() {
+      const d = new Date();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return d.getFullYear() + "-" + m + "-" + day;
+    }
+
+    function shortTime(iso) {
+      if (!iso) return "";
+      const t = iso.replace("T", " ");
+      return t.length >= 16 ? t.slice(0, 16) : t;
+    }
+
+    function renderToday(data) {
+      renderSection(agendaEl, data.agenda, "今天没有日程", "event");
+      renderSection(tasksEl, data.tasks, "没有未完成待办", "task");
+      const bits = [];
+      if (data.fetched_at) bits.push("日程缓存于 " + shortTime(data.fetched_at));
+      if (data.summary_at) bits.push("总结于 " + shortTime(data.summary_at));
+      todayMetaEl.textContent = bits.join("  ·  ");
+      summaryEl.innerHTML = "";
+      if (data.summary) {
+        const body = document.createElement("div");
+        body.textContent = data.summary;
+        summaryEl.appendChild(body);
+        if (data.doc_url) {
+          const link = document.createElement("p");
+          link.className = "hint";
+          const a = document.createElement("a");
+          a.href = data.doc_url;
+          a.textContent = "上次写入的飞书文档";
+          a.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            api().open_url(data.doc_url);
+          });
+          link.appendChild(a);
+          summaryEl.appendChild(link);
+        }
+      } else {
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = "还没有总结。点「生成总结」用模型根据今日日程、待办和对话来写。";
+        summaryEl.appendChild(p);
+      }
+    }
+
+    async function loadToday(force) {
+      dateEl.textContent = todayLabel();
+      if (!force && todayCache && todayCache.date === todayDateKey()) {
+        renderToday(todayCache);
+        return;
+      }
+      agendaEl.innerHTML = '<p class="empty">正在读取…</p>';
+      tasksEl.innerHTML = '<p class="empty">正在读取…</p>';
+      summaryEl.innerHTML = '<p class="empty">正在读取…</p>';
+      todayMetaEl.textContent = "";
+      try {
+        const data = await api().load_board(!!force);
+        if (!data || data.ok === false) {
+          todayCache = null;
+          const err = (data && data.error) || "加载失败";
+          agendaEl.innerHTML = "";
+          tasksEl.innerHTML = "";
+          summaryEl.innerHTML = "";
+          const p = document.createElement("p");
+          p.className = "error";
+          p.textContent = err;
+          agendaEl.appendChild(p);
+          return;
+        }
+        todayCache = data;
+        renderToday(data);
+      } catch (exc) {
+        todayCache = null;
+        agendaEl.innerHTML = "";
+        tasksEl.innerHTML = "";
+        summaryEl.innerHTML = "";
+        const p = document.createElement("p");
+        p.className = "error";
+        p.textContent = String(exc);
+        agendaEl.appendChild(p);
+      }
+    }
+
+    function renderMsgList(box, items) {
+      box.innerHTML = "";
+      for (const rec of items) {
+        const wrap = document.createElement("div");
+        wrap.className = "msg " + (rec.role === "user" ? "user" : "pet");
+        const who = document.createElement("div");
+        who.className = "who";
+        who.textContent = (rec.role === "user" ? "你" : "凯尔希") + (rec.ts ? "  " + rec.ts.replace("T", " ") : "");
+        const body = document.createElement("div");
+        body.className = "body";
+        body.textContent = rec.text;
+        wrap.appendChild(who);
+        wrap.appendChild(body);
+        box.appendChild(wrap);
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function loadChat() {
+      const box = document.getElementById("chat-log");
+      box.innerHTML = '<p class="empty">正在读取…</p>';
+      const data = await api().load_chat_log();
+      box.innerHTML = "";
+      if (!data.ok) {
+        box.innerHTML = '<p class="error"></p>';
+        box.firstChild.textContent = data.error || "读取失败";
+        return;
+      }
+      const items = data.items || [];
+      if (!items.length) {
+        box.innerHTML = '<p class="empty">还没有对话。</p>';
+        return;
+      }
+      renderMsgList(box, items);
+    }
+
+    async function loadMemory() {
+      const box = document.getElementById("memory-log");
+      const meta = document.getElementById("memory-meta");
+      box.innerHTML = '<p class="empty">正在读取…</p>';
+      meta.textContent = "";
+      const data = await api().load_memory();
+      box.innerHTML = "";
+      if (!data.ok) {
+        box.innerHTML = '<p class="error"></p>';
+        box.firstChild.textContent = data.error || "读取失败";
+        return;
+      }
+      const n = data.history_n;
+      const total = data.total || 0;
+      const items = data.items || [];
+      if (n === 0) {
+        meta.textContent = "人设页把喂给模型的条数设成了 0，当前不会把对话写进记忆窗口。全部历史在「对话」页。";
+        box.innerHTML = '<p class="empty">没有会喂给模型的对话。</p>';
+        return;
+      }
+      meta.textContent = "凯尔希没有另一套记忆库。每次说话前会把 chat.jsonl 去重后最多 "
+        + n + " 条灌进模型（相同正文只留最近一次）。全部对话 " + total + " 条，下面是当前窗口里的 "
+        + items.length + " 条。条数在「人设」页改。";
+      if (!items.length) {
+        box.innerHTML = '<p class="empty">还没有对话，窗口是空的。</p>';
+        return;
+      }
+      renderMsgList(box, items);
+    }
+
+    async function loadPersona() {
+      const data = await api().load_persona();
+      const msg = document.getElementById("persona-msg");
+      if (!data.ok) {
+        msg.className = "error";
+        msg.textContent = data.error || "读取失败";
+        return;
+      }
+      document.getElementById("persona").value = data.persona || "";
+      document.getElementById("tool-contract").textContent = data.tool_contract || "";
+      document.getElementById("history-n").value = data.history_n;
+      document.getElementById("max-steps").value = data.max_steps;
+      document.getElementById("nudge").checked = !!data.nudge_enabled;
+      msg.className = "hint";
+      msg.textContent = "";
+    }
+
+    async function loadSkills() {
+      const box = document.getElementById("skills-body");
+      box.innerHTML = '<p class="empty">正在读取…</p>';
+      try {
+        const data = await api().load_skills();
+        box.innerHTML = "";
+        if (!data || data.ok === false) {
+          const p = document.createElement("p");
+          p.className = "error";
+          p.textContent = (data && data.error) || "读取失败";
+          box.appendChild(p);
+          return;
+        }
+        const items = data.items || [];
+        if (!items.length) {
+          const p = document.createElement("p");
+          p.className = "error";
+          p.textContent = "技能目录是空的。在 desk-companion/skills/<名>/SKILL.md 放入技能。";
+          box.appendChild(p);
+          return;
+        }
+        for (const item of items) {
+          const details = document.createElement("details");
+          details.className = "skill-card";
+          details.open = true;
+          const summary = document.createElement("summary");
+          summary.textContent = item.id + " — " + item.description;
+          const path = document.createElement("p");
+          path.className = "meta";
+          path.textContent = item.path || "";
+          const pre = document.createElement("pre");
+          pre.textContent = item.body || "";
+          details.appendChild(summary);
+          details.appendChild(path);
+          details.appendChild(pre);
+          box.appendChild(details);
+        }
+      } catch (exc) {
+        box.innerHTML = "";
+        const p = document.createElement("p");
+        p.className = "error";
+        p.textContent = String(exc);
+        box.appendChild(p);
+      }
+    }
+
+    async function loadModel() {
+      const data = await api().load_model();
+      const msg = document.getElementById("model-msg");
+      if (!data.ok) {
+        msg.className = "error";
+        msg.textContent = data.error || "读取失败";
+        return;
+      }
+      providers = data.providers || [];
+      const sel = document.getElementById("provider");
+      fillingProvider = true;
+      sel.innerHTML = "";
+      const custom = document.createElement("option");
+      custom.value = "";
+      custom.textContent = "自定义";
+      sel.appendChild(custom);
+      for (const item of providers) {
+        const opt = document.createElement("option");
+        opt.value = item.id;
+        opt.textContent = item.name;
+        sel.appendChild(opt);
+      }
+      const match = providers.find((p) => p.base_url === data.base_url);
+      sel.value = match ? match.id : "";
+      fillingProvider = false;
+      document.getElementById("base-url").value = data.base_url || "";
+      document.getElementById("model-name").value = data.model || "";
+      const key = document.getElementById("api-key");
+      key.value = "";
+      key.placeholder = data.has_key ? "已保存，留空则不改" : "必填";
+      document.getElementById("price-in").value =
+        data.input_cny_per_mtok == null ? "" : data.input_cny_per_mtok;
+      document.getElementById("price-out").value =
+        data.output_cny_per_mtok == null ? "" : data.output_cny_per_mtok;
+      if (data.agent_ok) {
+        msg.className = "ok";
+        msg.textContent = "模型已接通。";
+      } else {
+        msg.className = "error";
+        msg.textContent = data.agent_error || "还没接上模型。";
+      }
+    }
+
+    function fillUsageCard(prefix, bucket) {
+      const money = document.getElementById("u-" + prefix);
+      const detail = document.getElementById("u-" + prefix + "-d");
+      const cost = bucket.cost_cny || 0;
+      money.textContent = cost > 0 ? ("¥ " + cost.toFixed(4)) : "—";
+      detail.innerHTML =
+        "<p>输入 " + bucket.input_tokens +
+        " · 输出 " + bucket.output_tokens +
+        " · 共 " + bucket.total_tokens +
+        " token</p><p>对话 " + bucket.runs + " 次</p>";
+    }
+
+    async function loadUsage() {
+      const data = await api().load_usage();
+      const msg = document.getElementById("usage-msg");
+      if (!data.ok) {
+        msg.className = "error";
+        msg.textContent = data.error || "读取失败";
+        return;
+      }
+      fillUsageCard("today", data.today);
+      fillUsageCard("month", data.month);
+      fillUsageCard("total", data.total);
+      if (data.unpriced && !data.priced) {
+        msg.className = "hint";
+        msg.textContent = "未填单价，只统计 token。到「模型」页填写该模型的输入/输出单价。";
+      } else if (data.unpriced) {
+        msg.className = "hint";
+        msg.textContent = "有些对话未填单价，金额只含已标价的部分。";
+      } else {
+        msg.className = "hint";
+        msg.textContent = "金额按你在「模型」页填的单价估算，不是账单。";
+      }
+    }
+
+    function feishuLine(ok, yes, no) {
+      return ok ? yes : no;
+    }
+
+    function renderFeishu(data) {
+      const body = document.getElementById("feishu-body");
+      const msg = document.getElementById("feishu-msg");
+      const lines = [];
+      lines.push("lark-cli：" + (data.installed ? "已找到" : "未安装"));
+      if (data.logged_in) {
+        lines.push("登录：" + (data.user_name ? ("已登录（" + data.user_name + "）") : "已登录"));
+      } else {
+        lines.push("登录：未登录");
+      }
+      if (data.identity) lines.push("身份：" + data.identity);
+      lines.push("日历权限：" + feishuLine(data.has_calendar, "有", "没有"));
+      lines.push("待办权限：" + feishuLine(data.has_task, "有", "没有"));
+      lines.push("云文档权限：" + feishuLine(data.has_docs, "有", "没有"));
+      if (data.login_busy) lines.push("正在等浏览器授权…");
+      body.innerHTML = "";
+      const box = document.createElement("div");
+      box.className = "readonly status-box";
+      const summary = document.createElement("div");
+      summary.textContent = lines.join("\n");
+      box.appendChild(summary);
+      if (data.scope) {
+        const scope = document.createElement("div");
+        scope.className = "scope";
+        scope.textContent = "当前 scope：\n" + data.scope;
+        box.appendChild(scope);
+      }
+      body.appendChild(box);
+      if (data.hint) {
+        const hint = document.createElement("p");
+        hint.className = "hint";
+        hint.textContent = data.hint;
+        body.appendChild(hint);
+      }
+      const err = data.error || data.login_error;
+      if (err) {
+        msg.className = "error";
+        msg.textContent = err;
+      } else {
+        msg.className = "hint";
+        msg.textContent = "";
+      }
+    }
+
+    async function loadFeishu(force) {
+      if (!force && feishuCache) {
+        renderFeishu(feishuCache);
+        return;
+      }
+      const body = document.getElementById("feishu-body");
+      const msg = document.getElementById("feishu-msg");
+      body.innerHTML = '<p class="empty">正在检查…</p>';
+      msg.className = "hint";
+      msg.textContent = "";
+      const data = await api().load_feishu();
+      feishuCache = data;
+      renderFeishu(data);
+    }
+
+    document.getElementById("tabs").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".tab");
+      if (!btn) return;
+      showTab(btn.dataset.tab);
+    });
+    document.getElementById("ask").addEventListener("click", () => api().ask_today());
+    document.getElementById("refresh-today").addEventListener("click", () => loadToday(true));
+    document.getElementById("summary-gen").addEventListener("click", async () => {
+      const msg = document.getElementById("today-msg");
+      const btn = document.getElementById("summary-gen");
+      btn.disabled = true;
+      msg.className = "hint";
+      msg.textContent = "正在根据今日材料写总结…";
+      try {
+        const data = await api().generate_today_summary();
+        if (data && data.ok) {
+          todayCache = data;
+          renderToday(data);
+          msg.className = "ok";
+          msg.textContent = data.message || "总结已生成。";
+        } else {
+          msg.className = "error";
+          msg.textContent = (data && data.error) || "生成失败";
+        }
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    document.getElementById("summary-doc").addEventListener("click", async () => {
+      const msg = document.getElementById("today-msg");
+      const btn = document.getElementById("summary-doc");
+      btn.disabled = true;
+      msg.className = "hint";
+      msg.textContent = "正在把总结写入飞书文档…";
+      try {
+        const data = await api().write_today_summary_doc();
+        if (data && data.ok) {
+          todayCache = data;
+          renderToday(data);
+          msg.className = "ok";
+          msg.textContent = data.message || "已写入飞书。";
+        } else {
+          msg.className = "error";
+          msg.textContent = (data && data.error) || "写入失败";
+        }
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    document.getElementById("close").addEventListener("click", () => api().close_board());
+    document.getElementById("clear-chat").addEventListener("click", async () => {
+      const data = await api().clear_chat();
+      const box = document.getElementById("chat-log");
+      if (!data || data.ok === false) {
+        box.innerHTML = '<p class="error"></p>';
+        box.firstChild.textContent = (data && data.error) || "清空失败";
+        return;
+      }
+      loadChat();
+    });
+    document.getElementById("save-persona").addEventListener("click", async () => {
+      const msg = document.getElementById("persona-msg");
+      const data = await api().save_persona({
+        persona: document.getElementById("persona").value,
+        history_n: Number(document.getElementById("history-n").value),
+        max_steps: Number(document.getElementById("max-steps").value),
+        nudge_enabled: document.getElementById("nudge").checked,
+      });
+      msg.className = data.ok ? "ok" : "error";
+      msg.textContent = data.ok ? data.message : data.error;
+    });
+    document.getElementById("provider").addEventListener("change", () => {
+      if (fillingProvider) return;
+      const id = document.getElementById("provider").value;
+      const item = providers.find((p) => p.id === id);
+      if (!item) return;
+      document.getElementById("base-url").value = item.base_url;
+      document.getElementById("model-name").value = item.default_model;
+    });
+    document.getElementById("save-model").addEventListener("click", async () => {
+      const msg = document.getElementById("model-msg");
+      const data = await api().save_model({
+        base_url: document.getElementById("base-url").value,
+        model: document.getElementById("model-name").value,
+        api_key: document.getElementById("api-key").value,
+        input_cny_per_mtok: document.getElementById("price-in").value,
+        output_cny_per_mtok: document.getElementById("price-out").value,
+      });
+      msg.className = data.ok ? "ok" : "error";
+      msg.textContent = data.ok ? data.message : data.error;
+      if (data.ok) {
+        document.getElementById("api-key").value = "";
+        loadModel();
+      }
+    });
+    document.getElementById("test-model").addEventListener("click", async () => {
+      const msg = document.getElementById("model-msg");
+      msg.className = "hint";
+      msg.textContent = "正在测试…";
+      const data = await api().test_model({
+        base_url: document.getElementById("base-url").value,
+        model: document.getElementById("model-name").value,
+        api_key: document.getElementById("api-key").value,
+      });
+      msg.className = data.ok ? "ok" : "error";
+      msg.textContent = data.ok ? data.message : data.error;
+    });
+    document.getElementById("feishu-refresh").addEventListener("click", () => loadFeishu(true));
+    document.getElementById("feishu-login").addEventListener("click", async () => {
+      const msg = document.getElementById("feishu-msg");
+      try {
+        const data = await api().feishu_login();
+        msg.className = data.ok ? "ok" : "error";
+        msg.textContent = data.message || data.error || "";
+        if (data.url) {
+          const extra = document.createElement("p");
+          extra.className = "hint";
+          extra.textContent = data.url;
+          document.getElementById("feishu-body").appendChild(extra);
+        }
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    });
+    document.getElementById("feishu-logout").addEventListener("click", async () => {
+      const msg = document.getElementById("feishu-msg");
+      try {
+        const data = await api().feishu_logout();
+        msg.className = data.ok ? "ok" : "error";
+        msg.textContent = data.message || data.error || "";
+        await loadFeishu(true);
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    });
+
+    function maaMsg(data, fallbackOk) {
+      const msg = document.getElementById("maa-msg");
+      if (!data || data.ok === false) {
+        msg.className = "error";
+        msg.textContent = (data && data.error) || "失败";
+        return;
+      }
+      msg.className = data.status === "error" ? "error" : "ok";
+      msg.textContent = data.message || fallbackOk || "";
+    }
+
+    function renderMaa(data) {
+      const box = document.getElementById("maa-options");
+      box.innerHTML = "";
+      if (!data || data.ok === false) {
+        const p = document.createElement("p");
+        p.className = "error";
+        p.textContent = (data && data.error) || "加载失败";
+        box.appendChild(p);
+        return;
+      }
+      for (const item of data.options || []) {
+        const label = document.createElement("label");
+        label.className = "check";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = Boolean(item.checked);
+        input.dataset.id = item.id;
+        input.addEventListener("change", async () => {
+          try {
+            const next = await api().save_maa_option({
+              id: item.id,
+              checked: input.checked,
+            });
+            renderMaa(next);
+            maaMsg(next, "勾选已保存。");
+          } catch (exc) {
+            input.checked = !input.checked;
+            maaMsg({ ok: false, error: String(exc) });
+          }
+        });
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(item.label));
+        box.appendChild(label);
+      }
+      document.getElementById("maa-launcher").value = data.launcher_exe || "";
+      document.getElementById("maa-game").value = data.game_exe || "";
+      document.getElementById("maa-exe").value = data.maa_exe || "";
+      document.getElementById("maa-timeout").value = String(data.open_timeout_sec || 90);
+      const msg = document.getElementById("maa-msg");
+      if (data.message) {
+        msg.className = data.status === "error" ? "error" : "hint";
+        msg.textContent = data.message;
+      }
+    }
+
+    async function loadMaa() {
+      try {
+        const data = await api().load_maa();
+        renderMaa(data);
+        if (data && data.ok === false) {
+          maaMsg(data);
+        }
+      } catch (exc) {
+        renderMaa({ ok: false, error: String(exc) });
+        maaMsg({ ok: false, error: String(exc) });
+      }
+    }
+
+    document.getElementById("maa-save").addEventListener("click", async () => {
+      try {
+        const data = await api().save_maa_paths({
+          launcher_exe: document.getElementById("maa-launcher").value,
+          game_exe: document.getElementById("maa-game").value,
+          maa_exe: document.getElementById("maa-exe").value,
+          open_timeout_sec: Number(document.getElementById("maa-timeout").value),
+        });
+        renderMaa(data);
+        maaMsg(data, "路径已保存。");
+      } catch (exc) {
+        maaMsg({ ok: false, error: String(exc) });
+      }
+    });
+    document.getElementById("maa-auth").addEventListener("click", async () => {
+      try {
+        const data = await api().maa_authorize();
+        renderMaa(data);
+        maaMsg(data, "授权完成。");
+      } catch (exc) {
+        maaMsg({ ok: false, error: String(exc) });
+      }
+    });
+    document.getElementById("maa-open").addEventListener("click", async () => {
+      try {
+        const data = await api().maa_open_game();
+        maaMsg(data, "正在打开游戏。");
+      } catch (exc) {
+        maaMsg({ ok: false, error: String(exc) });
+      }
+    });
+    document.getElementById("maa-start").addEventListener("click", async () => {
+      try {
+        const data = await api().maa_start_daily();
+        maaMsg(data, "正在准备清日常。");
+      } catch (exc) {
+        maaMsg({ ok: false, error: String(exc) });
+      }
+    });
+    document.getElementById("maa-stop").addEventListener("click", async () => {
+      try {
+        const data = await api().maa_stop();
+        maaMsg(data, "已请求停止。");
+      } catch (exc) {
+        maaMsg({ ok: false, error: String(exc) });
+      }
+    });
+
+    async function reload() {
+      dateEl.textContent = todayLabel();
+      const active = document.querySelector(".tab.active");
+      showTab(active ? active.dataset.tab : "today");
+      loadLogStatus();
+    }
+
+    const LOG_KIND_LABEL = {
+      crash: "崩溃",
+      watchdog: "看门狗",
+      daily: "清日常",
+      task_error: "任务出错",
+      depot: "仓库",
+      screenshot: "截图路径",
+    };
+    const LOG_SOURCE_LABEL = {
+      desk: "桌宠",
+      maa_gui: "MAA GUI",
+      maa_depot: "MAA 仓库",
+    };
+    let logSnap = null;
+    let logSource = "all";
+    let logKind = "all";
+
+    async function loadLogStatus() {
+      const link = document.getElementById("log-link");
+      try {
+        const data = await api().load_log_errors();
+        const alert = !!(data && data.ok !== false && data.alert);
+        link.classList.toggle("alert", alert);
+      } catch (exc) {
+        link.classList.add("alert");
+      }
+    }
+
+    function logItems() {
+      const desk = ((logSnap && logSnap.desk) || {}).items || [];
+      const gui = ((logSnap && logSnap.maa_gui) || {}).items || [];
+      const depot = ((logSnap && logSnap.maa_depot) || {}).items || [];
+      return desk.concat(gui, depot);
+    }
+
+    function itemVisible(item) {
+      if (logSource === "desk" && item.source !== "desk") return false;
+      if (logSource === "maa" && item.source === "desk") return false;
+      if (logKind !== "all" && item.kind !== logKind) return false;
+      return true;
+    }
+
+    function makeChip(label, active, onClick) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "log-chip" + (active ? " active" : "");
+      btn.textContent = label;
+      btn.addEventListener("click", onClick);
+      return btn;
+    }
+
+    function renderLogFilters() {
+      const sourceBox = document.getElementById("log-source-filters");
+      const kindBox = document.getElementById("log-kind-filters");
+      sourceBox.innerHTML = "";
+      kindBox.innerHTML = "";
+      const sources = [
+        ["all", "全部"],
+        ["desk", "桌宠"],
+        ["maa", "MAA"],
+      ];
+      for (const [id, label] of sources) {
+        sourceBox.appendChild(makeChip(label, logSource === id, () => {
+          logSource = id;
+          renderLogSheet();
+        }));
+      }
+      const kinds = [];
+      for (const item of logItems()) {
+        if (kinds.indexOf(item.kind) < 0) kinds.push(item.kind);
+      }
+      kindBox.appendChild(makeChip("全部类型", logKind === "all", () => {
+        logKind = "all";
+        renderLogSheet();
+      }));
+      for (const kind of kinds) {
+        kindBox.appendChild(makeChip(LOG_KIND_LABEL[kind] || kind, logKind === kind, () => {
+          logKind = kind;
+          renderLogSheet();
+        }));
+      }
+    }
+
+    function renderLogList(el, items, emptyText) {
+      el.innerHTML = "";
+      const shown = items.filter(itemVisible);
+      if (!shown.length) {
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = emptyText;
+        el.appendChild(p);
+        return;
+      }
+      for (const item of shown) {
+        const div = document.createElement("div");
+        div.className = "log-item";
+        const when = document.createElement("div");
+        when.className = "when";
+        const src = LOG_SOURCE_LABEL[item.source] || item.source;
+        const kind = LOG_KIND_LABEL[item.kind] || item.kind;
+        when.textContent = [item.time, src, kind].filter(Boolean).join(" · ");
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = item.title || "";
+        const pre = document.createElement("pre");
+        pre.textContent = item.text || "";
+        div.appendChild(when);
+        div.appendChild(name);
+        div.appendChild(pre);
+        el.appendChild(div);
+      }
+    }
+
+    function renderLogSheet() {
+      const err = document.getElementById("log-error");
+      const hl = document.getElementById("log-highlights");
+      const deskPath = document.getElementById("log-desk-path");
+      const maaPath = document.getElementById("log-maa-path");
+      err.hidden = true;
+      err.textContent = "";
+      hl.innerHTML = "";
+      if (!logSnap || logSnap.ok === false) {
+        err.hidden = false;
+        err.textContent = (logSnap && logSnap.error) || "读取失败";
+        deskPath.textContent = "";
+        maaPath.textContent = "";
+        document.getElementById("log-desk").innerHTML = "";
+        document.getElementById("log-maa").innerHTML = "";
+        document.getElementById("log-source-filters").innerHTML = "";
+        document.getElementById("log-kind-filters").innerHTML = "";
+        return;
+      }
+      const highlights = logSnap.highlights || [];
+      if (highlights.length) {
+        for (const item of highlights) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "log-hl";
+          btn.textContent = "重点 · " + (LOG_SOURCE_LABEL[item.source] || item.source) + " · " + (item.time || "") + " " + (item.title || "");
+          btn.addEventListener("click", () => {
+            logSource = item.source === "desk" ? "desk" : "maa";
+            logKind = item.kind || "all";
+            renderLogSheet();
+          });
+          hl.appendChild(btn);
+        }
+      } else {
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = logSnap.empty ? "今日没有崩溃、看门狗或清日常/MAA 任务出错记录。" : "没有单独标出的重点。";
+        hl.appendChild(p);
+      }
+      const desk = logSnap.desk || {};
+      const gui = logSnap.maa_gui || {};
+      const depot = logSnap.maa_depot || {};
+      deskPath.textContent = [desk.path, desk.note].filter(Boolean).join("  ");
+      maaPath.textContent = [gui.path, gui.note, depot.path].filter(Boolean).join("  ");
+      renderLogFilters();
+      renderLogList(
+        document.getElementById("log-desk"),
+        desk.items || [],
+        logSource === "maa" ? "已过滤，当前只看 MAA。" : (desk.note || "今日桌宠无出错段。")
+      );
+      renderLogList(
+        document.getElementById("log-maa"),
+        (gui.items || []).concat(depot.items || []),
+        logSource === "desk" ? "已过滤，当前只看桌宠。" : (gui.note || "今日 MAA 无任务出错。")
+      );
+    }
+
+    async function openLogSheet() {
+      const overlay = document.getElementById("log-overlay");
+      const link = document.getElementById("log-link");
+      logSnap = null;
+      logSource = "all";
+      logKind = "all";
+      overlay.classList.add("open");
+      document.getElementById("log-error").hidden = true;
+      document.getElementById("log-highlights").innerHTML = '<p class="empty">正在读取…</p>';
+      document.getElementById("log-desk").innerHTML = "";
+      document.getElementById("log-maa").innerHTML = "";
+      try {
+        const data = await api().load_log_errors();
+        logSnap = data;
+        if (!data || data.ok === false) {
+          link.classList.add("alert");
+        } else {
+          link.classList.toggle("alert", !!data.alert);
+        }
+        renderLogSheet();
+      } catch (exc) {
+        logSnap = { ok: false, error: String(exc) };
+        link.classList.add("alert");
+        renderLogSheet();
+      }
+    }
+
+    function closeLogSheet() {
+      document.getElementById("log-overlay").classList.remove("open");
+    }
+
+    async function askLogAnalysis() {
+      closeLogSheet();
+      try {
+        await api().ask_logs();
+      } catch (exc) {
+        logSnap = { ok: false, error: String(exc) };
+        document.getElementById("log-overlay").classList.add("open");
+        renderLogSheet();
+      }
+    }
+
+    document.getElementById("log-link").addEventListener("click", () => openLogSheet());
+    document.getElementById("log-ask").addEventListener("click", () => askLogAnalysis());
+    document.getElementById("log-close").addEventListener("click", () => closeLogSheet());
+    document.getElementById("log-overlay").addEventListener("click", (ev) => {
+      if (ev.target.id === "log-overlay") closeLogSheet();
+    });
+    window.addEventListener("pywebviewready", reload);
+    window.reloadBoard = reload;
+  </script>
+</body>
+</html>

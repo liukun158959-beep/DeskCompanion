@@ -1,0 +1,70 @@
+"""桌宠技能库：只读 skills/*/SKILL.md。不是插件市场。"""
+from __future__ import annotations
+
+from pathlib import Path
+
+SKILLS_DIR = Path(__file__).resolve().parents[1] / "skills"
+
+
+def list_skills() -> list[dict]:
+    if not SKILLS_DIR.is_dir():
+        raise RuntimeError(
+            f"没有技能目录 {SKILLS_DIR}。在 desk-companion/skills/<名>/SKILL.md 放入技能。"
+        )
+    names = sorted(p.name for p in SKILLS_DIR.iterdir() if p.is_dir())
+    if not names:
+        raise RuntimeError(f"{SKILLS_DIR} 里没有技能文件夹。")
+    out = []
+    for name in names:
+        meta, body = _read_skill_file(name)
+        out.append(
+            {
+                "id": meta["name"],
+                "description": meta["description"],
+                "body": body,
+                "path": str(SKILLS_DIR / name / "SKILL.md"),
+            }
+        )
+    return out
+
+
+def read_skill(name: str) -> dict:
+    if type(name) is not str or not name.strip():
+        raise RuntimeError("技能名必须是非空字符串。")
+    meta, body = _read_skill_file(name.strip())
+    return {
+        "id": meta["name"],
+        "description": meta["description"],
+        "body": body,
+        "path": str(SKILLS_DIR / name.strip() / "SKILL.md"),
+    }
+
+
+def _read_skill_file(name: str) -> tuple[dict, str]:
+    path = SKILLS_DIR / name / "SKILL.md"
+    if not path.is_file():
+        raise RuntimeError(
+            f"没有技能 {name}。打开看板「技能」页查看已有技能，或检查 {path}。"
+        )
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        raise RuntimeError(f"{path} 必须以 YAML frontmatter 开头。")
+    rest = text.split("\n", 1)[1] if "\n" in text else ""
+    end = rest.find("\n---")
+    if end < 0:
+        raise RuntimeError(f"{path} 的 frontmatter 没有结束 ---。")
+    raw_meta = rest[:end]
+    body = rest[end + 4 :].lstrip("\n")
+    meta = {}
+    for line in raw_meta.splitlines():
+        if ":" not in line or line.startswith(" "):
+            continue
+        key, value = line.split(":", 1)
+        meta[key.strip()] = value.strip().strip('"').strip("'")
+    if meta.get("name") != name:
+        raise RuntimeError(f"{path} 的 name 必须是 {name!r}，与文件夹一致。")
+    if type(meta.get("description")) is not str or not meta["description"].strip():
+        raise RuntimeError(f"{path} 缺少 description。")
+    if not body.strip():
+        raise RuntimeError(f"{path} 正文为空。")
+    return meta, body

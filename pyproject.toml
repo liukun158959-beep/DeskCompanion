@@ -1,0 +1,22 @@
+[project]
+name = "desk-companion"
+version = "0.2.0"
+description = "Windows 桌面个人助手：桌宠入口 + Atlas 脑子"
+requires-python = ">=3.11"
+dependencies = [
+    "pillow>=10.0",
+    "python-dotenv>=1.0",
+    "pywin32>=306",
+    "pywebview>=5.0",
+    "pystray>=0.19",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["desk_companion*"]
+
+[tool.setuptools.package-data]
+desk_companion = ["ui/*"]
