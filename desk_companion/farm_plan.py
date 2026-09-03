@@ -217,7 +217,7 @@ def _proxy_channel(inventory: dict, skland, skland_error: str, strategy: dict, g
     if skland is None:
         return {
             "ok": False,
-            "error": "代理卡通道需要今天的森空岛同步。打开看板「明日方舟」点「同步森空岛」。",
+            "error": "代理卡通道需要今天的森空岛同步。打开看板「自动化任务 → 明日方舟」点「同步森空岛」。",
             "actions": [],
         }
     view = _public_view(skland, _sync_raw())

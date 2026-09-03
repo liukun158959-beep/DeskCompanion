@@ -129,6 +129,39 @@ class BoardWorkbench:
         except Exception as extra:
             return {"ok": False, "error": str(extra)}
 
+    def list_automation_jobs(self, seen: bool = False) -> dict:
+        try:
+            if seen:
+                return self.automation.seen()
+            return self.automation.snapshot()
+        except Exception as extra:
+            return {"ok": False, "error": str(extra)}
+
+    def save_automation_job(self, payload: dict) -> dict:
+        from .automation import upsert_job
+
+        try:
+            upsert_job(payload)
+            return self.automation.snapshot()
+        except Exception as extra:
+            return {"ok": False, "error": str(extra)}
+
+    def delete_automation_job(self, job_id: str) -> dict:
+        from .automation import delete_job
+
+        try:
+            self.automation.drop_queued(str(job_id or ""))
+            delete_job(str(job_id or ""))
+            return self.automation.snapshot()
+        except Exception as extra:
+            return {"ok": False, "error": str(extra)}
+
+    def run_automation_job(self, job_id: str) -> dict:
+        try:
+            return self.automation.run_now(str(job_id or ""))
+        except Exception as extra:
+            return {"ok": False, "error": str(extra)}
+
     def send_board_chat(self, text: str, chips: dict | None = None) -> dict:
         if isinstance(chips, str):
             try:
@@ -152,7 +185,7 @@ class BoardWorkbench:
                 return self._run_maa_chip(str(maa))
             if retro:
                 raise RuntimeError(
-                    "复盘请用对话「复盘」子界面生成或写入，不要和聊天混在一条发送里。"
+                    "复盘请用自动化任务「周复盘」生成或写入，不要和聊天混在一条发送里。"
                 )
             message = self._compose_turn(text, chips)
             self.ui(lambda: self.send_chat(message, from_board=True))

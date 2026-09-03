@@ -32,6 +32,18 @@ class Bridge:
     def write_week_review_doc(self, payload: dict) -> dict:
         return self._host.write_week_review_doc(payload)
 
+    def list_automation_jobs(self, seen: bool = False) -> dict:
+        return self._host.list_automation_jobs(bool(seen))
+
+    def save_automation_job(self, payload: dict) -> dict:
+        return self._host.save_automation_job(payload)
+
+    def delete_automation_job(self, job_id: str) -> dict:
+        return self._host.delete_automation_job(job_id)
+
+    def run_automation_job(self, job_id: str) -> dict:
+        return self._host.run_automation_job(job_id)
+
     def close_bubble(self) -> None:
         self._host.ui(self._host.hide_bubble)
 

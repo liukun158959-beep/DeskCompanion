@@ -8,54 +8,103 @@
     body { min-height: 100vh; overflow: hidden; }
     .page {
       height: 100vh;
-      padding: 18px 22px 16px;
+      padding: 0;
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
       position: relative;
-      background:
-        radial-gradient(circle at 12% 0%, rgba(232, 165, 152, 0.22), transparent 36%),
-        var(--paper);
-    }
-    .body-row {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      gap: 12px;
+      background: var(--paper);
     }
     .sidebar {
-      width: 132px;
+      width: 168px;
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 0;
       overflow: auto;
+      padding: 22px 10px 16px;
+      background: #f4ebe1;
+      border-right: 1px solid var(--line);
+    }
+    .sidebar-head {
+      padding: 0 10px 18px;
+    }
+    .sidebar-brand {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.18em;
+      color: var(--header);
+    }
+    .sidebar-date {
+      margin: 6px 0 0;
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sidebar-nav-foot {
+      margin-top: auto;
+      padding-top: 12px;
+      border-top: 1px dashed var(--line);
+    }
+    .sidebar-label {
+      display: block;
+      padding: 0 10px 6px;
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+    }
+    .main {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 14px;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(232, 165, 152, 0.18), transparent 36%),
+        var(--paper);
     }
     header {
       display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
+      align-items: center;
+      justify-content: flex-end;
       gap: 16px;
       margin-bottom: 12px;
+      flex-shrink: 0;
     }
-    .title h1 { margin: 0; font-size: 24px; letter-spacing: 0.06em; }
-    .title p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-    .tabs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 0; }
+    .title h1 { margin: 0; font-size: 20px; letter-spacing: 0.08em; color: var(--header); }
     .tab {
       width: 100%;
       text-align: left;
-      border-radius: 12px;
-      padding: 8px 12px;
-      font-size: 13px;
-      color: var(--header);
-      border: 1px solid var(--blush);
-      background: #fff;
-      transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+      border-radius: 10px;
+      padding: 9px 12px 9px 9px;
+      font-size: 14px;
+      color: var(--ink);
+      border: 0;
+      border-left: 3px solid transparent;
+      background: transparent;
+      transition: background 160ms ease, color 160ms ease;
     }
-    .tab:hover:not(.active) { background: #fff6e0; }
+    .tab:hover:not(.active) { background: rgba(196, 92, 74, 0.08); }
     .tab.active {
-      background: linear-gradient(#f3b3a6, #c45c4a);
-      color: #fff;
-      border-color: transparent;
+      background: #fffdf8;
+      color: var(--header);
+      border-left-color: var(--header);
+    }
+    .tab.alert { font-weight: 700; }
+    .tab.alert::after {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-left: 8px;
+      border-radius: 50%;
+      background: var(--header);
+      vertical-align: middle;
     }
     .actions { display: flex; gap: 10px; }
     .btn {
@@ -96,24 +145,33 @@
       min-height: 0;
     }
     .today-grid {
-      flex: 1;
       display: grid;
       grid-template-columns: 1.1fr 0.9fr;
-      grid-template-rows: minmax(0, 1.15fr) minmax(0, 0.95fr);
+      grid-auto-rows: auto;
       gap: 16px;
+      flex: 0 0 auto;
       min-height: 0;
     }
-    .today-summary { grid-column: 1 / -1; }
+    #panel-today { overflow: auto; }
+    .today-grid > .col:not(.today-summary) {
+      max-height: 240px;
+    }
+    .today-summary {
+      grid-column: 1 / -1;
+      min-height: 320px;
+      overflow: visible;
+    }
     .meta { font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
     #summary-body {
-      flex: 1;
-      min-height: 0;
-      overflow: auto;
-      white-space: pre-wrap;
+      flex: 0 0 auto;
+      overflow: visible;
       word-break: break-word;
       font-size: 14px;
-      line-height: 1.6;
+      line-height: 1.7;
     }
+    #summary-body .skill-md h1 { font-size: 18px; }
+    #summary-body .skill-md h2 { font-size: 16px; }
+    #summary-body .skill-md table { display: table; width: 100%; }
     .col, .card {
       background: var(--card);
       border: 1px solid var(--line);
@@ -334,7 +392,7 @@
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .opt-list { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; }
     .opt-list .check { margin: 2px 0; }
-    #panel-maa .card { overflow: auto; }
+    #auto-maa .card { overflow: auto; }
     .skland-meta { margin: 0 0 8px; }
     .skland-stats { margin-bottom: 4px; grid-template-columns: repeat(4, 1fr); }
     .farm-body {
@@ -376,22 +434,30 @@
     }
     .session-item.active { background: rgba(196, 92, 74, 0.08); }
     .session-item .when { font-size: 12px; color: var(--muted); }
+    .job-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px 0;
+      border-bottom: 1px dashed var(--line);
+    }
+    .job-row .meta { margin: 0; }
+    .job-weekdays { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+    #auto-retro .card {
+      overflow: hidden;
+    }
+    #auto-retro .card > :not(#retro-body) {
+      flex-shrink: 0;
+    }
     #retro-body {
       flex: 1;
       min-height: 0;
       overflow: auto;
-      white-space: pre-wrap;
       word-break: break-word;
       font-size: 14px;
       line-height: 1.6;
     }
-    .log-link.alert, .tab.alert { color: var(--header); font-weight: 700; }
-    .log-link {
-      font-size: 12px;
-      color: var(--muted);
-      padding: 0;
-    }
-    .log-link.alert { color: var(--header); font-weight: 700; }
+    .tab.alert { color: var(--header); }
     .log-overlay {
       position: absolute;
       inset: 0;
@@ -592,28 +658,43 @@
 </head>
 <body>
   <div class="page">
+    <nav class="sidebar" id="tabs">
+      <div class="sidebar-head">
+        <p class="sidebar-brand">看板</p>
+        <p class="sidebar-date" id="date"></p>
+      </div>
+      <div class="sidebar-nav">
+        <span class="sidebar-label">工作</span>
+        <button class="tab active" type="button" data-tab="today">今日</button>
+        <button class="tab" type="button" data-tab="chat">对话</button>
+        <button class="tab" type="button" data-tab="jobs" id="jobs-link">自动化任务</button>
+        <button class="tab" type="button" data-tab="github">GitHub</button>
+        <button class="tab" type="button" data-tab="feishu">飞书</button>
+      </div>
+      <div class="sidebar-nav sidebar-nav-foot">
+        <span class="sidebar-label">设置</span>
+        <button class="tab" type="button" data-tab="log" id="log-link">日志</button>
+        <button class="tab" type="button" data-tab="model">模型</button>
+        <button class="tab" type="button" data-tab="usage">用量</button>
+      </div>
+    </nav>
+    <div class="main">
     <header>
       <div class="title">
-        <h1>看板</h1>
-        <p id="date"></p>
+        <h1 id="panel-title">今日</h1>
       </div>
       <div class="actions">
         <button class="btn ghost" id="close" type="button">关闭</button>
       </div>
     </header>
-    <div class="body-row">
-    <nav class="tabs sidebar" id="tabs">
-      <button class="tab active" type="button" data-tab="today">今日</button>
-      <button class="tab" type="button" data-tab="chat">对话</button>
-      <button class="tab" type="button" data-tab="maa">明日方舟</button>
-      <button class="tab" type="button" data-tab="github">GitHub</button>
-      <button class="tab" type="button" data-tab="feishu">飞书</button>
-      <button class="tab" type="button" data-tab="log" id="log-link">日志</button>
-      <button class="tab" type="button" data-tab="model">模型</button>
-      <button class="tab" type="button" data-tab="usage">用量</button>
-    </nav>
     <div class="stage">
       <section class="panel active" id="panel-today">
+        <div class="form-actions" style="margin-top:0">
+          <button class="btn ghost" id="refresh-today" type="button">刷新</button>
+          <button class="btn" id="ask" type="button">让凯尔希讲</button>
+        </div>
+        <p class="hint">本周复盘改在侧边栏「自动化任务」的「周复盘」生成和写入飞书。这里只读已落盘的正文。</p>
+        <p class="hint" id="today-msg"></p>
         <div class="today-grid">
           <article class="col">
             <h2>日程</h2>
@@ -629,12 +710,6 @@
             <div id="summary-body"></div>
           </article>
         </div>
-        <div class="form-actions">
-          <button class="btn ghost" id="refresh-today" type="button">刷新</button>
-          <button class="btn" id="ask" type="button">让凯尔希讲</button>
-        </div>
-        <p class="hint">本周复盘改在侧边栏「对话」的复盘子界面生成和写入飞书。这里只读已落盘的正文。</p>
-        <p class="hint" id="today-msg"></p>
       </section>
       <section class="panel" id="panel-chat">
         <div class="chat-shell">
@@ -644,7 +719,6 @@
             <button class="chat-sub" type="button" data-sub="memory">记忆</button>
             <button class="chat-sub" type="button" data-sub="persona">人设</button>
             <button class="chat-sub" type="button" data-sub="skills">技能</button>
-            <button class="chat-sub" type="button" data-sub="retro">复盘</button>
           </div>
           <div class="chat-subpanel active" id="sub-thread">
             <article class="card" style="flex:1">
@@ -710,23 +784,6 @@
               <h2>技能库</h2>
               <p class="hint">来自 desk-companion/skills 下每份 SKILL.md。点开一张看正文。不是插件市场。</p>
               <div id="skills-body"></div>
-            </article>
-          </div>
-          <div class="chat-subpanel" id="sub-retro">
-            <article class="card" style="flex:1">
-              <h2>本周复盘</h2>
-              <p class="hint">生成走 weekly-retro。写入：拉我创建的 docx，选一篇覆盖，或填标题新建。两者都空不写。</p>
-              <div class="form-actions" style="margin-top:0">
-                <button class="btn" id="retro-gen" type="button">生成复盘</button>
-                <button class="btn ghost" id="retro-docs" type="button">获取飞书文档</button>
-                <button class="btn" id="retro-write" type="button">写入飞书</button>
-              </div>
-              <label for="retro-doc">覆盖已有文档</label>
-              <select id="retro-doc"><option value="">不选，使用下方新标题</option></select>
-              <label for="retro-title">新建文档标题</label>
-              <input id="retro-title" type="text" autocomplete="off" placeholder="例如 2026-09-01～2026-09-03 周复盘">
-              <p class="hint" id="retro-msg"></p>
-              <div id="retro-body"></div>
             </article>
           </div>
         </div>
@@ -803,45 +860,121 @@
         <div id="github-body"></div>
         <p class="hint" id="github-msg"></p>
       </section>
-      <section class="panel" id="panel-maa">
-        <article class="card" style="flex:1">
-          <h2>森空岛</h2>
-          <p class="hint skland-meta" id="skland-meta"></p>
-          <div class="gh-stats skland-stats" id="skland-stats"></div>
-          <p class="hint" id="skland-extra"></p>
-          <div class="form-actions">
-            <button class="btn" id="skland-sync" type="button">同步森空岛</button>
+      <section class="panel" id="panel-jobs">
+        <div class="chat-shell">
+          <div class="chat-subnav" id="jobs-subnav">
+            <button class="chat-sub active" type="button" data-autosub="list">任务</button>
+            <button class="chat-sub" type="button" data-autosub="retro">周复盘</button>
+            <button class="chat-sub" type="button" data-autosub="maa">明日方舟</button>
           </div>
-          <p class="hint" id="skland-msg"></p>
-          <h2 style="margin-top:16px">今天刷什么</h2>
-          <p class="hint">按今天的仓库和森空岛额度算。不改 MAA 关卡，不编打几次。活动关本刀不做。</p>
-          <div class="form-actions">
-            <button class="btn" id="farm-plan" type="button">今天刷什么</button>
+          <div class="chat-subpanel active" id="auto-list">
+            <article class="card" style="flex:1; overflow:auto">
+              <div class="form-actions" style="margin-top:0">
+                <button class="btn" id="job-new" type="button">新建定时</button>
+              </div>
+              <p class="hint" id="jobs-empty">还没有定时任务。去「周复盘」或「明日方舟」手点，或点新建。</p>
+              <div id="jobs-list"></div>
+              <div id="job-form" hidden>
+                <h2 id="job-form-title">新建定时</h2>
+                <input id="job-id" type="hidden">
+                <label for="job-name">名称</label>
+                <input id="job-name" type="text" autocomplete="off">
+                <label for="job-action">动作</label>
+                <select id="job-action">
+                  <option value="retro_gen">生成本周复盘</option>
+                  <option value="retro_write">覆盖写入飞书</option>
+                  <option value="maa_daily">开始清日常</option>
+                </select>
+                <label for="job-cadence">周期</label>
+                <select id="job-cadence">
+                  <option value="daily">每天</option>
+                  <option value="weekly">每周</option>
+                </select>
+                <div class="job-weekdays" id="job-weekdays">
+                  <label class="check"><input type="checkbox" value="0"> 周一</label>
+                  <label class="check"><input type="checkbox" value="1"> 周二</label>
+                  <label class="check"><input type="checkbox" value="2"> 周三</label>
+                  <label class="check"><input type="checkbox" value="3"> 周四</label>
+                  <label class="check"><input type="checkbox" value="4"> 周五</label>
+                  <label class="check"><input type="checkbox" value="5"> 周六</label>
+                  <label class="check"><input type="checkbox" value="6"> 周日</label>
+                </div>
+                <label for="job-time">时刻</label>
+                <input id="job-time" type="time" value="21:00">
+                <div id="job-doc-wrap">
+                  <label for="job-doc">覆盖的飞书文档</label>
+                  <select id="job-doc"><option value="">先获取文档</option></select>
+                  <div class="form-actions">
+                    <button class="btn ghost" id="job-docs" type="button">获取飞书文档</button>
+                  </div>
+                </div>
+                <label class="check"><input id="job-enabled" type="checkbox" checked> 启用</label>
+                <div class="form-actions">
+                  <button class="btn" id="job-save" type="button">保存</button>
+                  <button class="btn ghost" id="job-cancel" type="button">取消</button>
+                </div>
+              </div>
+              <p class="hint" id="jobs-msg"></p>
+            </article>
           </div>
-          <p class="farm-body hint" id="farm-body"></p>
-          <p class="hint" id="farm-msg"></p>
-          <h2 style="margin-top:16px">一键长草（与 MAA 同名）</h2>
-          <p class="hint">勾选这次要跑的项。关卡、吃药、基建班表仍在 MAA 齿轮里。先授权一次计划任务，之后打开 PC 客户端不再弹 UAC。</p>
-          <p class="hint">清日常结束会更新仓库（强制带上，不是第 9 个勾选）。八项都不勾也仍会只跑扫仓。</p>
-          <div class="opt-list" id="maa-options"></div>
-          <h2 style="margin-top:16px">PC 客户端路径</h2>
-          <label for="maa-launcher">鹰角启动器 Launcher.exe</label>
-          <input id="maa-launcher" type="text" autocomplete="off">
-          <label for="maa-game">明日方舟 Arknights.exe（不要填终末地或模拟器）</label>
-          <input id="maa-game" type="text" autocomplete="off">
-          <label for="maa-exe">官方 MAA.exe</label>
-          <input id="maa-exe" type="text" autocomplete="off">
-          <label for="maa-timeout">等待游戏窗口秒数</label>
-          <input id="maa-timeout" type="number" min="10" step="1">
-          <div class="form-actions">
-            <button class="btn ghost" id="maa-save" type="button">保存路径</button>
-            <button class="btn ghost" id="maa-auth" type="button">授权一次开游戏（之后不再弹 UAC）</button>
-            <button class="btn" id="maa-open" type="button">打开游戏</button>
-            <button class="btn" id="maa-start" type="button">开始清日常</button>
-            <button class="btn ghost" id="maa-stop" type="button">停止</button>
+          <div class="chat-subpanel" id="auto-retro">
+            <article class="card" style="flex:1">
+              <h2>本周复盘</h2>
+              <p class="hint">生成走 weekly-retro。写入：拉我创建的文档，选一篇覆盖，或填标题新建。两者都空不写。定时写入只能覆盖绑死的文档。</p>
+              <div class="form-actions" style="margin-top:0">
+                <button class="btn" id="retro-gen" type="button">生成复盘</button>
+                <button class="btn ghost" id="retro-docs" type="button">获取飞书文档</button>
+                <button class="btn" id="retro-write" type="button">写入飞书</button>
+              </div>
+              <label for="retro-doc">覆盖已有文档</label>
+              <select id="retro-doc"><option value="">不选，使用下方新标题</option></select>
+              <label for="retro-title">新建文档标题</label>
+              <input id="retro-title" type="text" autocomplete="off" placeholder="例如 2026-09-01～2026-09-03 周复盘">
+              <p class="hint" id="retro-msg"></p>
+              <div id="retro-body"></div>
+            </article>
           </div>
-          <p class="hint" id="maa-msg"></p>
-        </article>
+          <div class="chat-subpanel" id="auto-maa">
+            <article class="card" style="flex:1">
+              <h2>森空岛</h2>
+              <p class="hint skland-meta" id="skland-meta"></p>
+              <div class="gh-stats skland-stats" id="skland-stats"></div>
+              <p class="hint" id="skland-extra"></p>
+              <div class="form-actions">
+                <button class="btn" id="skland-sync" type="button">同步森空岛</button>
+              </div>
+              <p class="hint" id="skland-msg"></p>
+              <h2 style="margin-top:16px">今天刷什么</h2>
+              <p class="hint">按今天的仓库和森空岛额度算。不改 MAA 关卡，不编打几次。活动关本刀不做。</p>
+              <div class="form-actions">
+                <button class="btn" id="farm-plan" type="button">今天刷什么</button>
+              </div>
+              <p class="farm-body hint" id="farm-body"></p>
+              <p class="hint" id="farm-msg"></p>
+              <h2 style="margin-top:16px">一键长草（与 MAA 同名）</h2>
+              <p class="hint">勾选这次要跑的项。关卡、吃药、基建班表仍在 MAA 齿轮里。先授权一次计划任务，之后打开 PC 客户端不再弹 UAC。</p>
+              <p class="hint">清日常结束会更新仓库（强制带上，不是第 9 个勾选）。八项都不勾也仍会只跑扫仓。</p>
+              <div class="opt-list" id="maa-options"></div>
+              <h2 style="margin-top:16px">PC 客户端路径</h2>
+              <label for="maa-launcher">鹰角启动器 Launcher.exe</label>
+              <input id="maa-launcher" type="text" autocomplete="off">
+              <label for="maa-game">明日方舟 Arknights.exe（不要填终末地或模拟器）</label>
+              <input id="maa-game" type="text" autocomplete="off">
+              <label for="maa-exe">官方 MAA.exe</label>
+              <input id="maa-exe" type="text" autocomplete="off">
+              <label for="maa-timeout">等待游戏窗口秒数</label>
+              <input id="maa-timeout" type="number" min="10" step="1">
+              <div class="form-actions">
+                <button class="btn ghost" id="maa-save" type="button">保存路径</button>
+                <button class="btn ghost" id="maa-auth" type="button">授权一次开游戏（之后不再弹 UAC）</button>
+                <button class="btn" id="maa-open" type="button">打开游戏</button>
+                <button class="btn" id="maa-start" type="button">开始清日常</button>
+                <button class="btn ghost" id="maa-stop" type="button">停止</button>
+              </div>
+              <p class="hint" id="maa-msg"></p>
+            </article>
+          </div>
+        </div>
       </section>
     </div>
     </div>
@@ -938,6 +1071,17 @@
         openLogSheet();
         return;
       }
+      const titles = {
+        today: "今日",
+        chat: "对话",
+        jobs: "自动化任务",
+        github: "GitHub",
+        feishu: "飞书",
+        model: "模型",
+        usage: "用量",
+      };
+      const titleEl = document.getElementById("panel-title");
+      if (titleEl && titles[id]) titleEl.textContent = titles[id];
       document.querySelectorAll("#tabs .tab").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.tab === id);
       });
@@ -959,17 +1103,17 @@
       if (id === "usage") loadUsage();
       if (id === "feishu") loadFeishu(false);
       if (id === "github") loadGithub(false);
-      if (id === "maa") {
-        loadMaa();
-        loadSkland();
+      if (id === "jobs") {
+        const current = document.querySelector("#jobs-subnav .chat-sub.active");
+        showAutoSub(current ? current.dataset.autosub : "list");
       }
     }
 
     function showChatSub(id) {
-      document.querySelectorAll(".chat-sub").forEach((btn) => {
+      document.querySelectorAll("#chat-subnav .chat-sub").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.sub === id);
       });
-      document.querySelectorAll(".chat-subpanel").forEach((panel) => {
+      document.querySelectorAll("#panel-chat .chat-subpanel").forEach((panel) => {
         panel.classList.toggle("active", panel.id === "sub-" + id);
       });
       if (id === "thread") loadChat();
@@ -977,7 +1121,21 @@
       if (id === "memory") loadMemory();
       if (id === "persona") loadPersona();
       if (id === "skills") loadSkills();
+    }
+
+    function showAutoSub(id) {
+      document.querySelectorAll("#jobs-subnav .chat-sub").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.autosub === id);
+      });
+      document.querySelectorAll("#panel-jobs .chat-subpanel").forEach((panel) => {
+        panel.classList.toggle("active", panel.id === "auto-" + id);
+      });
+      if (id === "list") loadJobs(true);
       if (id === "retro") loadRetro();
+      if (id === "maa") {
+        loadMaa();
+        loadSkland();
+      }
     }
 
     function renderSection(el, section, emptyText, kind) {
@@ -1085,7 +1243,7 @@
       } else {
         const p = document.createElement("p");
         p.className = "empty";
-        p.textContent = "还没有本周复盘。到对话「复盘」子界面生成。";
+        p.textContent = "还没有本周复盘。到自动化任务「周复盘」生成。";
         summaryEl.appendChild(p);
       }
     }
@@ -1344,6 +1502,13 @@
         renderSessions(payload.sessions || [], payload.session_id || "");
         return;
       }
+      if (payload.event === "jobs_changed") {
+        const jobsOn = document.getElementById("panel-jobs").classList.contains("active");
+        const listOn = jobsOn && document.getElementById("auto-list").classList.contains("active");
+        loadJobs(listOn);
+        if (jobsOn && document.getElementById("auto-retro").classList.contains("active")) loadRetro();
+        return;
+      }
     };
 
     async function loadRetro() {
@@ -1362,6 +1527,275 @@
         }
       } catch (exc) {
         body.textContent = String(exc);
+      }
+    }
+
+    let jobsCache = [];
+    const RESULT_LABEL = {
+      ok: "成功",
+      fail: "失败",
+      missed: "错过",
+      queued: "排队中",
+      "": "未跑过",
+    };
+
+    function setJobsAlert(on) {
+      const link = document.getElementById("jobs-link");
+      if (link) link.classList.toggle("alert", !!on);
+    }
+
+    async function loadJobsAlert() {
+      try {
+        const data = await api().list_automation_jobs(false);
+        if (!data || data.ok === false) {
+          setJobsAlert(true);
+          return;
+        }
+        setJobsAlert(!!data.alert);
+      } catch (exc) {
+        setJobsAlert(true);
+      }
+    }
+
+    async function loadJobs(seen) {
+      const msg = document.getElementById("jobs-msg");
+      const empty = document.getElementById("jobs-empty");
+      try {
+        const data = await api().list_automation_jobs(!!seen);
+        if (!data.ok) {
+          setJobsAlert(true);
+          msg.className = "error";
+          msg.textContent = data.error || "读取定时任务失败";
+          return;
+        }
+        setJobsAlert(!!data.alert);
+        jobsCache = data.items || [];
+        empty.hidden = jobsCache.length > 0;
+        renderJobs(jobsCache);
+        if (data.message) {
+          msg.className = "ok";
+          msg.textContent = data.message;
+        } else if (seen) {
+          msg.className = "hint";
+          msg.textContent = "";
+        }
+      } catch (exc) {
+        setJobsAlert(true);
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    }
+
+    function renderJobs(items) {
+      const box = document.getElementById("jobs-list");
+      box.innerHTML = "";
+      items.forEach((job) => {
+        const row = document.createElement("div");
+        row.className = "job-row";
+        const title = document.createElement("strong");
+        title.textContent = job.name;
+        const meta = document.createElement("p");
+        meta.className = "meta";
+        const bits = [job.label || job.action, job.schedule_text || ""];
+        bits.push(RESULT_LABEL[job.last_result] || job.last_result || "未跑过");
+        if (job.queued) bits.push("排队中");
+        if (job.last_error) bits.push(job.last_error);
+        meta.textContent = bits.filter(Boolean).join(" · ");
+        const actions = document.createElement("div");
+        actions.className = "form-actions";
+        const en = document.createElement("label");
+        en.className = "check";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!job.enabled;
+        cb.addEventListener("change", () => toggleJob(job, cb.checked));
+        en.appendChild(cb);
+        en.appendChild(document.createTextNode("启用"));
+        const run = document.createElement("button");
+        run.className = "btn";
+        run.type = "button";
+        run.textContent = "立刻执行";
+        run.addEventListener("click", () => runJob(job.id));
+        const edit = document.createElement("button");
+        edit.className = "btn ghost";
+        edit.type = "button";
+        edit.textContent = "编辑";
+        edit.addEventListener("click", () => openJobForm(job));
+        const del = document.createElement("button");
+        del.className = "btn ghost";
+        del.type = "button";
+        del.textContent = "删除";
+        del.addEventListener("click", () => deleteJob(job.id, job.name));
+        actions.appendChild(en);
+        actions.appendChild(run);
+        actions.appendChild(edit);
+        actions.appendChild(del);
+        row.appendChild(title);
+        row.appendChild(meta);
+        row.appendChild(actions);
+        box.appendChild(row);
+      });
+    }
+
+    function selectedWeekdays() {
+      const days = [];
+      document.querySelectorAll("#job-weekdays input").forEach((box) => {
+        if (box.checked) days.push(Number(box.value));
+      });
+      return days;
+    }
+
+    function syncJobForm() {
+      const weekly = document.getElementById("job-cadence").value === "weekly";
+      document.getElementById("job-weekdays").hidden = !weekly;
+      const write = document.getElementById("job-action").value === "retro_write";
+      document.getElementById("job-doc-wrap").hidden = !write;
+    }
+
+    function openJobForm(job) {
+      document.getElementById("job-form").hidden = false;
+      document.getElementById("job-form-title").textContent = job ? "编辑定时" : "新建定时";
+      document.getElementById("job-id").value = job ? job.id : "";
+      document.getElementById("job-name").value = job ? job.name : "";
+      document.getElementById("job-action").value = job ? job.action : "retro_gen";
+      document.getElementById("job-cadence").value = job ? job.cadence : "daily";
+      document.getElementById("job-enabled").checked = job ? !!job.enabled : true;
+      const hh = job ? String(job.hour).padStart(2, "0") : "21";
+      const mm = job ? String(job.minute).padStart(2, "0") : "00";
+      document.getElementById("job-time").value = hh + ":" + mm;
+      document.querySelectorAll("#job-weekdays input").forEach((box) => {
+        const days = job && Array.isArray(job.weekdays) ? job.weekdays.map(String) : [];
+        box.checked = days.indexOf(box.value) >= 0;
+      });
+      const docSel = document.getElementById("job-doc");
+      if (job && job.doc) {
+        let found = false;
+        for (let i = 0; i < docSel.options.length; i += 1) {
+          if (docSel.options[i].value === job.doc) found = true;
+        }
+        if (!found) {
+          const opt = document.createElement("option");
+          opt.value = job.doc;
+          opt.textContent = job.doc;
+          docSel.appendChild(opt);
+        }
+        docSel.value = job.doc;
+      } else {
+        docSel.value = "";
+      }
+      syncJobForm();
+    }
+
+    function hideJobForm() {
+      document.getElementById("job-form").hidden = true;
+    }
+
+    async function saveJob() {
+      const msg = document.getElementById("jobs-msg");
+      const time = document.getElementById("job-time").value || "";
+      const parts = time.split(":");
+      const hour = Number(parts[0]);
+      const minute = Number(parts[1]);
+      const cadence = document.getElementById("job-cadence").value;
+      const action = document.getElementById("job-action").value;
+      const payload = {
+        id: document.getElementById("job-id").value,
+        name: document.getElementById("job-name").value,
+        action: action,
+        enabled: document.getElementById("job-enabled").checked,
+        cadence: cadence,
+        weekdays: cadence === "weekly" ? selectedWeekdays() : [],
+        hour: hour,
+        minute: minute,
+        doc: action === "retro_write" ? document.getElementById("job-doc").value : "",
+      };
+      try {
+        const data = await api().save_automation_job(payload);
+        if (!data.ok) {
+          msg.className = "error";
+          msg.textContent = data.error || "保存失败";
+          return;
+        }
+        hideJobForm();
+        jobsCache = data.items || [];
+        document.getElementById("jobs-empty").hidden = jobsCache.length > 0;
+        renderJobs(jobsCache);
+        setJobsAlert(!!data.alert);
+        msg.className = "ok";
+        msg.textContent = "已保存。";
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    }
+
+    async function toggleJob(job, enabled) {
+      const msg = document.getElementById("jobs-msg");
+      try {
+        const data = await api().save_automation_job({
+          id: job.id,
+          name: job.name,
+          action: job.action,
+          enabled: enabled,
+          cadence: job.cadence,
+          weekdays: job.weekdays || [],
+          hour: job.hour,
+          minute: job.minute,
+          doc: job.doc || "",
+        });
+        if (!data.ok) {
+          msg.className = "error";
+          msg.textContent = data.error || "保存失败";
+          loadJobs(false);
+          return;
+        }
+        jobsCache = data.items || [];
+        renderJobs(jobsCache);
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    }
+
+    async function runJob(jobId) {
+      const msg = document.getElementById("jobs-msg");
+      try {
+        const data = await api().run_automation_job(jobId);
+        if (!data.ok) {
+          msg.className = "error";
+          msg.textContent = data.error || "执行失败";
+          return;
+        }
+        jobsCache = data.items || [];
+        renderJobs(jobsCache);
+        msg.className = "ok";
+        msg.textContent = data.message || "已加入执行队列。";
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    }
+
+    async function deleteJob(jobId, name) {
+      if (!window.confirm("删除定时「" + name + "」？")) return;
+      const msg = document.getElementById("jobs-msg");
+      try {
+        const data = await api().delete_automation_job(jobId);
+        if (!data.ok) {
+          msg.className = "error";
+          msg.textContent = data.error || "删除失败";
+          return;
+        }
+        hideJobForm();
+        jobsCache = data.items || [];
+        document.getElementById("jobs-empty").hidden = jobsCache.length > 0;
+        renderJobs(jobsCache);
+        setJobsAlert(!!data.alert);
+        msg.className = "ok";
+        msg.textContent = "已删除。";
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
       }
     }
 
@@ -1789,6 +2223,40 @@
       if (!btn) return;
       showChatSub(btn.dataset.sub);
     });
+    document.getElementById("jobs-subnav").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".chat-sub");
+      if (!btn) return;
+      showAutoSub(btn.dataset.autosub);
+    });
+    document.getElementById("job-new").addEventListener("click", () => openJobForm(null));
+    document.getElementById("job-cancel").addEventListener("click", () => hideJobForm());
+    document.getElementById("job-save").addEventListener("click", () => saveJob());
+    document.getElementById("job-action").addEventListener("change", () => syncJobForm());
+    document.getElementById("job-cadence").addEventListener("change", () => syncJobForm());
+    document.getElementById("job-docs").addEventListener("click", async () => {
+      const msg = document.getElementById("jobs-msg");
+      msg.className = "hint";
+      msg.textContent = "正在搜索我创建的飞书文档…";
+      try {
+        const data = await api().list_feishu_docs();
+        if (!data.ok) {
+          msg.className = "error";
+          msg.textContent = data.error || "搜索失败";
+          return;
+        }
+        const items = (data.items || []).map((row) => ({
+          id: row.url || row.token,
+          label: row.title,
+        }));
+        fillSelect(document.getElementById("job-doc"), items, "先获取文档");
+        fillSelect(document.getElementById("retro-doc"), items, "不选，使用下方新标题");
+        msg.className = "ok";
+        msg.textContent = items.length ? ("找到 " + items.length + " 篇。") : "没有搜到我创建的 docx。";
+      } catch (exc) {
+        msg.className = "error";
+        msg.textContent = String(exc);
+      }
+    });
     document.getElementById("ask").addEventListener("click", () => api().ask_today());
     document.getElementById("refresh-today").addEventListener("click", () => loadToday(true));
     document.getElementById("new-chat").addEventListener("click", async () => {
@@ -1850,6 +2318,7 @@
           label: row.title,
         }));
         fillSelect(sel, items, "不选，使用下方新标题");
+        fillSelect(document.getElementById("job-doc"), items, "先获取文档");
         msg.className = "ok";
         msg.textContent = items.length ? ("找到 " + items.length + " 篇 docx。") : "没有搜到我创建的 docx。";
       } catch (exc) {
@@ -2217,6 +2686,7 @@
       const active = document.querySelector(".tab.active");
       showTab(active ? active.dataset.tab : "today");
       loadLogStatus();
+      loadJobsAlert();
     }
 
     const LOG_KIND_LABEL = {
@@ -2439,6 +2909,7 @@
     });
     window.addEventListener("pywebviewready", reload);
     window.reloadBoard = reload;
+    syncJobForm();
   </script>
 </body>
 </html>

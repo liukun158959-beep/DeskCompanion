@@ -111,7 +111,7 @@ def require_pc_paths(cfg: dict) -> tuple[Path, Path]:
     game = Path(cfg["game_exe"])
     if not cfg["launcher_exe"]:
         raise RuntimeError(
-            f"还没填鹰角启动器路径。在看板「明日方舟」页填写 Launcher.exe。"
+            f"还没填鹰角启动器路径。在看板「自动化任务 → 明日方舟」填写 Launcher.exe。"
             f"{_hint()}"
         )
     if not cfg["game_exe"]:
@@ -141,7 +141,7 @@ def require_maa_exe(cfg: dict) -> Path:
     path = cfg["path"]
     if not cfg["maa_exe"]:
         raise RuntimeError(
-            "还没填官方 MAA.exe。装好后把路径写进看板「明日方舟」页。"
+            "还没填官方 MAA.exe。装好后把路径写进看板「自动化任务 → 明日方舟」。"
             "不要把 MaaCore 链进桌宠。"
         )
     maa = Path(cfg["maa_exe"])

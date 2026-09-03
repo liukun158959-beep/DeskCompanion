@@ -13,6 +13,7 @@ skins/**
 !skins/.gitkeep
 user_state.json
 maa.json
+automation_jobs.json
 arknights_account.json
 memory/
 diagnose_out/

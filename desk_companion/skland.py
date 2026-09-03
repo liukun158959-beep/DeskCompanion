@@ -535,7 +535,7 @@ def _public_view(skland: dict, sync_raw) -> dict:
             sync_raw,
             account_path(),
             field="skland_sync",
-            how="打开看板「明日方舟」点「同步森空岛」。",
+            how="打开看板「自动化任务 → 明日方舟」点「同步森空岛」。",
         )
         today = when.astimezone().date() == datetime.now().astimezone().date()
     end_text = ""

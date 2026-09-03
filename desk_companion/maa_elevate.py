@@ -51,7 +51,7 @@ def run_task(name: str) -> None:
     if not task_exists(name):
         raise RuntimeError(
             f"还没有计划任务 {name}。"
-            "请在看板「明日方舟」页点「授权一次开游戏（之后不再弹 UAC）」，并在那一次 UAC 点是。"
+            "请在看板「自动化任务 → 明日方舟」点「授权一次开游戏（之后不再弹 UAC）」，并在那一次 UAC 点是。"
         )
     completed = subprocess.run(
         ["schtasks", "/Run", "/TN", name],

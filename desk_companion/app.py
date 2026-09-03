@@ -19,6 +19,7 @@ import win32con
 import win32gui
 
 from .assistant import TOOL_CONTRACT, build_agent, inject_history, list_providers, token_plugin
+from .automation import AutomationScheduler
 from .board_workbench import BoardWorkbench
 from .bridge import Bridge
 from .maa_job import MaaController
@@ -91,6 +92,7 @@ class App(BoardWorkbench):
         self._agent_running = False
         self.maa = MaaController(self)
         bind_host(self)
+        self.automation = AutomationScheduler(self)
         self.bridge = Bridge(self)
         self._queue: queue.Queue = queue.Queue()
         self.pet = None
@@ -196,6 +198,7 @@ class App(BoardWorkbench):
 
     def on_pet_tick(self) -> None:
         self._poll_outside_click()
+        self.automation.tick()
         if not self.state.nudge_enabled or self._nudge_busy:
             return
         now = time.monotonic()
@@ -737,7 +740,7 @@ class App(BoardWorkbench):
             return {
                 "ok": True,
                 **snap,
-                "message": "本周复盘已写在对话「复盘」和今日页，并已落盘。",
+                "message": "本周复盘已写在自动化任务「周复盘」和今日页，并已落盘。",
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
@@ -754,7 +757,7 @@ class App(BoardWorkbench):
             return {"ok": False, "error": str(exc)}
         markdown = (snap.get("summary") or "").strip()
         if not markdown:
-            return {"ok": False, "error": "还没有复盘。先在对话「复盘」里生成。"}
+            return {"ok": False, "error": "还没有复盘。先在自动化任务「周复盘」里生成。"}
         try:
             monday, now = week_range()
             title = f"{monday.strftime('%Y-%m-%d')}～{now.strftime('%Y-%m-%d')} 周复盘"

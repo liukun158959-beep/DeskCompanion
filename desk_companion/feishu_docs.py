@@ -45,29 +45,10 @@ def list_my_docx() -> list[dict]:
     for item in rows:
         if not isinstance(item, dict):
             raise RuntimeError("搜索飞书文档的每一项必须是对象。")
-        doc_type = str(
-            item.get("doc_type") or item.get("type") or item.get("obj_type") or ""
-        ).lower()
-        if doc_type and doc_type not in {"docx", "doc"}:
+        rec = _parse_search_hit(item)
+        if rec is None:
             continue
-        url = item.get("url") or item.get("docs_url") or item.get("link") or ""
-        token = (
-            item.get("token")
-            or item.get("doc_token")
-            or item.get("docs_token")
-            or item.get("obj_token")
-            or ""
-        )
-        title = item.get("title") or item.get("name") or item.get("file_name") or ""
-        if not url and not token:
-            raise RuntimeError(f"搜索结果缺少 url/token。\n{item}")
-        out.append(
-            {
-                "title": str(title) or "（无标题）",
-                "url": str(url),
-                "token": str(token),
-            }
-        )
+        out.append(rec)
     return out
 
 
@@ -112,7 +93,7 @@ def create_or_overwrite_markdown(
     """选中文档则覆盖；否则必须有标题才新建。两者都空则失败。"""
     body = (markdown or "").strip()
     if not body:
-        raise RuntimeError("还没有复盘正文。先在对话「复盘」里生成。")
+        raise RuntimeError("还没有复盘正文。先在自动化任务「周复盘」里生成。")
     target = (doc or "").strip()
     heading = (title or "").strip()
     if target and heading:
@@ -137,3 +118,52 @@ def _as_object(raw: str, what: str) -> dict:
     if not isinstance(env, dict):
         raise RuntimeError(f"{what}根节点不是对象。\n{raw}")
     return env
+
+
+def _plain(text) -> str:
+    if type(text) is not str:
+        return ""
+    return text.replace("<em>", "").replace("</em>", "").strip()
+
+
+def _parse_search_hit(item: dict) -> dict | None:
+    """drive +search 的 url/token 在 result_meta 里；知识库里的 docx 也算。"""
+    meta = item.get("result_meta")
+    if not isinstance(meta, dict):
+        meta = {}
+    entity = str(item.get("entity_type") or "").lower()
+    doc_types = str(meta.get("doc_types") or item.get("doc_type") or "").lower()
+    if entity in {"sheet", "bitable", "folder", "file", "slides", "mindnote"}:
+        return None
+    if doc_types and doc_types not in {"docx", "doc"}:
+        return None
+    url = (
+        item.get("url")
+        or meta.get("url")
+        or item.get("docs_url")
+        or item.get("link")
+        or ""
+    )
+    token = (
+        item.get("token")
+        or meta.get("token")
+        or item.get("doc_token")
+        or item.get("docs_token")
+        or item.get("obj_token")
+        or ""
+    )
+    title = (
+        item.get("title")
+        or _plain(item.get("title_highlighted"))
+        or meta.get("title")
+        or item.get("name")
+        or item.get("file_name")
+        or ""
+    )
+    if not url and not token:
+        raise RuntimeError(f"搜索结果缺少 url/token。\n{item}")
+    return {
+        "title": str(title) or "（无标题）",
+        "url": str(url),
+        "token": str(token),
+    }

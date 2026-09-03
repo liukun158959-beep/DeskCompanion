@@ -172,7 +172,7 @@ def require_skland_today() -> dict:
     path = account_path()
     if not path.is_file():
         raise RuntimeError(
-            f"没有账号快照 {path}。打开看板「明日方舟」点「同步森空岛」。"
+            f"没有账号快照 {path}。打开看板「自动化任务 → 明日方舟」点「同步森空岛」。"
         )
     data = _read_json_object(path)
     _require_local_today(
@@ -180,12 +180,12 @@ def require_skland_today() -> dict:
         path,
         kind="森空岛同步",
         field="skland_sync",
-        how="打开看板「明日方舟」点「同步森空岛」。",
+        how="打开看板「自动化任务 → 明日方舟」点「同步森空岛」。",
     )
     skland = data.get("skland")
     if not isinstance(skland, dict):
         raise RuntimeError(
-            f"{path} 的 skland 必须是对象。打开看板「明日方舟」点「同步森空岛」。"
+            f"{path} 的 skland 必须是对象。打开看板「自动化任务 → 明日方舟」点「同步森空岛」。"
         )
     return skland
 
