@@ -35,7 +35,6 @@ from .winforms_host import (
     apply_tool_window,
     as_hwnd,
     cache_hwnd,
-    enable_thick_frame,
     enable_webview_context_menu,
     ensure_ready,
     form_of,
@@ -61,16 +60,7 @@ DAILY_ASK = """【今日纸条】请先调用 get_today_agenda 和 get_open_task
 SUMMARY_ASK = """【今日工作总结】不要调用工具。只根据后面的今日材料写中文 Markdown，不要编造材料里没有的事。
 结构、红线和能用的语法以【技能规程】为准，不要另起章节，不要把整篇包进代码块。"""
 PAPER = "#FFF6EC"
-INK = "#2C241E"
-BLUSH = "#E8A598"
-DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
-DWMWA_USE_IMMERSIVE_DARK_MODE = 20
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
-DWMWA_BORDER_COLOR = 34
-DWMWA_CAPTION_COLOR = 35
-DWMWA_TEXT_COLOR = 36
-DWMWA_SYSTEMBACKDROP_TYPE = 38
-DWMSBT_NONE = 1
 DWMWCP_ROUND = 2
 DWMWCP_DONOTROUND = 1
 MUTEX_NAME = "Local\\DeskCompanion.Kaltsit"
@@ -582,9 +572,7 @@ class App:
     def show_board(self) -> None:
         if self.board is None:
             raise RuntimeError("看板窗口还没建好。")
-        form = form_of(self.board)
         show_form(self.board, activate=True, tool=False, topmost=False)
-        invoke(form, lambda: _paint_paper_chrome(self.board, form))
         if not self._board_placed:
             left, top, right, bottom = self._work_area()
             x = left + max(24, (right - left - BOARD_W) // 2)
@@ -595,28 +583,6 @@ class App:
 
     def hide_board(self) -> None:
         hide_form(self.board)
-
-    def minimize_board(self) -> None:
-        if self.board is None:
-            raise RuntimeError("看板窗口还没建好。")
-        form = form_of(self.board)
-        from System.Windows.Forms import FormWindowState
-
-        invoke(form, lambda: setattr(form, "WindowState", FormWindowState.Minimized))
-
-    def toggle_maximize_board(self) -> None:
-        if self.board is None:
-            raise RuntimeError("看板窗口还没建好。")
-        form = form_of(self.board)
-        from System.Windows.Forms import FormWindowState
-
-        def _do() -> None:
-            if form.WindowState == FormWindowState.Maximized:
-                form.WindowState = FormWindowState.Normal
-            else:
-                form.WindowState = FormWindowState.Maximized
-
-        invoke(form, _do)
 
     def ask_today(self) -> None:
         self.show_pet()
@@ -992,7 +958,7 @@ def run_app(skin_id: str) -> None:
         width=BOARD_W,
         height=BOARD_H,
         min_size=(720, 480),
-        frameless=True,
+        frameless=False,
         resizable=True,
         hidden=True,
         on_top=False,
@@ -1060,9 +1026,6 @@ def _prepare_form(
             _set_corner_preference(window, DWMWCP_DONOTROUND)
     else:
         apply_app_window(form)
-        enable_thick_frame(form)
-        _paint_paper_chrome(window, form)
-        _set_corner_preference(window, DWMWCP_ROUND)
     form.Opacity = 0
     form.Hide()
     form.Visible = False
@@ -1077,57 +1040,6 @@ def _native_hwnd(window) -> int:
     if hasattr(handle, "ToInt64"):
         return as_hwnd(int(handle.ToInt64()))
     return as_hwnd(int(handle))
-
-
-def _rgb_colorref(hex_color: str) -> int:
-    h = hex_color.removeprefix("#")
-    if len(h) != 6:
-        raise RuntimeError(f"颜色必须是 #RRGGBB，收到 {hex_color!r}。")
-    r = int(h[0:2], 16)
-    g = int(h[2:4], 16)
-    b = int(h[4:6], 16)
-    return r | (g << 8) | (b << 16)
-
-
-def _set_dwm_int(window, attr: int, value: int) -> None:
-    hwnd = _native_hwnd(window)
-    buf = ctypes.c_int(value)
-    ctypes.windll.dwmapi.DwmSetWindowAttribute(
-        hwnd,
-        attr,
-        ctypes.byref(buf),
-        ctypes.sizeof(buf),
-    )
-
-
-def _set_dwm_color(window, attr: int, hex_color: str) -> None:
-    hwnd = _native_hwnd(window)
-    buf = ctypes.c_uint(_rgb_colorref(hex_color))
-    ctypes.windll.dwmapi.DwmSetWindowAttribute(
-        hwnd,
-        attr,
-        ctypes.byref(buf),
-        ctypes.sizeof(buf),
-    )
-
-
-def _paint_paper_chrome(window, form) -> None:
-    """关掉深色 Mica，刷成奶油纸。不要品红抠图。"""
-    from System.Drawing import ColorTranslator
-
-    paper = ColorTranslator.FromHtml(PAPER)
-    form.BackColor = paper
-    browser = getattr(form, "browser", None)
-    control = getattr(browser, "webview", None) if browser is not None else None
-    if control is None:
-        raise RuntimeError("看板没有 WebView2 控件，无法刷纸色底。")
-    control.DefaultBackgroundColor = paper
-    _set_dwm_int(window, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, 0)
-    _set_dwm_int(window, DWMWA_USE_IMMERSIVE_DARK_MODE, 0)
-    _set_dwm_int(window, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE)
-    _set_dwm_color(window, DWMWA_BORDER_COLOR, BLUSH)
-    _set_dwm_color(window, DWMWA_CAPTION_COLOR, PAPER)
-    _set_dwm_color(window, DWMWA_TEXT_COLOR, INK)
 
 
 def _set_corner_preference(window, preference: int) -> None:

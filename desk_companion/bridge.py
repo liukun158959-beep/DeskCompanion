@@ -47,12 +47,6 @@ class Bridge:
     def close_board(self) -> None:
         self._host.ui(self._host.hide_board)
 
-    def minimize_board(self) -> None:
-        self._host.ui(self._host.minimize_board)
-
-    def toggle_maximize_board(self) -> None:
-        self._host.ui(self._host.toggle_maximize_board)
-
     def open_url(self, url: str) -> None:
         if not isinstance(url, str) or not url.startswith("https://"):
             raise RuntimeError("只打开 https 链接。")
