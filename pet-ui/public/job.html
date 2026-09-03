@@ -27,11 +27,11 @@
         color: #7a6a5c;
         margin-right: 6px;
       }
-      #message, #remote, #queue {
+      #message, #remote, #current, #fail {
         white-space: pre-wrap;
         word-break: break-word;
       }
-      #status.error {
+      #status.error, #fail {
         color: #c45c4a;
       }
       button {
@@ -55,8 +55,9 @@
       <h1>桌宠看到的清日常</h1>
       <p class="row"><span class="k">动作</span><span id="status">连接中</span></p>
       <p class="row"><span class="k">留言</span><span id="message">正在打开小窗。</span></p>
+      <p class="row"><span class="k">当前</span><span id="current">还没开始具体项。</span></p>
+      <p class="row" id="fail-row" hidden><span class="k">出错</span><span id="fail"></span></p>
       <p class="row"><span class="k">远控</span><span id="remote">还没拉到快照。</span></p>
-      <p class="row"><span class="k">队列</span><span id="queue">—</span></p>
       <button type="button" id="stop">停止</button>
     </main>
     <script>
@@ -82,14 +83,15 @@
         return "已拉任务，最近回报 " + report.status + "。";
       }
 
-      function queueLine(snap) {
-        const queued = Array.isArray(snap.queued)
-          ? snap.queued.filter((item) => item)
-          : [];
-        if (!queued.length) {
-          return "空";
+      function currentLine(snap) {
+        const name = snap.current_task ? String(snap.current_task) : "";
+        if (name) {
+          return name;
         }
-        return queued.join("、");
+        if (snap.progress_note) {
+          return String(snap.progress_note);
+        }
+        return "还没开始具体项。";
       }
 
       function render(snap) {
@@ -98,8 +100,17 @@
         el.textContent = STATUS[status] || status || "未知";
         el.className = status === "error" ? "error" : "";
         text("message", snap && snap.message);
+        text("current", currentLine(snap || {}));
+        const fail = snap && snap.task_error ? String(snap.task_error) : "";
+        const failRow = document.getElementById("fail-row");
+        if (fail) {
+          failRow.hidden = false;
+          text("fail", "任务出错: " + fail);
+        } else {
+          failRow.hidden = true;
+          text("fail", "");
+        }
         text("remote", remoteLine(snap || {}));
-        text("queue", queueLine(snap || {}));
       }
 
       async function tick() {

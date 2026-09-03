@@ -8,6 +8,7 @@ from pathlib import Path
 from .logutil import LOG_PATH
 
 MAX_BYTES = 2 * 1024 * 1024
+LIVE_BYTES = 256 * 1024
 MAX_TEXT = 8000
 _TS = re.compile(r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) \[")
 _GUI_TS = re.compile(r"^\[(\d{4}-\d{2}-\d{2}) ([0-9:.]+)\]")
@@ -55,6 +56,61 @@ def inspect_today_errors() -> dict:
         "maa_gui": {"path": maa_gui_path, "note": maa_note, "items": gui_items},
         "maa_depot": {"path": maa_asst_path, "note": "", "items": depot_items},
     }
+
+
+def live_gui_progress() -> dict:
+    """今日 gui.log 里最新一条开始任务，以及它之后的任务出错。"""
+    empty = {
+        "current_task": "",
+        "current_task_time": "",
+        "task_error": "",
+        "task_error_time": "",
+        "note": "",
+    }
+    today = datetime.now().strftime("%Y-%m-%d")
+    root = _maa_debug_dir()
+    if root is None:
+        empty["note"] = "未配置可用的 MAA.exe，没有读 gui.log。"
+        return empty
+    path = root / "gui.log"
+    if not path.is_file():
+        empty["note"] = f"没有 {path}。"
+        return empty
+    try:
+        raw = _tail_text(path, LIVE_BYTES)
+    except OSError as exc:
+        empty["note"] = f"读不了 {path}：{exc}"
+        return empty
+    current = None
+    error = None
+    for line in raw.splitlines():
+        matched = _GUI_TS.match(line)
+        if not matched or matched.group(1) != today:
+            continue
+        stamp = f"{matched.group(1)} {matched.group(2)}"
+        if "开始任务:" in line:
+            current = {
+                "time": stamp,
+                "name": line.split("开始任务:", 1)[-1].strip(),
+            }
+        elif "任务出错:" in line:
+            error = {
+                "time": stamp,
+                "name": line.split("任务出错:", 1)[-1].strip(),
+            }
+    if current is None:
+        return empty
+    out = {
+        "current_task": current["name"],
+        "current_task_time": current["time"],
+        "task_error": "",
+        "task_error_time": "",
+        "note": "",
+    }
+    if error is not None and error["time"] >= current["time"]:
+        out["task_error"] = error["name"]
+        out["task_error_time"] = error["time"]
+    return out
 
 
 def _desk_items(today: str) -> tuple[list[dict], str]:
@@ -267,11 +323,11 @@ def _maa_debug_dir() -> Path | None:
     return maa.resolve().parent / "debug"
 
 
-def _tail_text(path: Path) -> str:
+def _tail_text(path: Path, max_bytes: int = MAX_BYTES) -> str:
     with path.open("rb") as fh:
         fh.seek(0, 2)
         size = fh.tell()
-        start = max(0, size - MAX_BYTES)
+        start = max(0, size - max_bytes)
         fh.seek(start)
         raw = fh.read()
     if start > 0:

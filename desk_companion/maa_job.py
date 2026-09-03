@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from .logutil import log
+from .log_inspect import live_gui_progress
 from .maa_config import load_maa, require_maa_exe, require_pc_paths, save_maa, save_selected
 from .maa_depot import RetryableDepotError, ingest_depot
 from .maa_elevate import GAME_TASK, MAA_STOP_TASK, MAA_TASK, authorize, run_task, task_exists
@@ -32,6 +33,7 @@ class MaaController:
     def snapshot(self) -> dict:
         cfg = load_maa()
         reports = self.remote.last_reports()
+        progress = live_gui_progress()
         return {
             "ok": True,
             "launcher_exe": cfg["launcher_exe"],
@@ -47,6 +49,11 @@ class MaaController:
             "remote_polled": self.remote.polled(),
             "last_report": reports[-1] if reports else None,
             "queued": [str(item.get("type") or "") for item in self.remote.snapshot_tasks()],
+            "current_task": progress["current_task"],
+            "current_task_time": progress["current_task_time"],
+            "task_error": progress["task_error"],
+            "task_error_time": progress["task_error_time"],
+            "progress_note": progress["note"],
             "elevate_ready": task_exists(GAME_TASK),
             "path": cfg["path"],
         }
