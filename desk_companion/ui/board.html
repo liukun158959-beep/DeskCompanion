@@ -321,6 +321,12 @@
     #panel-maa .card { overflow: auto; }
     .skland-meta { margin: 0 0 8px; }
     .skland-stats { margin-bottom: 4px; grid-template-columns: repeat(4, 1fr); }
+    .farm-body {
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.55;
+      margin: 8px 0 0;
+    }
     .board-foot {
       flex-shrink: 0;
       padding-top: 8px;
@@ -705,6 +711,13 @@
             <button class="btn" id="skland-sync" type="button">同步森空岛</button>
           </div>
           <p class="hint" id="skland-msg"></p>
+          <h2 style="margin-top:16px">今天刷什么</h2>
+          <p class="hint">按今天的仓库和森空岛额度算。不改 MAA 关卡，不编打几次。活动关本刀不做。</p>
+          <div class="form-actions">
+            <button class="btn" id="farm-plan" type="button">今天刷什么</button>
+          </div>
+          <p class="farm-body hint" id="farm-body"></p>
+          <p class="hint" id="farm-msg"></p>
           <h2 style="margin-top:16px">一键长草（与 MAA 同名）</h2>
           <p class="hint">勾选这次要跑的项。关卡、吃药、基建班表仍在 MAA 齿轮里。先授权一次计划任务，之后打开 PC 客户端不再弹 UAC。</p>
           <p class="hint">清日常结束会更新仓库（强制带上，不是第 9 个勾选）。八项都不勾也仍会只跑扫仓。</p>
@@ -1674,6 +1687,40 @@
         sklandMsg(data, "森空岛已同步。");
       } catch (exc) {
         sklandMsg({ ok: false, error: String(exc) });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    function farmMsg(data, fallbackOk) {
+      const msg = document.getElementById("farm-msg");
+      if (!data || data.ok === false) {
+        msg.className = "error";
+        msg.textContent = (data && data.error) || "失败";
+        return;
+      }
+      msg.className = "ok";
+      msg.textContent = data.message || fallbackOk || "";
+    }
+
+    document.getElementById("farm-plan").addEventListener("click", async () => {
+      const btn = document.getElementById("farm-plan");
+      const body = document.getElementById("farm-body");
+      btn.disabled = true;
+      try {
+        const data = await api().compute_farm_plan();
+        body.textContent = data.text || data.error || "";
+        if (!data || data.ok === false) {
+          body.className = "farm-body error";
+          farmMsg(data);
+        } else {
+          body.className = "farm-body hint";
+          farmMsg(data, "已按今天的账本算出。");
+        }
+      } catch (exc) {
+        body.className = "farm-body error";
+        body.textContent = String(exc);
+        farmMsg({ ok: false, error: String(exc) });
       } finally {
         btn.disabled = false;
       }

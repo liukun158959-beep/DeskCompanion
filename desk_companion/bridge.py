@@ -128,3 +128,6 @@ class Bridge:
 
     def sync_skland(self) -> dict:
         return self._host.sync_skland()
+
+    def compute_farm_plan(self) -> dict:
+        return self._host.compute_farm_plan()

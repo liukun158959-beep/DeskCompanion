@@ -566,6 +566,16 @@ class App:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def compute_farm_plan(self) -> dict:
+        from .farm_plan import today_farm_plan
+
+        try:
+            data = today_farm_plan()
+            data["message"] = "已按今天的账本算出。"
+            return data
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "text": str(exc)}
+
     def _chat_visible(self) -> bool:
         return bool(self.pet and self.pet.bubble_open)
 
