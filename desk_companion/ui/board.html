@@ -952,7 +952,7 @@
               <p class="farm-body hint" id="farm-body"></p>
               <p class="hint" id="farm-msg"></p>
               <h2 style="margin-top:16px">一键长草（与 MAA 同名）</h2>
-              <p class="hint">勾选这次要跑的项。关卡、吃药、基建班表仍在 MAA 齿轮里。先授权一次计划任务，之后打开 PC 客户端不再弹 UAC。</p>
+              <p class="hint">勾选这次要跑的项。关卡、吃药、基建班表仍在 MAA 齿轮里。清日常不再代开启动器或游戏；请先自己开到「明日方舟」窗口。授权一次只为让管理员 MAA 点得动游戏窗。</p>
               <p class="hint">清日常结束会更新仓库（强制带上，不是第 9 个勾选）。八项都不勾也仍会只跑扫仓。</p>
               <div class="opt-list" id="maa-options"></div>
               <h2 style="margin-top:16px">PC 客户端路径</h2>
@@ -962,11 +962,9 @@
               <input id="maa-game" type="text" autocomplete="off">
               <label for="maa-exe">官方 MAA.exe</label>
               <input id="maa-exe" type="text" autocomplete="off">
-              <label for="maa-timeout">等待游戏窗口秒数</label>
-              <input id="maa-timeout" type="number" min="10" step="1">
               <div class="form-actions">
                 <button class="btn ghost" id="maa-save" type="button">保存路径</button>
-                <button class="btn ghost" id="maa-auth" type="button">授权一次开游戏（之后不再弹 UAC）</button>
+                <button class="btn ghost" id="maa-auth" type="button">授权一次 MAA</button>
                 <button class="btn" id="maa-open" type="button">打开游戏</button>
                 <button class="btn" id="maa-start" type="button">开始清日常</button>
                 <button class="btn ghost" id="maa-stop" type="button">停止</button>
@@ -2612,7 +2610,6 @@
       document.getElementById("maa-launcher").value = data.launcher_exe || "";
       document.getElementById("maa-game").value = data.game_exe || "";
       document.getElementById("maa-exe").value = data.maa_exe || "";
-      document.getElementById("maa-timeout").value = String(data.open_timeout_sec || 90);
       const msg = document.getElementById("maa-msg");
       if (data.message) {
         msg.className = data.status === "error" ? "error" : "hint";
@@ -2639,7 +2636,6 @@
           launcher_exe: document.getElementById("maa-launcher").value,
           game_exe: document.getElementById("maa-game").value,
           maa_exe: document.getElementById("maa-exe").value,
-          open_timeout_sec: Number(document.getElementById("maa-timeout").value),
         });
         renderMaa(data);
         maaMsg(data, "路径已保存。");
@@ -2659,7 +2655,7 @@
     document.getElementById("maa-open").addEventListener("click", async () => {
       try {
         const data = await api().maa_open_game();
-        maaMsg(data, "正在打开游戏。");
+        maaMsg(data, "正在确认明日方舟窗口。");
       } catch (exc) {
         maaMsg({ ok: false, error: String(exc) });
       }

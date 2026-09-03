@@ -480,7 +480,7 @@ function showPetMenu(maa) {
     ...optionItems,
     { type: "separator" },
     {
-      label: "授权一次开游戏",
+      label: "授权一次 MAA",
       click: () => {
         request("maa_authorize", {}).catch((err) => elog(`maa_authorize ${err}`));
       },

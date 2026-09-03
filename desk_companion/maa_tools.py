@@ -1,4 +1,4 @@
-"""Atlas 工具：改勾选、打开 PC 客户端。长任务在对话外跑。"""
+"""Atlas 工具：改勾选、确认已有 PC 游戏窗。长任务在对话外跑。"""
 from __future__ import annotations
 
 _HOST = None
@@ -30,7 +30,7 @@ def set_arknights_daily_options(args: dict) -> str:
     snap = _ctrl().set_selected(selected)
     names = [item["label"] for item in snap["options"] if item["checked"]]
     if not names:
-        return "已保存：这次一项都不勾。开始清日常只会尝试打开游戏。"
+        return "已保存：这次一项都不勾。开始清日常只会确认游戏窗并扫仓。"
     return "已保存勾选：" + "、".join(names)
 
 
@@ -79,14 +79,14 @@ def option_specs() -> list[dict]:
         {
             "func": open_arknights_pc,
             "name": "open_arknights_pc",
-            "description": "打开鹰角启动器安装的明日方舟 PC 客户端，不是安卓模拟器。下令后立即返回，游戏在后台打开。",
+            "description": "确认已有明日方舟 PC 窗口。没有窗口则立刻失败，不代开启动器或游戏。下令后立即返回。",
             "parameters": {"type": "object", "properties": {}, "required": []},
             "retry_max": 0,
         },
         {
             "func": start_arknights_daily,
             "name": "start_arknights_daily",
-            "description": "按当前勾选开始清日常：先打开 PC 客户端。未配置 MAA 时会说明缺什么，不假装已经长草。",
+            "description": "按当前勾选开始清日常：先确认已有明日方舟窗口，再交给 MAA。没有窗口则立刻失败，不代开 exe。未配置 MAA 时会说明缺什么，不假装已经长草。",
             "parameters": {"type": "object", "properties": {}, "required": []},
             "retry_max": 0,
         },

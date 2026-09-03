@@ -1,4 +1,4 @@
-"""明日方舟长任务：先启动器，再 PC 客户端，再让 MAA 按勾选远控执行。"""
+"""明日方舟长任务：先认已有游戏窗，再让 MAA 按勾选远控执行。不代开启动器。"""
 from __future__ import annotations
 
 import time
@@ -9,7 +9,7 @@ from .logutil import log
 from .log_inspect import live_gui_progress
 from .maa_config import load_maa, require_maa_exe, require_pc_paths, save_maa, save_selected
 from .maa_depot import RetryableDepotError, ingest_depot
-from .maa_elevate import GAME_TASK, MAA_STOP_TASK, MAA_TASK, authorize, run_task, task_exists
+from .maa_elevate import MAA_STOP_TASK, MAA_TASK, authorize, run_task, task_exists
 from .maa_maa_cfg import patch_maa_config
 from .maa_options import catalog, parse_selected
 from .maa_pc import exe_is_elevated, exe_running, open_pc_client, stop_exe
@@ -54,7 +54,7 @@ class MaaController:
             "task_error": progress["task_error"],
             "task_error_time": progress["task_error_time"],
             "progress_note": progress["note"],
-            "elevate_ready": task_exists(GAME_TASK),
+            "elevate_ready": task_exists(MAA_TASK),
             "path": cfg["path"],
         }
 
@@ -94,12 +94,8 @@ class MaaController:
 
     def authorize_elevate(self) -> dict:
         cfg = load_maa()
-        launcher, game = require_pc_paths(cfg)
-        del launcher
-        maa = Path(cfg["maa_exe"]) if cfg["maa_exe"] else None
-        if maa is not None and not maa.is_file():
-            maa = None
-        text = authorize(game, maa)
+        maa = require_maa_exe(cfg)
+        text = authorize(maa)
         self.message = text
         self._host.ui(lambda: self._notice(text, panel="maa"))
         snap = self.snapshot()
@@ -107,10 +103,10 @@ class MaaController:
         return snap
 
     def start_open_game(self) -> dict:
-        return self._kick("open", "正在打开明日方舟 PC 客户端…")
+        return self._kick("open", "正在确认明日方舟窗口…")
 
     def start_daily(self) -> dict:
-        return self._kick("daily", "正在打开游戏并让 MAA 清日常…")
+        return self._kick("daily", "正在确认游戏窗并让 MAA 清日常…")
 
     def stop(self) -> dict:
         self._cancel.set()
@@ -169,7 +165,7 @@ class MaaController:
         if not task_exists(MAA_TASK):
             raise RuntimeError(
                 "MAA 还没做成最高权限计划任务。游戏因反作弊已提升，未提升的 MAA 点不到窗口。"
-                "请再点「授权一次开游戏」，把 MAA 也注册进去。"
+                "请再点「授权一次 MAA」，把管理员计划任务注册进去。"
             )
         if exe_running(maa):
             if exe_is_elevated(maa):
@@ -328,7 +324,7 @@ class MaaController:
         if not task_exists(MAA_STOP_TASK):
             raise RuntimeError(
                 "空仓后再试扫仓需要先关掉管理员 MAA，但还没有关闭用的计划任务。"
-                "请在看板点「授权一次开游戏」，关掉 MAA 后再清日常。"
+                "请在看板点「授权一次 MAA」，关掉 MAA 后再清日常。"
             )
         run_task(MAA_STOP_TASK)
         deadline = time.monotonic() + 15

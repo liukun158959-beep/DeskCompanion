@@ -142,59 +142,23 @@ def open_pc_client(
     timeout_sec: int,
     cancel,
 ) -> str:
-    """
-    等到 Arknights.exe 出现可见窗口。
-    启动器没有 CLI 一键进游戏，所以启动器拉起来之后仍要启动游戏 exe。
-    """
+    """只认已有「明日方舟」窗口。不代开启动器或游戏 exe（启动器会弹 UAC）。"""
+    del game_exe, timeout_sec
+    if cancel.is_set():
+        raise RuntimeError("已停止：打开游戏被取消。")
     hwnd = find_game_hwnd()
     if hwnd:
         title = win32gui.GetWindowText(hwnd) or "(无标题)"
         return f"明日方舟 PC 客户端已经在运行（窗口「{title}」）。"
-
-    if not exe_running(launcher_exe):
-        start_detached(launcher_exe)
-
-    wait_until = time.monotonic() + 8
-    while time.monotonic() < wait_until:
-        if cancel.is_set():
-            raise RuntimeError("已停止：打开游戏被取消。")
-        if exe_running(launcher_exe):
-            break
-        time.sleep(0.25)
-    if not exe_running(launcher_exe):
+    if exe_running(launcher_exe):
         raise RuntimeError(
-            f"鹰角启动器没起来：{launcher_exe}。"
-            "请确认这是官方 Launcher.exe，再从看板重新打开。"
+            "鹰角启动器已在，但没有「明日方舟」窗口。"
+            "请在启动器里点开始游戏，等到窗口出现，再点打开游戏或清日常。"
+            "桌宠不再代开 Arknights.exe。"
         )
-
-    if not exe_running(game_exe):
-        from .maa_elevate import GAME_TASK, run_task, task_exists
-
-        if not task_exists(GAME_TASK):
-            raise RuntimeError(
-                "还不能无 UAC 打开游戏。请先在看板点「授权一次开游戏（之后不再弹 UAC）」，"
-                "并在那一次 UAC 窗口自己点是。桌宠点不到安全桌面上的按钮，也不会用漏洞绕过。"
-            )
-        run_task(GAME_TASK)
-
-    deadline = time.monotonic() + timeout_sec
-    while time.monotonic() < deadline:
-        if cancel.is_set():
-            raise RuntimeError("已停止：打开游戏被取消。")
-        hwnd = find_game_hwnd()
-        if hwnd:
-            title = win32gui.GetWindowText(hwnd) or "(无标题)"
-            return f"明日方舟 PC 客户端已打开（窗口「{title}」，进程 Arknights.exe）。"
-        time.sleep(0.4)
-
-    running = "在跑" if exe_running(game_exe) else "没在跑"
     raise RuntimeError(
-        f"{timeout_sec} 秒内没有出现 Arknights.exe 窗口。"
-        f"游戏进程当前{running}。"
-        "鹰角启动器没有命令行「开始游戏」，桌宠是：先拉启动器，再用已授权的计划任务启动 Arknights.exe。"
-        "若还没授权计划任务，会一直等不到窗口。"
-        "若启动器要登录或更新，先在启动器里处理完再点打开游戏。"
-        "不要把 MAA 连到安卓模拟器来开这套客户端。"
+        "没有「明日方舟」窗口，桌宠也不再代开启动器（启动器会弹 UAC，点不到安全桌面）。"
+        "请先自己打开鹰角启动器并在那一次 UAC 点是，再在启动器里点开始游戏，出现窗口后再打开游戏或清日常。"
     )
 
 
