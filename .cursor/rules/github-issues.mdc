@@ -1,0 +1,13 @@
+---
+description: DeskCompanion 一刀一 issue，提交用 Fixes #n 直推 main
+alwaysApply: true
+---
+
+# DeskCompanion 合入
+
+单人仓。不要为合入开 PR，不要加「必须 review」。
+
+- 每一刀对应 GitHub 上 **一个** 未关闭 issue（有 milestone 才会进看板路线图）。
+- 提交说明包含 `Fixes #<号>`（或 `Fix #` / `Closes #`）。推到 `main` 后 GitHub 关 issue，看板跟着走。
+- 没有对应 issue 就先开再写代码。不要把几刀揉进一次「Fixes #6, #7」。
+- 禁止给 `main` 加「必须有人批准才能合入」。

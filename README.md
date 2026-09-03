@@ -36,3 +36,5 @@ Live2D Cubism Core 和形象包不在本仓库。Core 放到 `pet-ui/public/Core
 ## GitHub 页
 
 看板 GitHub 读当前 `gh` 登录账号下全部未归档仓库。路线图只认带 milestone 的未关闭 issue；卡片上的总结由这些 issue 拼出来，不编。对话里「总结某仓库最近」走技能 `github-repo-summary`，只在气泡里说。
+
+合入：一刀一个 issue，提交说明写 `Fixes #6` 这种，直推 `main`，不开发 PR、不要求 review。GitHub 会关对应 issue。
