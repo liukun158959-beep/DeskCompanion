@@ -380,6 +380,150 @@ def format_roadmap_text(repo_name: str) -> str:
     return "\n".join(lines)
 
 
+def format_week_review_text(monday: datetime, now: datetime) -> str:
+    """本周一到此刻：各未归档库的产出和还开着的项。失败原文，不跳过仓库。"""
+    account = auth_account()
+    login = account["login"].lower()
+    start_utc = monday.astimezone(timezone.utc)
+    end_utc = now.astimezone(timezone.utc)
+    since = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    repos = list_owned_repos()
+    lines = [
+        f"# GitHub {monday.strftime('%Y-%m-%d')}～{now.strftime('%Y-%m-%d %H:%M')} 东八区",
+        f"账号：{account['login']}",
+        "",
+    ]
+    for repo in repos:
+        full = repo["full_name"]
+        lines.append(f"## {full}")
+        commits = _run_gh_json(
+            ["api", f"repos/{full}/commits?since={since}&per_page=100"],
+            timeout=90,
+        )
+        if type(commits) is not list:
+            raise RuntimeError(f"{full} 的 commit 列表必须是数组。")
+        mine = []
+        for item in commits:
+            if not isinstance(item, dict):
+                raise RuntimeError(f"{full} 的 commit 项必须是对象。")
+            gh_author = item.get("author")
+            if isinstance(gh_author, dict):
+                if str(gh_author.get("login") or "").lower() != login:
+                    continue
+            sha = str(item.get("sha") or "")[:7]
+            commit = item.get("commit") if isinstance(item.get("commit"), dict) else {}
+            message = str((commit or {}).get("message") or "").split("\n", 1)[0]
+            date = ""
+            author = commit.get("author") if isinstance(commit.get("author"), dict) else {}
+            if author:
+                date = str(author.get("date") or "")
+            mine.append(f"- {sha} {date} {message}")
+        lines.append("### 产出 commits")
+        if not mine:
+            lines.append("无")
+        else:
+            lines.extend(mine)
+            if len(commits) >= 100:
+                lines.append("达到 100 条 commit 上限，可能有截断。")
+        prs = _run_gh_json(
+            [
+                "pr",
+                "list",
+                "--repo",
+                full,
+                "--state",
+                "all",
+                "--limit",
+                "100",
+                "--json",
+                "number,title,url,state,mergedAt,closedAt,updatedAt,createdAt",
+            ],
+            timeout=90,
+        )
+        issues = _run_gh_json(
+            [
+                "issue",
+                "list",
+                "--repo",
+                full,
+                "--state",
+                "all",
+                "--limit",
+                "100",
+                "--json",
+                "number,title,url,state,updatedAt,createdAt,closedAt,milestone",
+            ],
+            timeout=90,
+        )
+        if type(prs) is not list or type(issues) is not list:
+            raise RuntimeError(f"{full} 的近期 PR/issue 必须是数组。")
+        merged = []
+        open_prs = []
+        for item in prs:
+            if not isinstance(item, dict):
+                raise RuntimeError(f"{full} 的 PR 项必须是对象。")
+            state = str(item.get("state") or "").upper()
+            if state == "OPEN":
+                open_prs.append(item)
+            elif _iso_in_range(item.get("mergedAt"), start_utc, end_utc):
+                merged.append(item)
+        closed_issues = []
+        open_miled = []
+        open_loose = 0
+        for item in issues:
+            if not isinstance(item, dict):
+                raise RuntimeError(f"{full} 的 issue 项必须是对象。")
+            state = str(item.get("state") or "").upper()
+            milestone = item.get("milestone")
+            mile_title = ""
+            if isinstance(milestone, dict) and type(milestone.get("title")) is str:
+                mile_title = milestone["title"].strip()
+            if state == "OPEN":
+                if mile_title:
+                    open_miled.append((item, mile_title))
+                else:
+                    open_loose += 1
+            elif _iso_in_range(item.get("closedAt"), start_utc, end_utc):
+                closed_issues.append((item, mile_title))
+        lines.append("### 产出 已合并 PR")
+        if not merged:
+            lines.append("无")
+        for item in merged:
+            lines.append(
+                f"- #{item.get('number')} {item.get('title')} {item.get('url')}"
+            )
+        if len(prs) >= 100:
+            lines.append("达到 100 条 PR 上限，可能有截断。")
+        lines.append("### 产出 已关闭 issue")
+        if not closed_issues:
+            lines.append("无")
+        for item, mile_title in closed_issues:
+            mile = f" milestone={mile_title}" if mile_title else ""
+            lines.append(
+                f"- #{item.get('number')} {item.get('title')}{mile} {item.get('url')}"
+            )
+        if len(issues) >= 100:
+            lines.append("达到 100 条 issue 上限，可能有截断。")
+        lines.append("### 待完成 未合并 PR")
+        if not open_prs:
+            lines.append("无")
+        for item in open_prs:
+            lines.append(
+                f"- #{item.get('number')} {item.get('title')} {item.get('url')}"
+            )
+        lines.append("### 待完成 路线图 issue")
+        if not open_miled:
+            lines.append("无")
+        for item, mile_title in open_miled:
+            lines.append(
+                f"- #{item.get('number')} [{mile_title}] {item.get('title')} {item.get('url')}"
+            )
+        if open_loose:
+            lines.append(f"有未关 issue、无路线图：{open_loose} 条。")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_recent_text(repo_name: str) -> str:
     full = resolve_repo(repo_name)
     since = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).strftime(
@@ -475,6 +619,15 @@ def _within(item: dict, cutoff: datetime) -> bool:
         if parsed is not None and parsed >= cutoff:
             return True
     return False
+
+
+def _iso_in_range(raw, start: datetime, end: datetime) -> bool:
+    if type(raw) is not str or not raw.strip():
+        return False
+    parsed = _parse_iso(raw.strip())
+    if parsed is None:
+        return False
+    return start <= parsed <= end
 
 
 def _parse_iso(raw: str) -> datetime | None:

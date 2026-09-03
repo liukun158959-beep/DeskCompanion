@@ -38,8 +38,8 @@ class Bridge:
     def ask_logs(self) -> None:
         self._host.ui(self._host.ask_logs)
 
-    def generate_today_summary(self) -> dict:
-        return self._host.generate_today_summary()
+    def generate_week_review(self) -> dict:
+        return self._host.generate_week_review()
 
     def write_today_summary_doc(self) -> dict:
         return self._host.write_today_summary_doc()

@@ -1,6 +1,6 @@
 ---
 name: feishu-doc-writing
-description: Writes a restrained Feishu work summary from today's agenda, tasks, and chat. Use when generating the desk-companion daily summary or creating that Feishu doc.
+description: Writes a restrained Feishu work summary from today's agenda, tasks, and chat. Use when the user asks in chat for today's work summary. The board weekly retro uses weekly-retro.
 ---
 
 # 今日工作总结（飞书 Markdown）

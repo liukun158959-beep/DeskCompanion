@@ -52,7 +52,7 @@
 - **本阶段（账号状态）**：清日常结束后，今天的材料能按中文名查到；不是今天、没有文件、或 `data` 一个键都没有 → 失败原文，不出现「当 0」，不把空扫标成今天。代理卡不在结果里就不假装有。
 - 对话下令后立刻结束，进度走方舟气泡。V26 起等到整段 `LinkStart` 汇报再读仓。
 - **日志**：看板有隐蔽入口；今日桌宠日志有崩溃 / 看门狗 / 明确失败、或 MAA 今日有「任务出错」则标红；点开是重点 + 桌宠 / MAA 分栏，可过滤，不是一个文本框。对话「看看日志 / 仓库怎么挂的」必须先 `read_recent_errors` 再 `read_skill(maa-log-analysis)`，只喂最近出错段；没有出错就说没有。技能全文在看板「技能」页可见。
-- **GitHub**：看板 GitHub 页按账号下列出全部未归档仓库，每库一张卡片（数字、阶段、根据 milestone issue 写的总结）。没有路线图 issue 就写无法判断，不编。对话总结某仓库最近提交必须先 `github_recent` 再 `read_skill(github-repo-summary)`，只在气泡说，不写飞书。
+- **GitHub**：看板 GitHub 页按账号下列出全部未归档仓库，每库一张卡片（数字、阶段、根据 milestone issue 写的总结）。没有路线图 issue 就写无法判断，不编。看板「生成本周复盘」用本周一到此刻的 commit / 已合并 PR / 已关 issue 当产出，飞书未完成待办 + 未合并 PR + 带 milestone 的未关 issue 当还欠的；对话总结某仓库最近提交必须先 `github_recent` 再 `read_skill(github-repo-summary)`，只在气泡说，不写飞书。
 - 护栏：不链 MaaCore；不注入游戏；不自写仓库 OCR；不把整份日志、整份 `asst.log`、失败截图喂进模型；**模型不准下发重试**。
 
 ## 3. 非目标（原因）
@@ -77,11 +77,11 @@
 
 ## 4. 已交付（基线）
 
-问今日安排、今日看板、`today.json`、模板 nudge、流式气泡、人设与最近 N 条、日总结写飞书文档（生成时读 `feishu-doc-writing` 技能）、换肤与托盘。看板 / 气泡三壳：今日、方舟、对话。
+问今日安排、今日看板、`today.json`、模板 nudge、流式气泡、人设与最近 N 条、本周复盘写飞书文档（生成时读 `weekly-retro` 技能）、换肤与托盘。看板 / 气泡三壳：今日、方舟、对话。
 
 MAA：8 项勾选（气泡已能改）+ 开 PC 客户端 + 计划任务拉起。V26 写队列 + `LinkStart` + 读仓**代码已写，待验收**。账本 `arknights_account.json` 能从已有 `DepotData.json` 写入。本机 MAA 6.16.8。
 
-已知缺口：对话能开游戏 / 清日常 / 改勾选 / 看日志 / 今日总结技能。空 `DepotData.json` 不再盖 `depot_sync`。同趟再试扫仓、看板右键、空勾选仍扫仓待验收。每次代拉 `Launcher.exe` / `Arknights.exe` 仍弹 UAC；策略已记，未改。
+已知缺口：对话能开游戏 / 清日常 / 改勾选 / 看日志。空 `DepotData.json` 不再盖 `depot_sync`。同趟再试扫仓、看板右键、空勾选仍扫仓待验收。每次代拉 `Launcher.exe` / `Arknights.exe` 仍弹 UAC；策略已记，未改。
 
 ## 5. 整体计划
 

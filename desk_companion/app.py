@@ -24,7 +24,7 @@ from .maa_tools import bind_host
 from .envconf import parse_env_file, public_llm_env, write_llm_env
 from .layered import enable_dpi_aware, work_area
 from .logutil import crash, install_crash_hooks, log, mark_ready, start_os_watchdog
-from .memory import TZ, append_chat, chat_on_date, clear_chat, history_for_model, list_chat, recent_chat
+from .memory import TZ, append_chat, clear_chat, history_for_model, list_chat, recent_chat
 from .pet_shell import BASE_PET_H, BASE_PET_W, CMD_QUIT, start_pet_thread
 from .skin import load_skin
 from .state import load_state
@@ -57,8 +57,9 @@ DAILY_ASK = """【今日纸条】请先调用 get_today_agenda 和 get_open_task
 2. 再用有序列表列出今天其余值得盯的 2 到 4 项
 3. 若有多条日程或待办，再给一张表格，列：事项 / 截止 / 状态
 不要鸡汤，不要写成一段话。工具失败就原样说明怎么修。"""
-SUMMARY_ASK = """【今日工作总结】不要调用工具。只根据后面的今日材料写中文 Markdown，不要编造材料里没有的事。
-结构、红线和能用的语法以【技能规程】为准，不要另起章节，不要把整篇包进代码块。"""
+SUMMARY_ASK = """【本周复盘】不要调用工具。只根据后面的本周材料写中文 Markdown，不要编造材料里没有的事。
+结构、红线和能用的语法以【技能规程】为准，不要另起章节，不要把整篇包进代码块。
+不要把会议、待办或对话写成产出。"""
 PAPER = "#FFF6EC"
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
 DWMWCP_ROUND = 2
@@ -592,36 +593,47 @@ class App:
         self.show_pet()
         self.send_chat(LOG_ASK)
 
-    def generate_today_summary(self) -> dict:
+    def generate_week_review(self) -> dict:
         if self._agent_running:
-            return {"ok": False, "error": "凯尔希正在说话，等这句说完再生成总结。"}
+            return {"ok": False, "error": "凯尔希正在说话，等这句说完再生成本周复盘。"}
         if self.agent is None:
             return {
                 "ok": False,
                 "error": self._agent_error or "还没接上模型。打开看板「模型」页填写。",
             }
-        from .board_data import load_today_snapshot, save_today_fields
-
-        try:
-            snap = load_today_snapshot(refresh=False)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-        if not snap.get("agenda", {}).get("ok"):
-            return {
-                "ok": False,
-                "error": snap.get("agenda", {}).get("error")
-                or "日程读取失败，先点「刷新」或去「飞书」页检查登录。",
-            }
-        if not snap.get("tasks", {}).get("ok"):
-            return {
-                "ok": False,
-                "error": snap.get("tasks", {}).get("error")
-                or "待办读取失败，先点「刷新」或去「飞书」页检查登录。",
-            }
+        from .board_data import (
+            fetch_week_feishu,
+            load_today_snapshot,
+            save_today_fields,
+            week_range,
+        )
+        from .github import format_week_review_text
         from .skill_catalog import read_skill
 
         try:
-            skill = read_skill("feishu-doc-writing")
+            load_today_snapshot(refresh=False)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        monday, now = week_range()
+        feishu = fetch_week_feishu(monday, now)
+        if not feishu["agenda"].get("ok"):
+            return {
+                "ok": False,
+                "error": feishu["agenda"].get("error")
+                or "本周日程读取失败，去「飞书」页检查登录。",
+            }
+        if not feishu["tasks"].get("ok"):
+            return {
+                "ok": False,
+                "error": feishu["tasks"].get("error")
+                or "未完成待办读取失败，去「飞书」页检查登录。",
+            }
+        try:
+            github_text = format_week_review_text(monday, now)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        try:
+            skill = read_skill("weekly-retro")
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
         self._agent_running = True
@@ -631,15 +643,15 @@ class App:
                 SUMMARY_ASK
                 + "\n\n【技能规程】\n"
                 + skill["body"]
-                + "\n\n【今日材料】\n"
-                + self._today_summary_materials(snap)
+                + "\n\n【本周材料】\n"
+                + self._week_review_materials(monday, now, feishu, github_text)
             )
             result = self.agent.llm.chat(
                 [
                     {
                         "role": "system",
                         "content": self.state.persona
-                        + "\n\n你现在只写今日工作总结，不要调用工具。按用户消息里的技能规程写。",
+                        + "\n\n你现在只写本周复盘，不要调用工具。按用户消息里的技能规程写。",
                     },
                     {"role": "user", "content": prompt},
                 ]
@@ -648,13 +660,13 @@ class App:
             message = result.get("message") or {}
             markdown = str(message.get("content") or "").strip()
             if not markdown:
-                raise RuntimeError("总结正文为空。")
+                raise RuntimeError("复盘正文为空。")
             summary_at = datetime.now(TZ).isoformat(timespec="seconds")
             snap = save_today_fields(summary=markdown, summary_at=summary_at)
             return {
                 "ok": True,
                 **snap,
-                "message": "总结已写在今日页，并已落盘。",
+                "message": "本周复盘已写在今日页，并已落盘。",
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
@@ -662,7 +674,7 @@ class App:
             self._agent_running = False
 
     def write_today_summary_doc(self) -> dict:
-        from .board_data import load_today_snapshot, save_today_fields
+        from .board_data import load_today_snapshot, save_today_fields, week_range
         from .feishu_auth import create_markdown_doc
 
         try:
@@ -671,9 +683,10 @@ class App:
             return {"ok": False, "error": str(exc)}
         markdown = (snap.get("summary") or "").strip()
         if not markdown:
-            return {"ok": False, "error": "还没有总结。先点「生成总结」。"}
+            return {"ok": False, "error": "还没有复盘。先点「生成本周复盘」。"}
         try:
-            title = f"{snap['date']} 工作总结"
+            monday, now = week_range()
+            title = f"{monday.strftime('%Y-%m-%d')}～{now.strftime('%Y-%m-%d')} 周复盘"
             created = create_markdown_doc(title, markdown)
             snap = save_today_fields(doc_url=created["url"])
             os.startfile(created["url"])
@@ -681,39 +694,41 @@ class App:
                 "ok": True,
                 **snap,
                 "url": created["url"],
-                "message": "总结已写到飞书文档，并打开了链接。",
+                "message": "复盘已写到飞书文档，并打开了链接。",
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def _today_summary_materials(self, snap: dict) -> str:
-        day = snap["date"]
-        parts = [f"日期：{day}", "", "## 日程"]
-        agenda_items = snap["agenda"].get("items") or []
+    def _week_review_materials(
+        self, monday: datetime, now: datetime, feishu: dict, github_text: str
+    ) -> str:
+        start = monday.strftime("%Y-%m-%d")
+        end = now.strftime("%Y-%m-%d %H:%M")
+        parts = [
+            f"区间：{start}～{end} 东八区",
+            "",
+            "## GitHub 产出与待完成",
+            github_text.strip() or "无",
+            "",
+            "## 飞书本周日程",
+        ]
+        agenda_items = feishu["agenda"].get("items") or []
         if not agenda_items:
-            parts.append("今日无日程。")
+            parts.append("本周无日程。")
         else:
             for item in agenda_items:
                 when = item.get("start") or ""
                 if item.get("end"):
                     when = f"{when} – {item['end']}"
                 parts.append(f"- {when} {item.get('summary') or ''}".strip())
-        parts.extend(["", "## 未完成待办"])
-        task_items = snap["tasks"].get("items") or []
+        parts.extend(["", "## 飞书未完成待办"])
+        task_items = feishu["tasks"].get("items") or []
         if not task_items:
             parts.append("无未完成待办。")
         else:
             for item in task_items:
                 due = item.get("due_at") or "无截止"
                 parts.append(f"- {item.get('summary') or ''}（截止 {due}）")
-        parts.extend(["", "## 今日对话"])
-        chats = chat_on_date(day)
-        if not chats:
-            parts.append("今日无对话。")
-        else:
-            for rec in chats:
-                who = "用户" if rec["role"] == "user" else "凯尔希"
-                parts.append(f"{who}: {rec['text']}")
         return "\n".join(parts)
 
     def _record_llm_usage(self, usage, run_id: str) -> None:

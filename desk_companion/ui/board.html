@@ -562,7 +562,7 @@
             <div class="list" id="tasks"></div>
           </article>
           <article class="col today-summary">
-            <h2>总结</h2>
+            <h2>本周复盘</h2>
             <p class="meta" id="today-meta"></p>
             <div id="summary-body"></div>
           </article>
@@ -570,7 +570,7 @@
         <div class="form-actions">
           <button class="btn ghost" id="refresh-today" type="button">刷新</button>
           <button class="btn" id="ask" type="button">让凯尔希讲</button>
-          <button class="btn" id="summary-gen" type="button">生成总结</button>
+          <button class="btn" id="summary-gen" type="button">生成本周复盘</button>
           <button class="btn ghost" id="summary-doc" type="button">写入飞书文档</button>
         </div>
         <p class="hint" id="today-msg"></p>
@@ -916,12 +916,13 @@
       renderSection(tasksEl, data.tasks, "没有未完成待办", "task");
       const bits = [];
       if (data.fetched_at) bits.push("日程缓存于 " + shortTime(data.fetched_at));
-      if (data.summary_at) bits.push("总结于 " + shortTime(data.summary_at));
+      if (data.summary_at) bits.push("复盘于 " + shortTime(data.summary_at));
       todayMetaEl.textContent = bits.join("  ·  ");
       summaryEl.innerHTML = "";
       if (data.summary) {
         const body = document.createElement("div");
-        body.textContent = data.summary;
+        body.className = "skill-md";
+        fillMarkdown(body, data.summary);
         summaryEl.appendChild(body);
         if (data.doc_url) {
           const link = document.createElement("p");
@@ -939,7 +940,7 @@
       } else {
         const p = document.createElement("p");
         p.className = "empty";
-        p.textContent = "还没有总结。点「生成总结」用模型根据今日日程、待办和对话来写。";
+        p.textContent = "还没有本周复盘。点「生成本周复盘」根据 GitHub 产出和飞书待办/日程来写。";
         summaryEl.appendChild(p);
       }
     }
@@ -1444,14 +1445,14 @@
       const btn = document.getElementById("summary-gen");
       btn.disabled = true;
       msg.className = "hint";
-      msg.textContent = "正在根据今日材料写总结…";
+      msg.textContent = "正在拉取本周 GitHub 和飞书…";
       try {
-        const data = await api().generate_today_summary();
+        const data = await api().generate_week_review();
         if (data && data.ok) {
           todayCache = data;
           renderToday(data);
           msg.className = "ok";
-          msg.textContent = data.message || "总结已生成。";
+          msg.textContent = data.message || "本周复盘已生成。";
         } else {
           msg.className = "error";
           msg.textContent = (data && data.error) || "生成失败";
@@ -1468,7 +1469,7 @@
       const btn = document.getElementById("summary-doc");
       btn.disabled = true;
       msg.className = "hint";
-      msg.textContent = "正在把总结写入飞书文档…";
+      msg.textContent = "正在把复盘写入飞书文档…";
       try {
         const data = await api().write_today_summary_doc();
         if (data && data.ok) {

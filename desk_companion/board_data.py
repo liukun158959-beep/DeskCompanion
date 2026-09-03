@@ -29,6 +29,32 @@ def today_date() -> str:
     return datetime.now(TZ).date().isoformat()
 
 
+def week_range() -> tuple[datetime, datetime]:
+    """东八区本周一 00:00 到此刻。"""
+    now = datetime.now(TZ)
+    monday = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return monday, now
+
+
+def fetch_week_feishu(monday: datetime, now: datetime) -> dict:
+    start = monday.strftime("%Y-%m-%d")
+    end = now.strftime("%Y-%m-%dT%H:%M:%S+08:00")
+    agenda = _section(
+        lambda: parse_agenda(
+            _lark_data(["calendar", "+agenda", "--start", start, "--end", end]),
+            with_date=True,
+        )
+    )
+    tasks = _section(
+        lambda: parse_tasks(
+            _lark_data(["task", "+get-my-tasks", "--complete=false", "--page-all"])
+        )
+    )
+    return {"agenda": agenda, "tasks": tasks}
+
+
 def fetch_board() -> dict:
     agenda = _section(lambda: parse_agenda(_lark_data(["calendar", "+agenda"])))
     due = datetime.now(TZ).replace(hour=23, minute=59, second=59, microsecond=0)
@@ -74,7 +100,7 @@ def save_today_fields(**fields) -> dict:
     cached = _read_today_file()
     if cached is None:
         raise RuntimeError(
-            "还没有今日快照。先打开看板「今日」页或点刷新，再生成总结。"
+            "还没有今日快照。先打开看板「今日」页或点刷新，再生成本周复盘。"
         )
     if cached["date"] != day:
         raise RuntimeError(
@@ -188,7 +214,7 @@ def _section(loader) -> dict:
         return {"ok": False, "error": str(exc), "items": []}
 
 
-def parse_agenda(data) -> list[dict]:
+def parse_agenda(data, *, with_date: bool = False) -> list[dict]:
     items = _as_items(data, "日程")
     out = []
     for item in items:
@@ -197,14 +223,14 @@ def parse_agenda(data) -> list[dict]:
         summary = item.get("summary") or item.get("title")
         if not summary:
             raise RuntimeError(f"日程缺少标题，字段: {list(item.keys())}")
-        start = _event_time(item, "start")
+        start = _event_time(item, "start", with_date=with_date)
         if not start:
             raise RuntimeError(f"日程「{summary}」缺少开始时间，字段: {list(item.keys())}")
         out.append(
             {
                 "summary": str(summary),
                 "start": start,
-                "end": _event_time(item, "end"),
+                "end": _event_time(item, "end", with_date=with_date),
             }
         )
     return out
@@ -244,33 +270,35 @@ def _as_items(data, label: str) -> list:
     raise RuntimeError(f"无法解析{label}：期望列表或带 items 的对象，实际 {type(data).__name__}。")
 
 
-def _event_time(item: dict, which: str) -> str:
+def _event_time(item: dict, which: str, *, with_date: bool = False) -> str:
     for key in (which, f"{which}_time"):
         val = item.get(key)
         if val is None:
             continue
         if isinstance(val, str) and val.strip():
-            return _short_time(val)
+            return _short_time(val, with_date=with_date)
         if isinstance(val, dict):
             if val.get("date"):
                 return f"{val['date']} 全天"
             if val.get("timestamp") not in (None, ""):
                 ts = int(val["timestamp"])
-                return datetime.fromtimestamp(ts, TZ).strftime("%H:%M")
+                fmt = "%Y-%m-%d %H:%M" if with_date else "%H:%M"
+                return datetime.fromtimestamp(ts, TZ).strftime(fmt)
             raw = val.get("time") or val.get("datetime")
             if raw:
-                return _short_time(str(raw))
+                return _short_time(str(raw), with_date=with_date)
     return ""
 
 
-def _short_time(raw: str) -> str:
+def _short_time(raw: str, *, with_date: bool = False) -> str:
     text = raw.strip()
     try:
         dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return dt.astimezone(TZ).strftime("%H:%M")
+        fmt = "%Y-%m-%d %H:%M" if with_date else "%H:%M"
+        return dt.astimezone(TZ).strftime(fmt)
     except ValueError:
         if "T" in text:
-            return text.split("T")[1][:5]
+            return text.replace("T", " ")[:16] if with_date else text.split("T")[1][:5]
         return text
 
 
