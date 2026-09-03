@@ -23,7 +23,11 @@ SWP_NOACTIVATE = 0x0010
 SWP_FRAMECHANGED = 0x0020
 HWND_TOPMOST = c_void_p(-1)
 HWND_NOTOPMOST = c_void_p(-2)
+GWL_STYLE = -16
 GWL_EXSTYLE = -20
+WS_THICKFRAME = 0x00040000
+WS_MINIMIZEBOX = 0x00020000
+WS_MAXIMIZEBOX = 0x00010000
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_APPWINDOW = 0x00040000
 WS_EX_LAYERED = 0x00080000
@@ -163,6 +167,23 @@ def apply_app_window(form) -> None:
     style = int(_get_long(hwnd, GWL_EXSTYLE))
     style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
     _apply_exstyle(hwnd, style)
+
+
+def enable_thick_frame(form) -> None:
+    """无系统标题栏时仍允许拖边缘改大小、最小化、最大化。"""
+    hwnd = as_hwnd(_hwnd_of_form(form))
+    style = int(_get_long(hwnd, GWL_STYLE))
+    style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+    _set_long(hwnd, GWL_STYLE, style)
+    user32.SetWindowPos(
+        hwnd,
+        None,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+    )
 
 
 def prepare_transparent_form(form) -> None:

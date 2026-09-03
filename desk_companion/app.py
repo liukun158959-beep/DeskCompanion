@@ -35,6 +35,7 @@ from .winforms_host import (
     apply_tool_window,
     as_hwnd,
     cache_hwnd,
+    enable_thick_frame,
     enable_webview_context_menu,
     ensure_ready,
     form_of,
@@ -68,6 +69,8 @@ DWMWA_WINDOW_CORNER_PREFERENCE = 33
 DWMWA_BORDER_COLOR = 34
 DWMWA_CAPTION_COLOR = 35
 DWMWA_TEXT_COLOR = 36
+DWMWA_SYSTEMBACKDROP_TYPE = 38
+DWMSBT_NONE = 1
 DWMWCP_ROUND = 2
 DWMWCP_DONOTROUND = 1
 MUTEX_NAME = "Local\\DeskCompanion.Kaltsit"
@@ -579,7 +582,9 @@ class App:
     def show_board(self) -> None:
         if self.board is None:
             raise RuntimeError("看板窗口还没建好。")
+        form = form_of(self.board)
         show_form(self.board, activate=True, tool=False, topmost=False)
+        invoke(form, lambda: _paint_paper_chrome(self.board, form))
         if not self._board_placed:
             left, top, right, bottom = self._work_area()
             x = left + max(24, (right - left - BOARD_W) // 2)
@@ -590,6 +595,28 @@ class App:
 
     def hide_board(self) -> None:
         hide_form(self.board)
+
+    def minimize_board(self) -> None:
+        if self.board is None:
+            raise RuntimeError("看板窗口还没建好。")
+        form = form_of(self.board)
+        from System.Windows.Forms import FormWindowState
+
+        invoke(form, lambda: setattr(form, "WindowState", FormWindowState.Minimized))
+
+    def toggle_maximize_board(self) -> None:
+        if self.board is None:
+            raise RuntimeError("看板窗口还没建好。")
+        form = form_of(self.board)
+        from System.Windows.Forms import FormWindowState
+
+        def _do() -> None:
+            if form.WindowState == FormWindowState.Maximized:
+                form.WindowState = FormWindowState.Normal
+            else:
+                form.WindowState = FormWindowState.Maximized
+
+        invoke(form, _do)
 
     def ask_today(self) -> None:
         self.show_pet()
@@ -965,7 +992,7 @@ def run_app(skin_id: str) -> None:
         width=BOARD_W,
         height=BOARD_H,
         min_size=(720, 480),
-        frameless=False,
+        frameless=True,
         resizable=True,
         hidden=True,
         on_top=False,
@@ -1033,6 +1060,7 @@ def _prepare_form(
             _set_corner_preference(window, DWMWCP_DONOTROUND)
     else:
         apply_app_window(form)
+        enable_thick_frame(form)
         _paint_paper_chrome(window, form)
         _set_corner_preference(window, DWMWCP_ROUND)
     form.Opacity = 0
@@ -1084,7 +1112,7 @@ def _set_dwm_color(window, attr: int, hex_color: str) -> None:
 
 
 def _paint_paper_chrome(window, form) -> None:
-    """深色系统主题会把标题栏刷黑。看板刷成奶油纸，不要品红抠图。"""
+    """关掉深色 Mica，刷成奶油纸。不要品红抠图。"""
     from System.Drawing import ColorTranslator
 
     paper = ColorTranslator.FromHtml(PAPER)
@@ -1096,6 +1124,7 @@ def _paint_paper_chrome(window, form) -> None:
     control.DefaultBackgroundColor = paper
     _set_dwm_int(window, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, 0)
     _set_dwm_int(window, DWMWA_USE_IMMERSIVE_DARK_MODE, 0)
+    _set_dwm_int(window, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE)
     _set_dwm_color(window, DWMWA_BORDER_COLOR, BLUSH)
     _set_dwm_color(window, DWMWA_CAPTION_COLOR, PAPER)
     _set_dwm_color(window, DWMWA_TEXT_COLOR, INK)
