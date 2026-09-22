@@ -6,9 +6,12 @@
 """
 from __future__ import annotations
 
+import uuid
 from typing import Callable
 
 from ..app import App
+from ..assistant import inject_history
+from ..memory import append_chat
 
 
 class HeadlessApp(App):
@@ -31,3 +34,45 @@ class HeadlessApp(App):
     def on_stream_status(self, text: str) -> None:
         if self._status_sink is not None:
             self._status_sink(text)
+
+    def run_chat(
+        self,
+        text: str,
+        chips: dict | None,
+        delta_sink: Callable[[str], None],
+        status_sink: Callable[[str], None],
+    ) -> str:
+        """无头流式对话：复用 _compose_turn + agent.run + 流式 sink，不碰窗口。
+
+        deltas 经 BubbleStreamPlugin -> host.ui -> on_llm_delta -> delta_sink 推给 WS。
+        返回最终答案字符串，失败抛异常由 server 转成 error 帧。
+        """
+        if self._agent_running:
+            raise RuntimeError("凯尔希正在说话，等这句说完再发。")
+        if self.agent is None:
+            self.try_build_agent()
+            if self.agent is None:
+                raise RuntimeError(
+                    self._agent_error or "还没接上模型。在设置里填写 API 地址、模型名和 Key。"
+                )
+        message = self._compose_turn(text, chips or {})
+        self._delta_sink = delta_sink
+        self._status_sink = status_sink
+        self._agent_running = True
+        run_id = str(uuid.uuid4())
+        try:
+            append_chat("user", message, self.state.session_id)
+            inject_history(
+                self.agent,
+                self.state.history_n,
+                self.state.session_id,
+                exclude_user=message,
+            )
+            answer = str(self.agent.run(message, run_id=run_id))
+            self._record_usage(self.agent, run_id)
+            append_chat("pet", answer, self.state.session_id)
+            return answer
+        finally:
+            self._agent_running = False
+            self._delta_sink = None
+            self._status_sink = None

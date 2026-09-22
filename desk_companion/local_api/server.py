@@ -74,14 +74,43 @@ async def _handler(ws):
         except json.JSONDecodeError:
             await ws.send(json.dumps({"type": "error", "data": "非法 JSON"}))
             continue
-        if msg.get("type") != "rpc":
-            await ws.send(json.dumps({"type": "error", "data": "暂只支持 type=rpc"}))
-            continue
-        method = str(msg.get("method", ""))
-        args = msg.get("args") or {}
-        # 数据方法可能有阻塞 IO（飞书/MAA/GitHub），丢线程池不堵事件循环
-        res = await asyncio.to_thread(_dispatch, method, args)
-        await ws.send(json.dumps({"type": "rpc_result", "id": msg.get("id"), "result": res}))
+        mtype = msg.get("type")
+        if mtype == "rpc":
+            method = str(msg.get("method", ""))
+            args = msg.get("args") or {}
+            # 数据方法可能有阻塞 IO（飞书/MAA/GitHub），丢线程池不堵事件循环
+            res = await asyncio.to_thread(_dispatch, method, args)
+            await ws.send(json.dumps({"type": "rpc_result", "id": msg.get("id"), "result": res}))
+        elif mtype == "chat":
+            await _handle_chat(ws, msg)
+        else:
+            await ws.send(json.dumps({"type": "error", "data": f"未知消息类型：{mtype}"}))
+
+
+async def _handle_chat(ws, msg: dict) -> None:
+    # 流式对话：agent.run 阻塞跑在线程池，deltas 经线程安全队列回推 WS。
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def delta_sink(piece: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, ("token", piece))
+
+    def status_sink(text: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, ("status", text))
+
+    def run() -> None:
+        try:
+            answer = HOST.run_chat(str(msg.get("text", "")), msg.get("chips"), delta_sink, status_sink)
+            loop.call_soon_threadsafe(queue.put_nowait, ("done", answer))
+        except Exception as exc:
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", f"{type(exc).__name__}: {exc}"))
+
+    asyncio.get_running_loop().run_in_executor(None, run)
+    while True:
+        kind, data = await queue.get()
+        await ws.send(json.dumps({"type": kind, "data": data}))
+        if kind in ("done", "error"):
+            break
 
 
 async def main() -> None:
