@@ -1,0 +1,5 @@
+# pnpm workspace 预留：后续期加 packages/protocol、packages/shared-ui
+packages:
+  - "."
+allowBuilds:
+  esbuild: set this to true or false

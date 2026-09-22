@@ -20,3 +20,9 @@ diagnose_out/
 _work/
 pet-ui/out/
 **/live2dcubismcore.js
+# Rust / Tauri 构建产物
+target/
+# Tauri 前端构建产物
+client/dist/
+# spike 用的 guga 原图拷贝（原图不进仓库，本地从 skins/guga 复制）
+client/public/assets/
