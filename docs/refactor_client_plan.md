@@ -165,3 +165,9 @@
 - **Spike A（宠物透明窗）**：最小 Tauri 窗，透明 + 置顶 + 无边框 + 点击穿透，塞 `pixi-live2d-display` 渲染现有咕嘎皮肤，实测透明边缘与鼠标穿透是否达 Win32 分层窗水平。
 - **Spike B（后端托管 + 流式）**：最小本地服务跑通一条 WS 流式对话，Rust spawn + 健康检查 + 退出清理，验证进程托管与实时性。
 - 通过标准：A 透明与穿透达标；B 流式实时、进程随 App 退出清理。任一不达标回来重议对应技术选型。
+
+### Spike 结论（2026-09-22，两个均通过）
+
+- **Spike A 通过（#20）**：Tauri 2 透明置顶无边框窗 + alpha hit-test 点击穿透，达标。宠物窗确定走 Tauri。实现落在 `client/`（前端 Vite+TS，Rust 壳 `set_click_through` 命令按角色像素 alpha 动态切换穿透）。
+- **Spike B 通过（#21）**：Python 最小本地服务（`websockets`，同端口 HTTP `/health` + WS 流式），Rust 壳 spawn + 轮询健康检查 + `RunEvent::ExitRequested` 退出清理，前端经 WS 收流式 token 逐字显示。流式实时；优雅关闭 App 后 Python 后端无孤儿。骨架成立。
+- 结论：透明宠物窗 + 后端托管 + WS 流式的整套 Tauri 骨架被证明可行，按 P1-P8 正式铺开。
