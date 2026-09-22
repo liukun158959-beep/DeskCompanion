@@ -83,8 +83,10 @@ _mutex_handle = None
 
 
 class App(BoardWorkbench):
-    def __init__(self, skin_id: str) -> None:
-        self.skin = load_skin(skin_id)
+    def __init__(self, skin_id: str, *, headless: bool = False) -> None:
+        # headless：本地 API 后端模式，不加载皮肤、不建窗口，只复用数据方法
+        self.headless = headless
+        self.skin = None if headless else load_skin(skin_id)
         left, top, right, bottom = work_area()
         self.state = load_state(right - BASE_PET_W - 16, bottom - BASE_PET_H - 8)
         self.agent = None
