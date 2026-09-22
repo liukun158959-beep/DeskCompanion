@@ -23,13 +23,48 @@ async function main(): Promise<void> {
   await setClickThrough(true);
 
   window.addEventListener("mousemove", (e) => {
-    const hit = alphaAt(e.clientX, e.clientY) > ALPHA_HIT;
+    // 命中角色像素，或落在 HTML UI（对话面板）上，都不穿透
+    const overUI = (e.target as HTMLElement)?.closest("#chat") != null;
+    const hit = overUI || alphaAt(e.clientX, e.clientY) > ALPHA_HIT;
     void setClickThrough(!hit);
   });
 
   // 窗口尺寸变化时重绘
   window.addEventListener("resize", () => {
     void renderPet(canvas, "/assets/idle.webp");
+  });
+
+  await setupChat();
+}
+
+// Spike B：经 WS 连本地 Python 后端，验证流式对话。
+async function setupChat(): Promise<void> {
+  const info = await invoke<{ port: number; token: string }>("backend_info");
+  const replyEl = document.getElementById("reply") as HTMLDivElement;
+  const msgEl = document.getElementById("msg") as HTMLInputElement;
+  const sendEl = document.getElementById("send") as HTMLButtonElement;
+
+  const send = () => {
+    const text = msgEl.value.trim();
+    if (!text) return;
+    msgEl.value = "";
+    replyEl.textContent = "";
+    const ws = new WebSocket(`ws://127.0.0.1:${info.port}/ws?token=${info.token}`);
+    ws.onopen = () => ws.send(JSON.stringify({ type: "chat", text }));
+    ws.onmessage = (ev) => {
+      const d = JSON.parse(ev.data);
+      if (d.type === "token") replyEl.textContent += d.data;
+      else if (d.type === "done") ws.close();
+      else if (d.type === "error") replyEl.textContent = `错误：${d.data}`;
+    };
+    ws.onerror = () => {
+      replyEl.textContent = "连接后端失败。恢复：确认后端进程在运行";
+    };
+  };
+
+  sendEl.addEventListener("click", send);
+  msgEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") send();
   });
 }
 

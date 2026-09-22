@@ -14,14 +14,37 @@
         background: transparent;
       }
       #stage {
+        position: absolute;
+        inset: 0;
         width: 100vw;
         height: 100vh;
         display: block;
       }
+      #chat {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        width: 300px;
+        background: rgba(245, 238, 220, 0.96);
+        border-radius: 14px;
+        padding: 12px;
+        font-family: system-ui, "Microsoft YaHei", sans-serif;
+        font-size: 13px;
+        color: #4a4436;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+      }
+      #reply { min-height: 48px; white-space: pre-wrap; margin-bottom: 8px; }
+      #msg { width: 78%; border: 1px solid #d8cfb8; border-radius: 8px; padding: 6px; }
+      #send { border: none; background: #c9a86a; color: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
     </style>
   </head>
   <body>
     <canvas id="stage"></canvas>
+    <div id="chat">
+      <div id="reply">（Spike B：输入消息验证 WS 流式）</div>
+      <input id="msg" placeholder="说点什么…" />
+      <button id="send">发送</button>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
