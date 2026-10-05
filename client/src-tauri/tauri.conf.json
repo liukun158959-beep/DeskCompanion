@@ -13,15 +13,24 @@
     "windows": [
       {
         "label": "pet",
-        "title": "Guga",
-        "width": 400,
-        "height": 600,
+        "title": "凯尔希",
+        "width": 480,
+        "height": 700,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "shadow": false,
-        "resizable": false
+        "resizable": false,
+        "url": "index.html"
+      },
+      {
+        "label": "main",
+        "title": "DeskCompanion",
+        "url": "client.html",
+        "width": 1180,
+        "height": 760,
+        "resizable": true
       }
     ],
     "security": {

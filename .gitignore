@@ -24,5 +24,7 @@ pet-ui/out/
 target/
 # Tauri 前端构建产物
 client/dist/
-# spike 用的 guga 原图拷贝（原图不进仓库，本地从 skins/guga 复制）
+# 宠物形象与 Live2D Core（原图/Core 不进仓库，本地从 skins/ 与 pet-ui 复制）
 client/public/assets/
+client/public/skins/
+client/public/Core/
