@@ -136,6 +136,13 @@ export function installDeskDebug(api: {
         line: (el.querySelector("[data-status-line]") as HTMLElement | null)?.innerText || "",
       }));
     },
+    bgMotion(): { grid: string; scan: string } {
+      const layer = document.querySelector("[data-bg-motion]");
+      if (!layer) return { grid: "", scan: "" };
+      const grid = getComputedStyle(layer, "::before");
+      const scan = getComputedStyle(layer, "::after");
+      return { grid: grid.animationName, scan: scan.animationName };
+    },
   };
 }
 
@@ -150,6 +157,7 @@ declare global {
       snapshot: () => BubbleSnap[];
       boardSnapshot: () => BoardSnap;
       statusSnapshot: () => StatusSnap;
+      bgMotion: () => { grid: string; scan: string };
     };
   }
 }

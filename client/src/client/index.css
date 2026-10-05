@@ -8,10 +8,50 @@ html, body, #root {
 }
 
 body {
-  background:
-    radial-gradient(ellipse 80% 40% at 20% 0%, hsl(var(--primary) / 0.08), transparent 60%),
-    hsl(var(--background));
+  background: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+/* 主窗背景：网格平移 + 扫描光。在内容下面，不接点击。 */
+.desk-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.desk-bg::before,
+.desk-bg::after {
+  content: "";
+  position: absolute;
+}
+.desk-bg::before {
+  inset: -40%;
+  background-image:
+    linear-gradient(hsl(var(--primary) / 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.09) 1px, transparent 1px);
+  background-size: 56px 56px;
+  animation: desk-grid-drift 16s linear infinite;
+}
+.desk-bg::after {
+  left: 0;
+  right: 0;
+  height: 22%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    hsl(var(--primary) / 0.14),
+    transparent
+  );
+  animation: desk-scan 8s ease-in-out infinite;
+}
+@keyframes desk-grid-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(56px, 56px, 0); }
+}
+@keyframes desk-scan {
+  0% { top: -24%; }
+  100% { top: 108%; }
 }
 
 /* 回复 Markdown。不用 typography 插件，颜色跟 design token 走。 */

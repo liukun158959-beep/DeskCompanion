@@ -227,8 +227,9 @@ export function App() {
   openBoardRef.current = openBoard;
 
   return (
-    <div className="flex h-full bg-background text-foreground">
-      <aside className="corner-brackets flex w-64 shrink-0 flex-col border-r border-border bg-card">
+    <div className="relative flex h-full overflow-hidden bg-background text-foreground">
+      <div className="desk-bg" data-bg-motion aria-hidden="true" />
+      <aside className="relative z-10 corner-brackets flex w-64 shrink-0 flex-col border-r border-border bg-card/80 backdrop-blur-md">
         <div className="px-4 py-5">
           <div className="ef-overline">DESK COMPANION</div>
           <GlitchText className="mt-1 block text-lg font-semibold text-primary" intensity="low">
@@ -278,7 +279,7 @@ export function App() {
           {dark ? "浅色" : "深色"}
         </Button>
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="relative z-10 flex min-w-0 flex-1 flex-col">
         <AnimatePresence mode="wait">
           {pane === "chat" ? (
             <motion.section
