@@ -136,12 +136,12 @@ export function installDeskDebug(api: {
         line: (el.querySelector("[data-status-line]") as HTMLElement | null)?.innerText || "",
       }));
     },
-    bgMotion(): { grid: string; scan: string } {
+    bgMotion(): { grid: string; particles: string } {
       const layer = document.querySelector("[data-bg-motion]");
-      if (!layer) return { grid: "", scan: "" };
+      if (!layer) return { grid: "", particles: "" };
       const grid = getComputedStyle(layer, "::before");
-      const scan = getComputedStyle(layer, "::after");
-      return { grid: grid.animationName, scan: scan.animationName };
+      const particles = getComputedStyle(layer, "::after");
+      return { grid: grid.animationName, particles: particles.animationName };
     },
   };
 }
@@ -157,7 +157,7 @@ declare global {
       snapshot: () => BubbleSnap[];
       boardSnapshot: () => BoardSnap;
       statusSnapshot: () => StatusSnap;
-      bgMotion: () => { grid: string; scan: string };
+      bgMotion: () => { grid: string; particles: string };
     };
   }
 }

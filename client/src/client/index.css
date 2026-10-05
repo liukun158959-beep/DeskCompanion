@@ -12,7 +12,7 @@ body {
   color: hsl(var(--foreground));
 }
 
-/* 主窗背景：网格平移 + 扫描光。在内容下面，不接点击。 */
+/* 主窗背景：网格平移 + 稀疏粒子上飘。在内容下面，不接点击，不铺亮带。 */
 .desk-bg {
   position: absolute;
   inset: 0;
@@ -34,24 +34,38 @@ body {
   animation: desk-grid-drift 16s linear infinite;
 }
 .desk-bg::after {
-  left: 0;
-  right: 0;
-  height: 22%;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    hsl(var(--primary) / 0.14),
-    transparent
-  );
-  animation: desk-scan 8s ease-in-out infinite;
+  left: 6%;
+  top: 10%;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: hsl(var(--primary) / 0.9);
+  box-shadow:
+    70px 30px 6px 0 hsl(var(--ef-cyan) / 0.7),
+    190px 140px 5px 0 hsl(var(--primary) / 0.8),
+    340px 70px 8px 1px hsl(var(--primary) / 0.55),
+    480px 220px 5px 0 hsl(var(--ef-cyan) / 0.65),
+    120px 300px 6px 0 hsl(var(--primary) / 0.75),
+    280px 400px 8px 1px hsl(var(--primary) / 0.5),
+    560px 360px 5px 0 hsl(var(--ef-cyan) / 0.7),
+    720px 100px 6px 0 hsl(var(--primary) / 0.8),
+    840px 280px 8px 1px hsl(var(--primary) / 0.45),
+    660px 500px 5px 0 hsl(var(--ef-cyan) / 0.6),
+    200px 540px 6px 0 hsl(var(--primary) / 0.7),
+    430px 180px 4px 0 hsl(var(--primary) / 0.85),
+    900px 460px 7px 1px hsl(var(--ef-cyan) / 0.5),
+    1000px 60px 5px 0 hsl(var(--primary) / 0.65),
+    1120px 240px 6px 0 hsl(var(--primary) / 0.55),
+    760px 200px 4px 0 hsl(var(--ef-cyan) / 0.75);
+  animation: desk-particles 18s linear infinite;
 }
 @keyframes desk-grid-drift {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(56px, 56px, 0); }
 }
-@keyframes desk-scan {
-  0% { top: -24%; }
-  100% { top: 108%; }
+@keyframes desk-particles {
+  from { transform: translate3d(0, 80px, 0); }
+  to { transform: translate3d(-36px, -160px, 0); }
 }
 
 /* 回复 Markdown。不用 typography 插件，颜色跟 design token 走。 */
