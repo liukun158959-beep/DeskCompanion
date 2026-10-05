@@ -58,18 +58,46 @@ export async function startPet(canvas: HTMLCanvasElement, modelUrl: string): Pro
 }
 
 export function currentMotion(): string {
-  return lastMotion;
+  const playing = model?.internalModel.motionManager.state.currentGroup;
+  return playing || lastMotion;
 }
 
-// 待机用低优先级，点一下的 Tap 能盖过它。播不出来就抛，不假装在动。
-export async function playMotion(group: string): Promise<void> {
+// 点击会连点。上一段 Tap 还占着普通优先级时，库会直接拒绝新的一段。
+// 先停掉再按强制优先级重播。没有在播的动作要当场开始，避免自动待机先占住 Idle。
+let motionTail: Promise<void> = Promise.resolve();
+let motionPending = 0;
+
+export function playMotion(group: string): Promise<void> {
+  motionPending += 1;
+  const finish = () => {
+    motionPending -= 1;
+  };
+  const job =
+    motionPending === 1
+      ? runMotion(group).finally(finish)
+      : motionTail.then(() => runMotion(group)).finally(finish);
+  motionTail = job.then(
+    () => undefined,
+    () => undefined,
+  );
+  return job;
+}
+
+async function runMotion(group: string): Promise<void> {
   if (!model) {
     throw new Error("形象还没加载。恢复：确认 public/Core 和 public/skins/kaltsit 都在。");
   }
-  const priority = group === "Idle" ? MotionPriority.IDLE : MotionPriority.NORMAL;
+  const state = model.internalModel.motionManager.state;
+  const idle = group === "Idle";
+  if (!idle) model.internalModel.motionManager.stopAllMotions();
+  const priority = idle ? MotionPriority.IDLE : MotionPriority.FORCE;
   const ok = await model.motion(group, undefined, priority);
-  const playing = model.internalModel.motionManager.state.currentPriority;
-  if (!ok && !(group === "Idle" && playing === MotionPriority.IDLE)) {
+  const idleAlready =
+    idle &&
+    (state.currentPriority === MotionPriority.IDLE ||
+      state.currentGroup === "Idle" ||
+      state.reservedIdleGroup === "Idle");
+  if (!ok && !idleAlready) {
     throw new Error(`动作「${group}」没有播出来。恢复：检查模型里的 ${group} 动作组。`);
   }
   lastMotion = group;
