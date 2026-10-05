@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DeskCompanion Pet Spike</title>
+    <title>凯尔希</title>
+    <script src="/Core/live2dcubismcore.js"></script>
     <style>
       html, body {
         margin: 0;
@@ -20,30 +21,72 @@
         height: 100vh;
         display: block;
       }
-      #chat {
+      #dock, #chat {
         position: absolute;
         left: 12px;
-        top: 12px;
-        width: 300px;
-        background: rgba(245, 238, 220, 0.96);
-        border-radius: 14px;
-        padding: 12px;
-        font-family: system-ui, "Microsoft YaHei", sans-serif;
-        font-size: 13px;
-        color: #4a4436;
-        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        color: #f4f1ea;
       }
-      #reply { min-height: 48px; white-space: pre-wrap; margin-bottom: 8px; }
-      #msg { width: 78%; border: 1px solid #d8cfb8; border-radius: 8px; padding: 6px; }
-      #send { border: none; background: #c9a86a; color: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+      #dock {
+        top: 12px;
+        display: flex;
+        gap: 8px;
+        z-index: 2;
+      }
+      #dock button, #close-chat, #send {
+        border: 1px solid rgba(255, 176, 92, 0.7);
+        background: rgba(18, 20, 24, 0.88);
+        color: #ffb05c;
+        border-radius: 2px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      #chat {
+        top: 48px;
+        width: 440px;
+        box-sizing: border-box;
+        background: rgba(12, 14, 18, 0.92);
+        border: 1px solid rgba(255, 176, 92, 0.45);
+        padding: 12px;
+        font-size: 14px;
+        line-height: 1.6;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      }
+      #chat.hidden { display: none; }
+      #chat-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+      #reply {
+        min-height: 56px;
+        max-height: 380px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin-bottom: 10px;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+      }
+      #status { min-height: 18px; font-size: 12px; color: #c8c2b4; font-style: italic; margin-bottom: 8px; }
+      #bar { display: flex; gap: 8px; }
+      #msg { flex: 1; border: 1px solid rgba(255, 176, 92, 0.35); border-radius: 2px; padding: 8px; font-size: 14px; background: transparent; color: #f4f1ea; }
     </style>
   </head>
   <body>
     <canvas id="stage"></canvas>
+    <div id="dock">
+      <button id="toggle-chat" type="button">对话</button>
+      <button id="hide-pet" type="button">隐藏桌宠</button>
+    </div>
     <div id="chat">
-      <div id="reply">（Spike B：输入消息验证 WS 流式）</div>
-      <input id="msg" placeholder="说点什么…" />
-      <button id="send">发送</button>
+      <div id="chat-head">
+        <span>凯尔希</span>
+        <button id="close-chat" type="button">收起对话</button>
+      </div>
+      <div id="reply">跟凯尔希说点什么…</div>
+      <div id="status"></div>
+      <div id="bar">
+        <input id="msg" placeholder="回车发送" />
+        <button id="send">发送</button>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
