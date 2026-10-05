@@ -1,5 +1,7 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Button, Card, CardBody, GlitchText, Input } from "reend-components";
 import { BoardPane, shouldReloadBoard, type BoardPayload } from "./board";
 import { BOARD_FIXTURE, BOARD_NOW, DEBUG_FIXTURE, STATUS_FIXTURE, debugPane, debugRequested, installDeskDebug } from "./debug";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
@@ -22,7 +24,7 @@ type Thread = {
 };
 
 export function App() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   const [pane, setPane] = useState<Pane>(debugPane() === "board" ? "board" : "chat");
   const [info, setInfo] = useState<BackendInfo | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
@@ -46,6 +48,7 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.classList.toggle("light", !dark);
   }, [dark]);
 
   async function loadThread(backend: BackendInfo) {
@@ -224,21 +227,23 @@ export function App() {
   openBoardRef.current = openBoard;
 
   return (
-    <div className="flex h-full bg-bg text-ink">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-panel">
+    <div className="flex h-full bg-background text-foreground">
+      <aside className="corner-brackets flex w-64 shrink-0 flex-col border-r border-border bg-card">
         <div className="px-4 py-5">
-          <div className="text-xs tracking-widest text-muted">DESK COMPANION</div>
-          <div className="mt-1 text-lg font-semibold">凯尔希</div>
+          <div className="ef-overline">DESK COMPANION</div>
+          <GlitchText className="mt-1 block text-lg font-semibold text-primary" intensity="low">
+            凯尔希
+          </GlitchText>
         </div>
         <nav className="flex gap-2 px-3">
           <NavButton active={pane === "chat"} onClick={() => setPane("chat")} label="对话" />
           <NavButton active={pane === "board"} onClick={() => void openBoard()} label="看板" />
         </nav>
-        <div className="mt-4 flex items-center justify-between px-4 text-xs text-muted">
+        <div className="mt-4 flex items-center justify-between px-4 text-xs text-muted-foreground">
           <span>会话</span>
-          <button type="button" className="text-accent" onClick={() => void newSession()}>
+          <Button type="button" variant="ghost" size="sm" onClick={() => void newSession()}>
             新对话
-          </button>
+          </Button>
         </div>
         <div className="mt-2 flex-1 overflow-y-auto px-2">
           {(thread?.sessions || []).map((session) => (
@@ -246,21 +251,32 @@ export function App() {
               key={session.id}
               type="button"
               onClick={() => void openSession(session.id)}
-              className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm ${
-                session.id === thread?.sessionId ? "bg-accent/15 text-ink" : "text-muted hover:bg-line/40"
+              className={`mb-1 w-full px-3 py-2 text-left text-sm transition-colors duration-200 ${
+                session.id === thread?.sessionId
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:bg-secondary"
               }`}
             >
               <div className="truncate">{session.title || "未命名对话"}</div>
             </button>
           ))}
         </div>
-        <button
+        <Button
           type="button"
-          className="m-3 rounded-lg border border-line px-3 py-2 text-sm text-muted"
-          onClick={() => setDark((v) => !v)}
+          variant="secondary"
+          size="sm"
+          className="mx-3 mt-3"
+          onClick={() => {
+            invoke("set_pet_visible", { visible: true }).catch((err: unknown) => {
+              setError(`唤出桌宠失败：${String(err)}。恢复：重启客户端。`);
+            });
+          }}
         >
+          唤出桌宠
+        </Button>
+        <Button type="button" variant="ghost" size="sm" className="m-3" onClick={() => setDark((v) => !v)}>
           {dark ? "浅色" : "深色"}
-        </button>
+        </Button>
       </aside>
       <main className="flex min-w-0 flex-1 flex-col">
         <AnimatePresence mode="wait">
@@ -268,14 +284,14 @@ export function App() {
             <motion.section
               key="chat"
               className="flex min-h-0 flex-1 flex-col"
-              initial={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.18 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
             >
               <div ref={scroller} className="flex-1 space-y-3 overflow-y-auto px-8 py-6">
                 {debugMode ? (
-                  <div className="text-xs text-muted">调试样本，未连接后端</div>
+                  <div className="text-xs text-muted-foreground">调试样本，未连接后端</div>
                 ) : null}
                 {(preview || thread?.items || []).map((item, idx, all) => (
                   <Bubble
@@ -286,39 +302,35 @@ export function App() {
                     live={busy && !preview && idx === all.length - 1 && item.role === "pet"}
                   />
                 ))}
-                {status ? <div className="text-sm italic text-muted">{status}</div> : null}
-                {error ? <div className="text-sm text-red-700 dark:text-red-300">{error}</div> : null}
+                {status ? <div className="text-sm italic text-muted-foreground">{status}</div> : null}
+                {error ? <div className="text-sm text-destructive">{error}</div> : null}
               </div>
               <form
-                className="flex gap-2 border-t border-line px-6 py-4"
+                className="flex gap-2 border-t border-border px-6 py-4"
                 onSubmit={(ev) => {
                   ev.preventDefault();
                   send();
                 }}
               >
-                <input
+                <Input
                   value={draft}
                   onChange={(ev) => setDraft(ev.target.value)}
                   placeholder="问今天干什么，或直接跟凯尔希说"
-                  className="flex-1 rounded-xl border border-line bg-panel px-4 py-3 outline-none"
+                  className="flex-1"
                 />
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="rounded-xl bg-accent px-5 text-white disabled:opacity-50"
-                >
+                <Button type="submit" variant="primary" disabled={busy}>
                   发送
-                </button>
+                </Button>
               </form>
             </motion.section>
           ) : (
             <motion.section
               key="board"
               className="flex-1 overflow-y-auto px-8 py-6"
-              initial={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
             >
               <BoardPane
                 data={board}
@@ -339,15 +351,9 @@ export function App() {
 
 function NavButton(props: { active: boolean; label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      className={`rounded-lg px-3 py-1.5 text-sm ${
-        props.active ? "bg-accent text-white" : "text-muted"
-      }`}
-    >
+    <Button type="button" size="sm" variant={props.active ? "primary" : "ghost"} onClick={props.onClick}>
       {props.label}
-    </button>
+    </Button>
   );
 }
 
@@ -359,16 +365,14 @@ function Bubble(props: { role: string; text: string; notes?: string[]; live?: bo
   }
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`} data-bubble data-role={props.role}>
-      <div
-        className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm leading-6 ${
-          mine ? "whitespace-pre-wrap bg-accent text-white" : "bg-panel"
-        }`}
-      >
+      <Card className={`max-w-[70%] text-sm leading-6 ${mine ? "whitespace-pre-wrap" : ""}`} selected={mine}>
+        <CardBody>
         {!mine && props.notes && props.notes.length > 0 ? (
           <ToolCard notes={props.notes} live={!!props.live} />
         ) : null}
         {body}
-      </div>
+        </CardBody>
+      </Card>
     </div>
   );
 }

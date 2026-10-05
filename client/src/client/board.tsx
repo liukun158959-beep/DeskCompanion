@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button, TacticalPanel } from "reend-components";
 import { StatusGrid, type StatusView } from "./status";
 
 // 把 load_board 的今日快照收成看板视图。缺字段或失败就露出错误，不当成「今天没有安排」。
@@ -126,7 +127,7 @@ export function BoardPane(props: {
   if (!props.data) {
     return (
       <div data-board data-board-fetches={props.fetches}>
-        <p className="text-sm text-muted">{props.loading ? "正在读取今日看板…" : "打开看板页时再拉今日数据。"}</p>
+        <p className="text-sm text-muted-foreground">{props.loading ? "正在读取今日看板…" : "打开看板页时再拉今日数据。"}</p>
         <StatusGrid cards={props.statuses} />
       </div>
     );
@@ -138,50 +139,45 @@ export function BoardPane(props: {
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">今日看板</h1>
-          {model.date ? <div className="mt-1 text-sm text-muted">{model.date}</div> : null}
+          {model.date ? <div className="mt-1 text-sm text-muted-foreground">{model.date}</div> : null}
         </div>
-        <button
-          type="button"
-          className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted disabled:opacity-40"
-          disabled={props.debug || props.loading}
-          onClick={props.onRefresh}
-        >
+        <Button type="button" variant="secondary" size="sm" disabled={props.debug || props.loading} onClick={props.onRefresh}>
           {props.loading ? "读取中…" : "刷新"}
-        </button>
+        </Button>
       </div>
-      {props.debug ? <div className="mb-4 text-xs text-muted">调试样本，未连接后端</div> : null}
+      {props.debug ? <div className="mb-4 text-xs text-muted-foreground">调试样本，未连接后端</div> : null}
       {model.fatal ? (
-        <div data-board-error className="rounded-2xl bg-panel p-5 text-sm text-red-700 dark:text-red-300">
+        <div data-board-error className="bg-card p-5 text-sm text-destructive">
           {model.fatal}
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
           <Section title="日程">
-            {model.agendaError ? <p data-agenda-error className="text-sm text-red-700 dark:text-red-300">{model.agendaError}</p> : null}
-            {model.agendaEmpty ? <p data-agenda-empty className="text-sm text-muted">今天没有日程。</p> : null}
+            {model.agendaError ? <p data-agenda-error className="text-sm text-destructive">{model.agendaError}</p> : null}
+            {model.agendaEmpty ? <p data-agenda-empty className="text-sm text-muted-foreground">今天没有日程。</p> : null}
             <ol className="tl">
               {model.events.map((event) => (
                 <li key={`${event.time}-${event.title}`} data-event>
-                  <div data-time className="text-xs text-muted">{event.time}</div>
+                  <div data-time className="text-xs text-muted-foreground">{event.time}</div>
                   <div data-title>{event.title}</div>
-                  {event.end ? <div className="text-xs text-muted">至 {event.end}</div> : null}
+                  {event.end ? <div className="text-xs text-muted-foreground">至 {event.end}</div> : null}
                 </li>
               ))}
             </ol>
           </Section>
           <Section title="待办">
-            {model.taskError ? <p data-task-error className="text-sm text-red-700 dark:text-red-300">{model.taskError}</p> : null}
-            {model.taskEmpty ? <p data-task-empty className="text-sm text-muted">今天没有待办。</p> : null}
+            {model.taskError ? <p data-task-error className="text-sm text-destructive">{model.taskError}</p> : null}
+            {model.taskEmpty ? <p data-task-empty className="text-sm text-muted-foreground">今天没有待办。</p> : null}
             <ul className="space-y-2">
               {model.tasks.map((task) => (
                 <li
                   key={`${task.title}-${task.when}`}
                   data-task
                   data-overdue={task.overdue ? "1" : "0"}
-                  className="rounded-xl bg-panel px-4 py-3"
+                  className="border border-border bg-background px-4 py-3"
                 >
                   <div data-task-title>{task.title}</div>
-                  <div data-task-when className="text-xs text-muted">
+                  <div data-task-when className="text-xs text-muted-foreground">
                     {task.when}
                     {task.overdue ? " 已过期" : ""}
                   </div>
@@ -191,7 +187,7 @@ export function BoardPane(props: {
           </Section>
         </div>
       )}
-      {model.summary ? <p data-summary className="mt-6 text-sm leading-6 text-muted">{model.summary}</p> : null}
+      {model.summary ? <p data-summary className="mt-6 text-sm leading-6 text-muted-foreground">{model.summary}</p> : null}
       <StatusGrid cards={props.statuses} />
     </div>
   );
@@ -199,9 +195,8 @@ export function BoardPane(props: {
 
 function Section(props: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-2xl bg-panel/60 p-5">
-      <h2 className="mb-3 text-sm font-semibold">{props.title}</h2>
+    <TacticalPanel title={props.title} status="online">
       {props.children}
-    </section>
+    </TacticalPanel>
   );
 }

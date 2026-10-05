@@ -1,21 +1,19 @@
+import reendPreset from "reend-components/tailwind";
+
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ["./index.html", "./client.html", "./src/**/*.{ts,tsx}"],
-  darkMode: "class",
+  presets: [reendPreset],
+  content: [
+    "./index.html",
+    "./client.html",
+    "./src/**/*.{ts,tsx}",
+    "./node_modules/reend-components/dist/**/*.{js,mjs}",
+  ],
   theme: {
     extend: {
-      colors: {
-        bg: "rgb(var(--bg) / <alpha-value>)",
-        panel: "rgb(var(--panel) / <alpha-value>)",
-        ink: "rgb(var(--ink) / <alpha-value>)",
-        muted: "rgb(var(--muted) / <alpha-value>)",
-        line: "rgb(var(--line) / <alpha-value>)",
-        accent: "rgb(var(--accent) / <alpha-value>)",
-      },
       fontFamily: {
-        sans: ["Segoe UI", "Microsoft YaHei", "system-ui", "sans-serif"],
+        sans: ["Segoe UI", "Microsoft YaHei", "Noto Sans SC", "sans-serif"],
       },
     },
   },
-  plugins: [],
 };

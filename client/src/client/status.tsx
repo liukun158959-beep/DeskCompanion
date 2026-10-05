@@ -1,3 +1,5 @@
+import { Card, CardBody, CardHeader, CardTitle } from "reend-components";
+
 // 四张状态卡只转述接口里已有的字段。没有的连接信息不编。
 
 export type StatusKind = "feishu" | "github" | "maa" | "skland";
@@ -80,20 +82,16 @@ export function StatusGrid(props: { cards: StatusView[] }) {
   return (
     <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {props.cards.map((card) => (
-        <article
-          key={card.kind}
-          data-status={card.kind}
-          data-state={card.state}
-          className="rounded-2xl bg-panel px-4 py-3"
-        >
-          <div className="text-xs text-muted">{card.title}</div>
-          <div
-            data-status-line
-            className={`mt-1 text-sm leading-6 ${card.state === "error" ? "text-red-700 dark:text-red-300" : ""}`}
-          >
-            {card.line}
-          </div>
-        </article>
+        <Card key={card.kind} data-status={card.kind} data-state={card.state} hoverable>
+          <CardHeader>
+            <CardTitle className="text-xs text-muted-foreground">{card.title}</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <div data-status-line className={`text-sm leading-6 ${card.state === "error" ? "text-destructive" : ""}`}>
+              {card.line}
+            </div>
+          </CardBody>
+        </Card>
       ))}
     </div>
   );
