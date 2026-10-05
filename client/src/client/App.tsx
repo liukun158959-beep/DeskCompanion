@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { DEBUG_FIXTURE, debugRequested, installDeskDebug } from "./debug";
+import { Markdown } from "./Markdown";
 import {
   backendInfo,
   rpc,
@@ -27,7 +29,9 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [boardText, setBoardText] = useState("打开看板页时再拉今日数据。");
+  const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
+  const debugMode = preview !== null;
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -47,6 +51,8 @@ export function App() {
   }
 
   useEffect(() => {
+    installDeskDebug(setPreview);
+    if (debugRequested()) return;
     backendInfo()
       .then(async (backend) => {
         setInfo(backend);
@@ -176,7 +182,10 @@ export function App() {
               transition={{ duration: 0.18 }}
             >
               <div ref={scroller} className="flex-1 space-y-3 overflow-y-auto px-8 py-6">
-                {(thread?.items || []).map((item, idx) => (
+                {debugMode ? (
+                  <div className="text-xs text-muted">调试样本，未连接后端</div>
+                ) : null}
+                {(preview || thread?.items || []).map((item, idx) => (
                   <Bubble key={`${item.ts || idx}-${idx}`} role={item.role} text={item.text} />
                 ))}
                 {status ? <div className="text-sm italic text-muted">{status}</div> : null}
@@ -239,14 +248,18 @@ function NavButton(props: { active: boolean; label: string; onClick: () => void 
 
 function Bubble(props: { role: string; text: string }) {
   const mine = props.role === "user";
+  let body: ReactNode = "…";
+  if (props.text) {
+    body = mine ? props.text : <Markdown text={props.text} />;
+  }
   return (
-    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+    <div className={`flex ${mine ? "justify-end" : "justify-start"}`} data-bubble data-role={props.role}>
       <div
-        className={`max-w-[70%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${
-          mine ? "bg-accent text-white" : "bg-panel"
+        className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm leading-6 ${
+          mine ? "whitespace-pre-wrap bg-accent text-white" : "bg-panel"
         }`}
       >
-        {props.text || "…"}
+        {body}
       </div>
     </div>
   );
