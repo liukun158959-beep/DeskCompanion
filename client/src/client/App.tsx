@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BoardPane, type BoardPayload } from "./board";
-import { BOARD_FIXTURE, BOARD_NOW, DEBUG_FIXTURE, debugPane, debugRequested, installDeskDebug } from "./debug";
+import { BOARD_FIXTURE, BOARD_NOW, DEBUG_FIXTURE, STATUS_FIXTURE, debugPane, debugRequested, installDeskDebug } from "./debug";
+import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
 import { Markdown } from "./Markdown";
 import {
   backendInfo,
@@ -32,6 +33,8 @@ export function App() {
   const [board, setBoard] = useState<BoardPayload | null>(debugPane() === "board" ? BOARD_FIXTURE : null);
   const [boardClock, setBoardClock] = useState<string | null>(debugPane() === "board" ? BOARD_NOW : null);
   const [boardLoading, setBoardLoading] = useState(false);
+  const [statuses, setStatuses] = useState<StatusView[]>(debugPane() === "board" ? STATUS_FIXTURE : []);
+  const statusGen = useRef(0);
   const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
   const notesRef = useRef<string[]>([]);
@@ -61,6 +64,10 @@ export function App() {
         setPane("board");
         setBoard(payload);
         setBoardClock(nowIso);
+      },
+      seedStatus: (raw) => {
+        setPane("board");
+        setStatuses(STATUS_KINDS.map((kind) => statusFromPayload(kind, raw[kind])));
       },
     });
     if (debugPane()) return;
@@ -156,14 +163,39 @@ export function App() {
     });
   }
 
+  function loadStatuses(backend: BackendInfo) {
+    const mine = statusGen.current + 1;
+    statusGen.current = mine;
+    setStatuses(loadingStatuses());
+    const methods: Record<StatusKind, string> = {
+      feishu: "load_feishu",
+      github: "load_github",
+      maa: "load_maa",
+      skland: "load_skland",
+    };
+    for (const kind of STATUS_KINDS) {
+      rpc<unknown>(backend, methods[kind])
+        .then((data) => {
+          if (statusGen.current !== mine) return;
+          setStatuses((cur) => cur.map((card) => (card.kind === kind ? statusFromPayload(kind, data) : card)));
+        })
+        .catch((err: unknown) => {
+          if (statusGen.current !== mine) return;
+          setStatuses((cur) => cur.map((card) => (card.kind === kind ? statusError(kind, String(err)) : card)));
+        });
+    }
+  }
+
   async function openBoard(refresh = false) {
     setPane("board");
     if (boardClock) return;
     if (!info) {
       setBoard({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。" });
+      setStatuses(STATUS_KINDS.map((kind) => statusError(kind, "还没有连上本地后端。恢复：重启客户端。")));
       return;
     }
     setBoardLoading(true);
+    loadStatuses(info);
     try {
       const data = await rpc<BoardPayload>(info, "load_board", refresh ? { refresh: true } : {});
       setBoardClock(null);
@@ -278,6 +310,7 @@ export function App() {
                 loading={boardLoading}
                 debug={boardClock !== null}
                 onRefresh={() => void openBoard(true)}
+                statuses={statuses}
               />
             </motion.section>
           )}

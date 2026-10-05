@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import type { ChatItem } from "./api";
 import type { BoardPayload } from "./board";
+import { statusFromPayload, type StatusKind, type StatusView } from "./status";
 
 // 仅开发态。浏览器打开 /client.html?debug=1 不连 Tauri、不打模型，直接铺一条样本回复。
 // 代理用 window.__deskDebug.snapshot() 读气泡里的标签，确认列表和代码块真的排出来了。
@@ -58,6 +59,17 @@ export const BOARD_FIXTURE: BoardPayload = {
   },
 };
 
+export const STATUS_RAW: Record<StatusKind, unknown> = {
+  feishu: { ok: true, logged_in: true, user_name: "博士" },
+  github: { ok: false, error: "gh auth login" },
+  maa: { ok: true, status: "idle", message: "还没开始。" },
+  skland: { ok: true, has_token: false, hint: "还没有森空岛凭证。" },
+};
+
+export const STATUS_FIXTURE: StatusView[] = (Object.keys(STATUS_RAW) as StatusKind[]).map((kind) =>
+  statusFromPayload(kind, STATUS_RAW[kind]),
+);
+
 export function debugPane(): "chat" | "board" | null {
   if (!import.meta.env.DEV) return null;
   const value = new URLSearchParams(location.search).get("debug");
@@ -79,14 +91,18 @@ export type BoardSnap = {
   taskError: string;
 };
 
+export type StatusSnap = { kind: string; state: string; line: string }[];
+
 export function installDeskDebug(api: {
   seed: (items: ChatItem[]) => void;
   seedBoard: (payload: BoardPayload, nowIso: string) => void;
+  seedStatus: (raw: Record<string, unknown>) => void;
 }): void {
   if (!import.meta.env.DEV) return;
   window.__deskDebug = {
     seed: api.seed,
     seedBoard: api.seedBoard,
+    seedStatus: api.seedStatus,
     snapshot(): BubbleSnap[] {
       return [...document.querySelectorAll("[data-bubble]")].map((el) => ({
         role: el.getAttribute("data-role") || "",
@@ -109,6 +125,13 @@ export function installDeskDebug(api: {
         taskError: (document.querySelector("[data-task-error]") as HTMLElement | null)?.innerText || "",
       };
     },
+    statusSnapshot(): StatusSnap {
+      return [...document.querySelectorAll("[data-status]")].map((el) => ({
+        kind: el.getAttribute("data-status") || "",
+        state: el.getAttribute("data-state") || "",
+        line: (el.querySelector("[data-status-line]") as HTMLElement | null)?.innerText || "",
+      }));
+    },
   };
 }
 
@@ -117,8 +140,10 @@ declare global {
     __deskDebug?: {
       seed: (items: ChatItem[]) => void;
       seedBoard: (payload: BoardPayload, nowIso: string) => void;
+      seedStatus: (raw: Record<string, unknown>) => void;
       snapshot: () => BubbleSnap[];
       boardSnapshot: () => BoardSnap;
+      statusSnapshot: () => StatusSnap;
     };
   }
 }

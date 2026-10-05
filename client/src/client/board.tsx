@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { StatusGrid, type StatusView } from "./status";
 
 // 把 load_board 的今日快照收成看板视图。缺字段或失败就露出错误，不当成「今天没有安排」。
 
@@ -112,9 +113,15 @@ export function BoardPane(props: {
   loading: boolean;
   debug: boolean;
   onRefresh: () => void;
+  statuses: StatusView[];
 }) {
   if (!props.data) {
-    return <p className="text-sm text-muted">打开看板页时再拉今日数据。</p>;
+    return (
+      <div data-board>
+        <p className="text-sm text-muted">{props.loading ? "正在读取今日看板…" : "打开看板页时再拉今日数据。"}</p>
+        <StatusGrid cards={props.statuses} />
+      </div>
+    );
   }
   const now = props.nowIso ? new Date(props.nowIso) : new Date();
   const model = boardModel(props.data, now);
@@ -177,6 +184,7 @@ export function BoardPane(props: {
         </div>
       )}
       {model.summary ? <p data-summary className="mt-6 text-sm leading-6 text-muted">{model.summary}</p> : null}
+      <StatusGrid cards={props.statuses} />
     </div>
   );
 }
