@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { BoardPane, type BoardPayload } from "./board";
+import { BoardPane, shouldReloadBoard, type BoardPayload } from "./board";
 import { BOARD_FIXTURE, BOARD_NOW, DEBUG_FIXTURE, STATUS_FIXTURE, debugPane, debugRequested, installDeskDebug } from "./debug";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
 import { Markdown } from "./Markdown";
@@ -35,6 +35,10 @@ export function App() {
   const [boardLoading, setBoardLoading] = useState(false);
   const [statuses, setStatuses] = useState<StatusView[]>(debugPane() === "board" ? STATUS_FIXTURE : []);
   const statusGen = useRef(0);
+  const boardSeen = useRef(false);
+  const boardFetches = useRef(0);
+  const [fetchCount, setFetchCount] = useState(0);
+  const openBoardRef = useRef<(refresh?: boolean) => void>(() => {});
   const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
   const notesRef = useRef<string[]>([]);
@@ -69,6 +73,8 @@ export function App() {
         setPane("board");
         setStatuses(STATUS_KINDS.map((kind) => statusFromPayload(kind, raw[kind])));
       },
+      openBoard: (refresh = false) => openBoardRef.current(refresh),
+      shouldReloadBoard,
     });
     if (debugPane()) return;
     backendInfo()
@@ -186,16 +192,24 @@ export function App() {
     }
   }
 
-  async function openBoard(refresh = false) {
+  function openBoard(refresh = false) {
     setPane("board");
-    if (boardClock) return;
+    if (!shouldReloadBoard({ refresh, seen: boardSeen.current, debug: boardClock !== null })) return;
+    boardSeen.current = true;
     if (!info) {
       setBoard({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。" });
       setStatuses(STATUS_KINDS.map((kind) => statusError(kind, "还没有连上本地后端。恢复：重启客户端。")));
       return;
     }
+    boardFetches.current += 1;
+    setFetchCount(boardFetches.current);
     setBoardLoading(true);
     loadStatuses(info);
+    void loadBoardSnapshot(refresh);
+  }
+
+  async function loadBoardSnapshot(refresh: boolean) {
+    if (!info) return;
     try {
       const data = await rpc<BoardPayload>(info, "load_board", refresh ? { refresh: true } : {});
       setBoardClock(null);
@@ -206,6 +220,8 @@ export function App() {
       setBoardLoading(false);
     }
   }
+
+  openBoardRef.current = openBoard;
 
   return (
     <div className="flex h-full bg-bg text-ink">
@@ -311,6 +327,7 @@ export function App() {
                 debug={boardClock !== null}
                 onRefresh={() => void openBoard(true)}
                 statuses={statuses}
+                fetches={fetchCount}
               />
             </motion.section>
           )}

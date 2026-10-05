@@ -97,12 +97,16 @@ export function installDeskDebug(api: {
   seed: (items: ChatItem[]) => void;
   seedBoard: (payload: BoardPayload, nowIso: string) => void;
   seedStatus: (raw: Record<string, unknown>) => void;
+  openBoard: (refresh?: boolean) => void;
+  shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
 }): void {
   if (!import.meta.env.DEV) return;
   window.__deskDebug = {
     seed: api.seed,
     seedBoard: api.seedBoard,
     seedStatus: api.seedStatus,
+    openBoard: api.openBoard,
+    shouldReloadBoard: api.shouldReloadBoard,
     snapshot(): BubbleSnap[] {
       return [...document.querySelectorAll("[data-bubble]")].map((el) => ({
         role: el.getAttribute("data-role") || "",
@@ -141,6 +145,8 @@ declare global {
       seed: (items: ChatItem[]) => void;
       seedBoard: (payload: BoardPayload, nowIso: string) => void;
       seedStatus: (raw: Record<string, unknown>) => void;
+      openBoard: (refresh?: boolean) => void;
+      shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
       snapshot: () => BubbleSnap[];
       boardSnapshot: () => BoardSnap;
       statusSnapshot: () => StatusSnap;

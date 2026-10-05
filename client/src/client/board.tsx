@@ -107,6 +107,13 @@ export function boardModel(data: BoardPayload, now: Date): BoardModel {
   return model;
 }
 
+// 调试样本不请求。刷新总是重查。这一轮已经打开过看板就只切换页面。
+export function shouldReloadBoard(opts: { refresh: boolean; seen: boolean; debug: boolean }): boolean {
+  if (opts.debug) return false;
+  if (opts.refresh) return true;
+  return !opts.seen;
+}
+
 export function BoardPane(props: {
   data: BoardPayload | null;
   nowIso: string | null;
@@ -114,10 +121,11 @@ export function BoardPane(props: {
   debug: boolean;
   onRefresh: () => void;
   statuses: StatusView[];
+  fetches: number;
 }) {
   if (!props.data) {
     return (
-      <div data-board>
+      <div data-board data-board-fetches={props.fetches}>
         <p className="text-sm text-muted">{props.loading ? "正在读取今日看板…" : "打开看板页时再拉今日数据。"}</p>
         <StatusGrid cards={props.statuses} />
       </div>
@@ -126,7 +134,7 @@ export function BoardPane(props: {
   const now = props.nowIso ? new Date(props.nowIso) : new Date();
   const model = boardModel(props.data, now);
   return (
-    <div data-board>
+    <div data-board data-board-fetches={props.fetches}>
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">今日看板</h1>
