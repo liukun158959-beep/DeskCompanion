@@ -31,6 +31,7 @@ export function App() {
   const [boardText, setBoardText] = useState("打开看板页时再拉今日数据。");
   const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
+  const notesRef = useRef<string[]>([]);
   const debugMode = preview !== null;
 
   useEffect(() => {
@@ -87,12 +88,26 @@ export function App() {
     setBusy(true);
     setError("");
     setStatus("凯尔希思考中…");
+    notesRef.current = [];
     setThread({
       ...thread,
       items: [...thread.items, { role: "user", text }, { role: "pet", text: "" }],
     });
     streamChat(info, text, {
-      onStatus: setStatus,
+      onStatus: (line) => {
+        if (!line) return;
+        setStatus("");
+        notesRef.current = [...notesRef.current, line];
+        const notes = notesRef.current;
+        setThread((cur) => {
+          if (!cur) return cur;
+          const items = cur.items.slice();
+          const last = items[items.length - 1];
+          if (!last || last.role !== "pet") return cur;
+          items[items.length - 1] = { ...last, notes };
+          return { ...cur, items };
+        });
+      },
       onToken: (piece) => {
         setStatus("");
         setThread((cur) => {
@@ -106,9 +121,22 @@ export function App() {
         });
       },
       onDone: async () => {
+        const notes = notesRef.current.slice();
         setStatus("");
         setBusy(false);
         await loadThread(info);
+        if (!notes.length) return;
+        setThread((cur) => {
+          if (!cur) return cur;
+          const items = cur.items.slice();
+          for (let i = items.length - 1; i >= 0; i -= 1) {
+            if (items[i].role === "pet") {
+              items[i] = { ...items[i], notes };
+              break;
+            }
+          }
+          return { ...cur, items };
+        });
       },
       onError: (message) => {
         setStatus("");
@@ -185,8 +213,14 @@ export function App() {
                 {debugMode ? (
                   <div className="text-xs text-muted">调试样本，未连接后端</div>
                 ) : null}
-                {(preview || thread?.items || []).map((item, idx) => (
-                  <Bubble key={`${item.ts || idx}-${idx}`} role={item.role} text={item.text} />
+                {(preview || thread?.items || []).map((item, idx, all) => (
+                  <Bubble
+                    key={`${item.ts || idx}-${idx}`}
+                    role={item.role}
+                    text={item.text}
+                    notes={item.notes}
+                    live={busy && !preview && idx === all.length - 1 && item.role === "pet"}
+                  />
                 ))}
                 {status ? <div className="text-sm italic text-muted">{status}</div> : null}
                 {error ? <div className="text-sm text-red-700 dark:text-red-300">{error}</div> : null}
@@ -246,7 +280,7 @@ function NavButton(props: { active: boolean; label: string; onClick: () => void 
   );
 }
 
-function Bubble(props: { role: string; text: string }) {
+function Bubble(props: { role: string; text: string; notes?: string[]; live?: boolean }) {
   const mine = props.role === "user";
   let body: ReactNode = "…";
   if (props.text) {
@@ -259,8 +293,29 @@ function Bubble(props: { role: string; text: string }) {
           mine ? "whitespace-pre-wrap bg-accent text-white" : "bg-panel"
         }`}
       >
+        {!mine && props.notes && props.notes.length > 0 ? (
+          <ToolCard notes={props.notes} live={!!props.live} />
+        ) : null}
         {body}
       </div>
     </div>
+  );
+}
+
+function ToolCard(props: { notes: string[]; live: boolean }) {
+  const title = props.live
+    ? props.notes[props.notes.length - 1]
+    : props.notes.length === 1
+      ? props.notes[0]
+      : `${props.notes.length} 次工具调用`;
+  return (
+    <details className="tool-card" open={props.live || undefined}>
+      <summary>{title}</summary>
+      <ul>
+        {props.notes.map((line, idx) => (
+          <li key={`${idx}-${line}`}>{line}</li>
+        ))}
+      </ul>
+    </details>
   );
 }

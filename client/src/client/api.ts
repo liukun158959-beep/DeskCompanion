@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type BackendInfo = { port: number; token: string };
 
-export type ChatItem = { role: string; text: string; ts?: string };
+export type ChatItem = { role: string; text: string; ts?: string; notes?: string[] };
 
 export type SessionItem = {
   id: string;

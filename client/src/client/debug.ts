@@ -23,6 +23,7 @@ export const DEBUG_FIXTURE: ChatItem[] = [
       "",
       "见 [说明](https://example.com/help)",
     ].join("\n"),
+    notes: ["在看今天的日程…", "在看未完成的待办…"],
   },
 ];
 
