@@ -1,12 +1,15 @@
 // 宠物渲染：kaltsit Live2D（迁移自 pet-ui/src/renderer/src/pet.js，改写为 TS）。
 // 弃用 guga 静态帧。对外暴露 modelBounds() 供 Rust 穿透 hit-test。
 import * as PIXI from "pixi.js";
-import { Live2DModel } from "pixi-live2d-display/cubism4";
+import { Live2DModel, MotionPriority } from "pixi-live2d-display/cubism4";
 
 (window as unknown as { PIXI: typeof PIXI }).PIXI = PIXI;
 
 let app: PIXI.Application | null = null;
 let model: Live2DModel | null = null;
+let lastMotion = "";
+
+const HEADROOM = 72;
 
 function waitFrames(n: number): Promise<void> {
   return new Promise((resolve) => {
@@ -45,11 +48,31 @@ export async function startPet(canvas: HTMLCanvasElement, modelUrl: string): Pro
 
   const srcW = model.internalModel.originalWidth;
   const srcH = model.internalModel.originalHeight;
-  const baseScale = Math.min(viewW / srcW, viewH / srcH) * 0.92;
+  const fitH = Math.max(1, viewH - HEADROOM);
+  const baseScale = Math.min(viewW / srcW, fitH / srcH);
   model.scale.set(baseScale);
   model.anchor.set(0.5, 1);
   model.x = viewW * 0.5;
-  model.y = viewH * 0.98;
+  model.y = viewH - 4;
+  await playMotion("Idle");
+}
+
+export function currentMotion(): string {
+  return lastMotion;
+}
+
+// 待机用低优先级，点一下的 Tap 能盖过它。播不出来就抛，不假装在动。
+export async function playMotion(group: string): Promise<void> {
+  if (!model) {
+    throw new Error("形象还没加载。恢复：确认 public/Core 和 public/skins/kaltsit 都在。");
+  }
+  const priority = group === "Idle" ? MotionPriority.IDLE : MotionPriority.NORMAL;
+  const ok = await model.motion(group, undefined, priority);
+  const playing = model.internalModel.motionManager.state.currentPriority;
+  if (!ok && !(group === "Idle" && playing === MotionPriority.IDLE)) {
+    throw new Error(`动作「${group}」没有播出来。恢复：检查模型里的 ${group} 动作组。`);
+  }
+  lastMotion = group;
 }
 
 // 角色渲染包围盒（CSS 逻辑像素，窗口相对坐标），供 Rust 穿透判定。

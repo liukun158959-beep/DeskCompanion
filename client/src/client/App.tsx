@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button, Card, CardBody, GlitchText, Input } from "reend-components";
@@ -51,6 +52,17 @@ export function App() {
     document.documentElement.classList.toggle("light", !dark);
   }, [dark]);
 
+  useEffect(() => {
+    if (!isTauri()) return;
+    let stop = () => {};
+    void listen("open-today", () => {
+      openBoardRef.current(false);
+    }).then((unlisten) => {
+      stop = unlisten;
+    });
+    return () => stop();
+  }, []);
+
   async function loadThread(backend: BackendInfo) {
     const data = await rpc<{
       session_id: string;
@@ -77,6 +89,7 @@ export function App() {
         setStatuses(STATUS_KINDS.map((kind) => statusFromPayload(kind, raw[kind])));
       },
       openBoard: (refresh = false) => openBoardRef.current(refresh),
+      requestToday: () => openBoardRef.current(false),
       shouldReloadBoard,
     });
     if (debugPane()) return;
@@ -227,7 +240,7 @@ export function App() {
   openBoardRef.current = openBoard;
 
   return (
-    <div className="relative flex h-full overflow-hidden bg-background text-foreground">
+    <div className="relative flex h-full overflow-hidden bg-background text-foreground" data-pane={pane}>
       <div className="desk-bg" data-bg-motion aria-hidden="true" />
       <aside className="relative z-10 corner-brackets flex w-64 shrink-0 flex-col border-r border-border bg-card/80 backdrop-blur-md">
         <div className="px-4 py-5">

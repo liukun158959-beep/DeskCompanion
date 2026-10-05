@@ -42,7 +42,7 @@
       #menu {
         display: flex;
         flex-direction: column;
-        min-width: 140px;
+        min-width: 160px;
         background: rgba(12, 14, 18, 0.94);
         border: 1px solid rgba(255, 212, 41, 0.55);
       }
@@ -64,6 +64,7 @@
     <canvas id="stage"></canvas>
     <div id="bubble" class="hidden" data-pet-bubble data-kind="line"></div>
     <div id="menu" class="hidden" data-pet-menu>
+      <button type="button" data-action="today">今天的安排</button>
       <button type="button" data-action="hide">隐藏</button>
       <button type="button" data-action="main">打开主窗口</button>
       <button type="button" data-action="quit">退出</button>

@@ -98,6 +98,7 @@ export function installDeskDebug(api: {
   seedBoard: (payload: BoardPayload, nowIso: string) => void;
   seedStatus: (raw: Record<string, unknown>) => void;
   openBoard: (refresh?: boolean) => void;
+  requestToday: () => void;
   shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
 }): void {
   if (!import.meta.env.DEV) return;
@@ -106,6 +107,7 @@ export function installDeskDebug(api: {
     seedBoard: api.seedBoard,
     seedStatus: api.seedStatus,
     openBoard: api.openBoard,
+    requestToday: api.requestToday,
     shouldReloadBoard: api.shouldReloadBoard,
     snapshot(): BubbleSnap[] {
       return [...document.querySelectorAll("[data-bubble]")].map((el) => ({
@@ -153,6 +155,7 @@ declare global {
       seedBoard: (payload: BoardPayload, nowIso: string) => void;
       seedStatus: (raw: Record<string, unknown>) => void;
       openBoard: (refresh?: boolean) => void;
+      requestToday: () => void;
       shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
       snapshot: () => BubbleSnap[];
       boardSnapshot: () => BoardSnap;

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tauri::{Manager, PhysicalPosition};
+use tauri::{Emitter, Manager, PhysicalPosition};
 
 #[derive(Clone, serde::Serialize)]
 struct BackendInfo {
@@ -81,6 +81,15 @@ fn show_main(app: tauri::AppHandle) -> Result<(), String> {
     window.unminimize().map_err(|err| err.to_string())?;
     window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_today(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("找不到主窗口。恢复：重启客户端。")?;
+    window.emit("open-today", true).map_err(|err| err.to_string())?;
     Ok(())
 }
 
@@ -194,6 +203,7 @@ pub fn run() {
             set_drag_lock,
             nudge_pet,
             show_main,
+            open_today,
             quit_app
         ])
         .build(tauri::generate_context!())

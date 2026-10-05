@@ -16,7 +16,7 @@ import {
   pointerUp,
   tapBubble,
 } from "./pet-gesture";
-import { modelBounds, startPet } from "./pet-render";
+import { currentMotion, modelBounds, playMotion, startPet } from "./pet-render";
 
 const MODEL_URL = "/skins/kaltsit/kaltsit.model3.json";
 
@@ -163,6 +163,7 @@ function onPointerUp(): void {
     bubble = tapBubble(bubble, Date.now());
     renderMenu(false);
     renderBubble();
+    void playMotion("Tap").catch((err: unknown) => showError(String(err)));
     return;
   }
   glide(result.vx, result.vy);
@@ -174,11 +175,25 @@ function openMenu(x: number, y: number): void {
 
 function runMenu(action: string): void {
   renderMenu(false);
-  const command =
-    action === "hide" ? rust("set_pet_visible", { visible: false }) : action === "main" ? rust("show_main") : rust("quit_app");
-  const label = action === "hide" ? "隐藏桌宠" : action === "main" ? "打开主窗口" : "退出";
-  void command.catch((err: unknown) => {
-    showError(`${label}失败：${String(err)}。恢复：重启客户端。`);
+  const jobs: Record<string, { label: string; run: () => Promise<void> }> = {
+    today: {
+      label: "今天的安排",
+      run: async () => {
+        await rust("show_main");
+        await rust("open_today");
+      },
+    },
+    hide: { label: "隐藏桌宠", run: () => rust("set_pet_visible", { visible: false }) },
+    main: { label: "打开主窗口", run: () => rust("show_main") },
+    quit: { label: "退出", run: () => rust("quit_app") },
+  };
+  const job = jobs[action];
+  if (!job) {
+    showError(`没有这个菜单项：${action}。恢复：重启客户端。`);
+    return;
+  }
+  void job.run().catch((err: unknown) => {
+    showError(`${job.label}失败：${String(err)}。恢复：重启客户端。`);
   });
 }
 
@@ -197,6 +212,8 @@ function installDebug(): void {
       bubbleKind: () => string;
       bubbleMs: number;
       menuOpen: () => boolean;
+      motion: () => string;
+      bounds: () => { x: number; y: number; w: number; h: number } | null;
       tap: () => void;
       dragBy: (dx: number, dy: number) => void;
       dismissIfDue: (now: number) => void;
@@ -209,9 +226,12 @@ function installDebug(): void {
     bubbleKind: () => bubbleEl.dataset.kind || "",
     bubbleMs: BUBBLE_MS,
     menuOpen: () => !menuEl.classList.contains("hidden"),
+    motion: () => currentMotion(),
+    bounds: () => modelBounds(),
     tap: () => {
       bubble = tapBubble(bubble, Date.now());
       renderBubble();
+      void playMotion("Tap").catch((err: unknown) => showError(String(err)));
     },
     dragBy: (dx: number, dy: number) => {
       gesture = pointerDown(0, 0, 0);

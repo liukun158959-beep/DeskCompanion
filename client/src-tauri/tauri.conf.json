@@ -14,8 +14,8 @@
       {
         "label": "pet",
         "title": "凯尔希",
-        "width": 480,
-        "height": 700,
+        "width": 260,
+        "height": 380,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
