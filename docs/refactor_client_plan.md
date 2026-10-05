@@ -90,10 +90,13 @@
 组件分层：`packages/shared-ui`（design token + 基础组件：Button/Card/Panel/Timeline/StatusPill/Toast/Modal）供两个窗复用。
 ## 7. 宠物窗
 
-- 独立 Tauri 窗口：透明背景、置顶、无边框、可拖、点击穿透非角色区域（Tauri 支持 transparent + always-on-top + decorations=false + skip-taskbar）。
-- Live2D 渲染：沿用 `pixi-live2d-display` + PixiJS，从 `pet-ui/src/renderer/src/pet.js` 迁移（先 copy 再改），资源加载约定不变（Core 放 `public/Core/`，皮肤放 `skins/`，缺失即失败给路径）。
-- 气泡对话：点宠物在角色旁弹输入框，回车发给后端，回答流式回到气泡。从 `bubble.js` 迁移逻辑，重写为 React 组件。
-- 宠物窗和主窗共享后端连接和 design token；点气泡里的「打开客户端」唤起主窗。
+- 独立 Tauri 窗口：透明背景、置顶、无边框、可拖、点击穿透非角色区域。窗口跟着角色走，松手后短距离滑一下。
+- Live2D 渲染：沿用 `pixi-live2d-display` + PixiJS，形象是凯尔希。Core 放 `public/Core/`，皮肤放 `skins/`，缺失即失败并给出路径。
+- 点一下在头顶冒一句写在客户端里的短台词，不打模型。约 4 秒后消失；再点换一句；一开始拖就收起。正经对话在主窗口。
+- 右键菜单只有三项：隐藏（只收桌宠）、打开主窗口、退出（整个应用，含本地后端）。
+- 宠物窗不再放常驻对话框。
+
+手感对齐 [dsh-pet-indesktop](https://github.com/MerZlin/dsh-pet-indesktop) 的「拖、点、头顶气泡」，不搬它的 PySide6、肥鱼素材、歌词、灵动岛、报时、识屏。细节见第 15 节。
 
 风险点：当前宠物窗是 Win32 分层窗（逐像素 Alpha），Tauri 用的是 WebView2 透明窗，透明和点击穿透的表现要实测验证（见第 12 节）。
 ## 8. 迁移原则
@@ -127,7 +130,7 @@
 
 - Given 客户端已启动，When 点侧栏新建会话并发一句「今天干什么」，Then 主对话区流式返回，内容基于飞书日程和未完成待办，不是编的。
 - Given 主窗看板页，When 点刷新，Then 今日日程时间轴 + 待办 + 各状态卡在 2 秒内更新为真实数据。
-- Given 宠物窗常驻桌面，When 点宠物打字回车，Then 角色旁气泡流式出答案，宠物窗透明且非角色区不挡鼠标。
+- Given 宠物窗常驻桌面，When 点一下角色，Then 头顶冒出短台词且约 4 秒后消失；拖动时窗口跟着走，非角色区不挡鼠标。正经对话在主窗口。
 - Given 关闭 Python 后端进程，When 前端发起请求，Then 客户端明确报「后端未运行」并给恢复指引，不静默转圈或编造。
 - Given Tauri 应用退出，When 检查进程，Then Python 子进程被一并清理，无残留。
 
@@ -171,3 +174,13 @@
 - **Spike A 通过（#20）**：Tauri 2 透明置顶无边框窗 + alpha hit-test 点击穿透，达标。宠物窗确定走 Tauri。实现落在 `client/`（前端 Vite+TS，Rust 壳 `set_click_through` 命令按角色像素 alpha 动态切换穿透）。
 - **Spike B 通过（#21）**：Python 最小本地服务（`websockets`，同端口 HTTP `/health` + WS 流式），Rust 壳 spawn + 轮询健康检查 + `RunEvent::ExitRequested` 退出清理，前端经 WS 收流式 token 逐字显示。流式实时；优雅关闭 App 后 Python 后端无孤儿。骨架成立。
 - 结论：透明宠物窗 + 后端托管 + WS 流式的整套 Tauri 骨架被证明可行，按 P1-P8 正式铺开。
+
+## 15. 桌宠手感（2026-10-05）
+
+对照 dsh-pet-indesktop，只仿桌宠手感。主窗口、看板、终末地界面、凯尔希 Live2D、Python 后端都不换。
+
+- 角色以外点得穿。按住角色拖动窗口，移动超过 6 像素算拖，松手后按松手速度短距离滑一下。
+- 点一下在头顶冒短台词（客户端内置句，不打模型）。约 4 秒后消失；再点换下一句并重新计时；拖动一开始就收起。气泡在命中区域内，可以点。
+- 右键：隐藏、打开主窗口、退出。隐藏只收桌宠。退出关掉整个应用和本地后端。
+- 桌宠重新置顶。常驻对话框去掉。
+- 不做：歌词、灵动岛、报时、识屏、换角色、记住位置、设置页。

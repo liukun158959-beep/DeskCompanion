@@ -2,6 +2,7 @@
 // 穿透关键：ignore_cursor_events 会让整窗收不到 mousemove，前端无法自判，
 // 必须由 Rust 后台线程轮询全局鼠标坐标，落在角色/面板区域外才穿透。
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -23,6 +24,7 @@ struct Rect {
 
 struct BackendProcess(Mutex<Option<Child>>);
 struct HitRegions(std::sync::Arc<Mutex<Vec<Rect>>>);
+struct DragLock(std::sync::Arc<AtomicBool>);
 
 #[tauri::command]
 fn set_hit_regions(regions: tauri::State<HitRegions>, rects: Vec<Rect>) {
@@ -49,6 +51,42 @@ fn set_pet_visible(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
         window.hide().map_err(|err| err.to_string())?;
     }
     Ok(())
+}
+
+// 拖动中禁止穿透，否则窗口一动，松手事件会丢。
+#[tauri::command]
+fn set_drag_lock(lock: tauri::State<DragLock>, locked: bool) {
+    lock.0.store(locked, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn nudge_pet(app: tauri::AppHandle, dx: f64, dy: f64) -> Result<(), String> {
+    let window = app
+        .get_webview_window("pet")
+        .ok_or("找不到桌宠窗口。恢复：重启客户端。")?;
+    let scale = window.scale_factor().map_err(|err| err.to_string())?;
+    let pos = window.outer_position().map_err(|err| err.to_string())?;
+    let nx = pos.x + (dx * scale).round() as i32;
+    let ny = pos.y + (dy * scale).round() as i32;
+    window
+        .set_position(tauri::PhysicalPosition::new(nx, ny))
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn show_main(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("找不到主窗口。恢复：重启客户端。")?;
+    window.unminimize().map_err(|err| err.to_string())?;
+    window.show().map_err(|err| err.to_string())?;
+    window.set_focus().map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 fn pick_free_port() -> u16 {
@@ -78,7 +116,11 @@ fn wait_healthy(port: u16) -> bool {
 }
 
 // 后台轮询：全局鼠标落在任一命中区域内 -> 可交互；否则穿透。
-fn start_cursor_poll(window: tauri::WebviewWindow, regions: std::sync::Arc<Mutex<Vec<Rect>>>) {
+fn start_cursor_poll(
+    window: tauri::WebviewWindow,
+    regions: std::sync::Arc<Mutex<Vec<Rect>>>,
+    drag_lock: std::sync::Arc<AtomicBool>,
+) {
     std::thread::spawn(move || {
         let mut last_ignore: Option<bool> = None;
         loop {
@@ -99,7 +141,7 @@ fn start_cursor_poll(window: tauri::WebviewWindow, regions: std::sync::Arc<Mutex
                 .lock()
                 .map(|rs| rs.iter().any(|r| rx >= r.x && rx <= r.x + r.w && ry >= r.y && ry <= r.y + r.h))
                 .unwrap_or(false);
-            let ignore = !inside;
+            let ignore = !drag_lock.load(Ordering::Relaxed) && !inside;
             if last_ignore != Some(ignore) {
                 last_ignore = Some(ignore);
                 let _ = window.set_ignore_cursor_events(ignore);
@@ -130,19 +172,30 @@ pub fn run() {
 
     let regions = std::sync::Arc::new(Mutex::new(Vec::<Rect>::new()));
     let regions_for_state = regions.clone();
+    let drag_lock_for_state = std::sync::Arc::new(AtomicBool::new(false));
+    let drag_lock_for_poll = drag_lock_for_state.clone();
 
     tauri::Builder::default()
         .manage(BackendInfo { port, token })
         .manage(BackendProcess(Mutex::new(Some(child))))
         .manage(HitRegions(regions_for_state))
+        .manage(DragLock(drag_lock_for_state))
         .setup(move |app| {
             if let Some(win) = app.get_webview_window("pet") {
-                let _ = win.set_always_on_top(false);
-                start_cursor_poll(win, regions.clone());
+                let _ = win.set_always_on_top(true);
+                start_cursor_poll(win, regions.clone(), drag_lock_for_poll.clone());
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![set_hit_regions, backend_info, set_pet_visible])
+        .invoke_handler(tauri::generate_handler![
+            set_hit_regions,
+            backend_info,
+            set_pet_visible,
+            set_drag_lock,
+            nudge_pet,
+            show_main,
+            quit_app
+        ])
         .build(tauri::generate_context!())
         .expect("构建 Tauri 应用失败")
         .run(|app, event| {

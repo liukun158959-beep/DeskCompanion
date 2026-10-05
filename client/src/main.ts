@@ -1,119 +1,260 @@
 /// <reference types="vite/client" />
-// 宠物窗主入口：渲染 kaltsit Live2D + 上报角色包围盒给 Rust 做穿透判定 + WS 对话。
-// 穿透判定改由 Rust 后台轮询全局鼠标（前端在穿透态收不到 mousemove，无法自判）。
+// 宠物窗：凯尔希 Live2D、拖动、头顶短台词、右键菜单。对话在主窗口。
+// 穿透由 Rust 轮询命中区域。拖动期间锁住穿透，避免松手事件被吃掉。
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { startPet, modelBounds } from "./pet-render";
+import {
+  BUBBLE_MS,
+  type Bubble,
+  type Gesture,
+  IDLE,
+  bubbleDue,
+  dismissBubble,
+  emptyBubble,
+  errorBubble,
+  pointerDown,
+  pointerMove,
+  pointerUp,
+  tapBubble,
+} from "./pet-gesture";
+import { modelBounds, startPet } from "./pet-render";
 
 const MODEL_URL = "/skins/kaltsit/kaltsit.model3.json";
 
+const bubbleEl = document.getElementById("bubble") as HTMLDivElement;
+const menuEl = document.getElementById("menu") as HTMLDivElement;
+
+let gesture: Gesture = IDLE;
+let bubble: Bubble = emptyBubble();
+let gliding = false;
+
+function placeBubble(): void {
+  const height = bubbleEl.offsetHeight;
+  const width = bubbleEl.offsetWidth;
+  const bounds = modelBounds();
+  let top = 24;
+  let left = window.innerWidth / 2 - width / 2;
+  if (bounds) {
+    top = bounds.y - height - 10;
+    if (top < 8) top = 8;
+    left = bounds.x + bounds.w / 2 - width / 2;
+  }
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+  bubbleEl.style.left = `${left}px`;
+  bubbleEl.style.top = `${top}px`;
+}
+
+function renderBubble(): void {
+  bubbleEl.classList.toggle("hidden", !bubble.open);
+  bubbleEl.dataset.kind = bubble.error ? "error" : "line";
+  bubbleEl.textContent = bubble.text;
+  if (bubble.open) placeBubble();
+  void reportHitRegions();
+}
+
+function renderMenu(open: boolean, x = 0, y = 0): void {
+  menuEl.classList.toggle("hidden", !open);
+  if (!open) {
+    void reportHitRegions();
+    return;
+  }
+  const width = menuEl.offsetWidth || 140;
+  const height = menuEl.offsetHeight || 120;
+  const left = Math.max(8, Math.min(x, window.innerWidth - width - 8));
+  const top = Math.max(8, Math.min(y, window.innerHeight - height - 8));
+  menuEl.style.left = `${left}px`;
+  menuEl.style.top = `${top}px`;
+  void reportHitRegions();
+}
+
+function showError(message: string): void {
+  bubble = errorBubble(message);
+  renderBubble();
+}
+
 async function reportHitRegions(): Promise<void> {
-  // 命中区域 = 角色包围盒 + 对话面板矩形；鼠标落在任一区域内则不穿透
   const rects: { x: number; y: number; w: number; h: number }[] = [];
-  const b = modelBounds();
-  if (b) rects.push(b);
-  for (const id of ["dock", "chat"]) {
-    const el = document.getElementById(id);
-    if (!el || el.classList.contains("hidden")) continue;
-    const r = el.getBoundingClientRect();
-    rects.push({ x: r.x, y: r.y, w: r.width, h: r.height });
+  const bounds = modelBounds();
+  if (bounds) rects.push(bounds);
+  for (const el of [bubbleEl, menuEl]) {
+    if (el.classList.contains("hidden")) continue;
+    const rect = el.getBoundingClientRect();
+    rects.push({ x: rect.x, y: rect.y, w: rect.width, h: rect.height });
   }
   if (!isTauri()) return;
   await invoke("set_hit_regions", { rects });
 }
 
+async function rust(command: string, args?: Record<string, unknown>): Promise<void> {
+  if (!isTauri()) return;
+  await invoke(command, args);
+}
+
+function nudge(dx: number, dy: number): void {
+  void rust("nudge_pet", { dx, dy }).catch((err: unknown) => {
+    showError(`拖动失败：${String(err)}。恢复：重启客户端。`);
+  });
+}
+
+function glide(vx: number, vy: number): void {
+  const speed = Math.hypot(vx, vy);
+  if (speed < 0.02) return;
+  const cap = 1.2;
+  if (speed > cap) {
+    vx = (vx / speed) * cap;
+    vy = (vy / speed) * cap;
+  }
+  gliding = true;
+  let last = performance.now();
+  const frame = (now: number) => {
+    if (!gliding) return;
+    const dt = Math.min(32, now - last);
+    last = now;
+    const decay = Math.pow(0.9, dt / 16);
+    vx *= decay;
+    vy *= decay;
+    if (Math.hypot(vx, vy) < 0.02) {
+      gliding = false;
+      return;
+    }
+    nudge(vx * dt, vy * dt);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+function beginDragLock(): void {
+  void rust("set_drag_lock", { locked: true }).catch((err: unknown) => {
+    showError(`拖动失败：${String(err)}。恢复：重启客户端。`);
+  });
+}
+
+function endDragLock(): void {
+  void rust("set_drag_lock", { locked: false }).catch((err: unknown) => {
+    showError(`拖动结束失败：${String(err)}。恢复：重启客户端。`);
+  });
+}
+
+function onPointerDown(event: PointerEvent): void {
+  if (event.button !== 0) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("#menu, #bubble")) return;
+  gliding = false;
+  gesture = pointerDown(event.screenX, event.screenY, performance.now());
+  beginDragLock();
+}
+
+function onPointerMove(event: PointerEvent): void {
+  const step = pointerMove(gesture, event.screenX, event.screenY, performance.now());
+  gesture = step.gesture;
+  if (step.startedDrag) {
+    bubble = dismissBubble(bubble);
+    renderBubble();
+    renderMenu(false);
+  }
+  if (step.dx !== 0 || step.dy !== 0) nudge(step.dx, step.dy);
+}
+
+function onPointerUp(): void {
+  if (gesture.kind !== "down") return;
+  const result = pointerUp(gesture);
+  gesture = IDLE;
+  endDragLock();
+  if (!result.moved) {
+    bubble = tapBubble(bubble, Date.now());
+    renderMenu(false);
+    renderBubble();
+    return;
+  }
+  glide(result.vx, result.vy);
+}
+
+function openMenu(x: number, y: number): void {
+  renderMenu(true, x, y);
+}
+
+function runMenu(action: string): void {
+  renderMenu(false);
+  const command =
+    action === "hide" ? rust("set_pet_visible", { visible: false }) : action === "main" ? rust("show_main") : rust("quit_app");
+  const label = action === "hide" ? "隐藏桌宠" : action === "main" ? "打开主窗口" : "退出";
+  void command.catch((err: unknown) => {
+    showError(`${label}失败：${String(err)}。恢复：重启客户端。`);
+  });
+}
+
+function expire(now: number): void {
+  if (!bubbleDue(bubble, now)) return;
+  bubble = dismissBubble(bubble);
+  renderBubble();
+}
+
+function installDebug(): void {
+  if (!import.meta.env.DEV) return;
+  const pet = window as Window & {
+    __petDebug?: {
+      bubbleOpen: () => boolean;
+      bubbleText: () => string;
+      bubbleKind: () => string;
+      bubbleMs: number;
+      menuOpen: () => boolean;
+      tap: () => void;
+      dragBy: (dx: number, dy: number) => void;
+      dismissIfDue: (now: number) => void;
+      openMenu: () => void;
+    };
+  };
+  pet.__petDebug = {
+    bubbleOpen: () => bubble.open,
+    bubbleText: () => bubble.text,
+    bubbleKind: () => bubbleEl.dataset.kind || "",
+    bubbleMs: BUBBLE_MS,
+    menuOpen: () => !menuEl.classList.contains("hidden"),
+    tap: () => {
+      bubble = tapBubble(bubble, Date.now());
+      renderBubble();
+    },
+    dragBy: (dx: number, dy: number) => {
+      gesture = pointerDown(0, 0, 0);
+      const step = pointerMove(gesture, dx, dy, 16);
+      gesture = step.gesture;
+      if (step.startedDrag) {
+        bubble = dismissBubble(bubble);
+        renderBubble();
+      }
+      gesture = IDLE;
+    },
+    dismissIfDue: (now: number) => expire(now),
+    openMenu: () => openMenu(24, 24),
+  };
+}
+
 async function main(): Promise<void> {
-  // 先接对话与命中区域上报，保证即使 Live2D 加载失败，对话框仍可用、窗口仍可交互
-  await setupChat();
-  await reportHitRegions();
+  installDebug();
+  window.addEventListener("pointerdown", onPointerDown);
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", onPointerUp);
+  window.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    if (gesture.kind === "down") return;
+    openMenu(event.clientX, event.clientY);
+  });
+  menuEl.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest("button");
+    const action = button?.dataset.action;
+    if (!action) return;
+    runMenu(action);
+  });
+  setInterval(() => expire(Date.now()), 200);
   setInterval(() => void reportHitRegions(), 500);
 
-  // Live2D 独立加载；失败只影响形象，不拖垮对话，且错误可见
   const canvas = document.getElementById("stage") as HTMLCanvasElement;
   try {
     await startPet(canvas, MODEL_URL);
   } catch (err) {
-    const replyEl = document.getElementById("reply");
-    if (replyEl) replyEl.textContent = `形象加载失败：${String(err)}`;
+    showError(`形象加载失败：${String(err)}。恢复：确认 public/Core 和 public/skins/kaltsit 都在。`);
   }
-}
-
-// 经 WS 连本地后端，验证流式对话。
-async function setupChat(): Promise<void> {
-  const replyEl = document.getElementById("reply") as HTMLDivElement;
-  const statusEl = document.getElementById("status") as HTMLDivElement;
-  const msgEl = document.getElementById("msg") as HTMLInputElement;
-  const sendEl = document.getElementById("send") as HTMLButtonElement;
-  const chatEl = document.getElementById("chat") as HTMLDivElement;
-  const closeEl = document.getElementById("close-chat") as HTMLButtonElement;
-  const toggleEl = document.getElementById("toggle-chat") as HTMLButtonElement;
-  const hideEl = document.getElementById("hide-pet") as HTMLButtonElement;
-  const setChatOpen = (open: boolean) => {
-    chatEl.classList.toggle("hidden", !open);
-    void reportHitRegions();
-  };
-  closeEl.addEventListener("click", () => setChatOpen(false));
-  toggleEl.addEventListener("click", () => setChatOpen(chatEl.classList.contains("hidden")));
-  hideEl.addEventListener("click", () => {
-    invoke("set_pet_visible", { visible: false }).catch((err: unknown) => {
-      replyEl.textContent = `隐藏桌宠失败：${String(err)}。恢复：从主窗点「唤出桌宠」，或重启客户端。`;
-    });
-  });
-  if (import.meta.env.DEV) {
-    const pet = window as Window & {
-      __petDebug?: { chatOpen: () => boolean; setChatOpen: (open: boolean) => void };
-    };
-    pet.__petDebug = {
-      chatOpen: () => !chatEl.classList.contains("hidden"),
-      setChatOpen,
-    };
-  }
-  window.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    if (!chatEl.classList.contains("hidden")) setChatOpen(false);
-  });
-
-  let info: { port: number; token: string };
-  try {
-    info = await invoke<{ port: number; token: string }>("backend_info");
-  } catch (err) {
-    replyEl.textContent = `还没有连上本地后端：${String(err)}。恢复：重启客户端。`;
-    return;
-  }
-
-  const send = () => {
-    const text = msgEl.value.trim();
-    if (!text) return;
-    msgEl.value = "";
-    replyEl.textContent = "";
-    statusEl.textContent = "凯尔希思考中…";
-    const ws = new WebSocket(`ws://127.0.0.1:${info.port}/ws?token=${info.token}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "chat", text }));
-    ws.onmessage = (ev) => {
-      const d = JSON.parse(ev.data);
-      if (d.type === "token") {
-        // 工具调用期间的 status 提示在正文开始流入时清掉
-        if (statusEl.textContent) statusEl.textContent = "";
-        replyEl.textContent += d.data;
-      } else if (d.type === "status") {
-        statusEl.textContent = d.data; // 工具进度：在看今天的日程…
-      } else if (d.type === "done") {
-        statusEl.textContent = "";
-        ws.close();
-      } else if (d.type === "error") {
-        statusEl.textContent = "";
-        replyEl.textContent = `错误：${d.data}`;
-      }
-    };
-    ws.onerror = () => {
-      statusEl.textContent = "";
-      replyEl.textContent = "连接后端失败。恢复：确认后端进程在运行";
-    };
-  };
-
-  sendEl.addEventListener("click", send);
-  msgEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") send();
-  });
+  await reportHitRegions();
 }
 
 void main();

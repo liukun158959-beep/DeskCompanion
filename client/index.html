@@ -13,6 +13,7 @@
         height: 100%;
         overflow: hidden;
         background: transparent;
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
       }
       #stage {
         position: absolute;
@@ -21,72 +22,51 @@
         height: 100vh;
         display: block;
       }
-      #dock, #chat {
+      #bubble, #menu {
         position: absolute;
-        left: 12px;
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        z-index: 3;
         color: #f4f1ea;
       }
-      #dock {
-        top: 12px;
-        display: flex;
-        gap: 8px;
-        z-index: 2;
+      #bubble {
+        max-width: 220px;
+        box-sizing: border-box;
+        padding: 8px 12px;
+        background: rgba(12, 14, 18, 0.92);
+        border: 1px solid rgba(255, 212, 41, 0.7);
+        font-size: 14px;
+        line-height: 1.5;
+        pointer-events: auto;
       }
-      #dock button, #close-chat, #send {
-        border: 1px solid rgba(255, 176, 92, 0.7);
-        background: rgba(18, 20, 24, 0.88);
-        color: #ffb05c;
-        border-radius: 2px;
-        padding: 6px 10px;
+      #bubble.hidden, #menu.hidden { display: none; }
+      #bubble[data-kind="error"] { border-color: #ff6b6b; color: #ffb4b4; }
+      #menu {
+        display: flex;
+        flex-direction: column;
+        min-width: 140px;
+        background: rgba(12, 14, 18, 0.94);
+        border: 1px solid rgba(255, 212, 41, 0.55);
+      }
+      #menu.hidden { display: none; }
+      #menu button {
+        border: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        background: transparent;
+        color: #f4f1ea;
+        text-align: left;
+        padding: 8px 12px;
         cursor: pointer;
       }
-      #chat {
-        top: 48px;
-        width: 440px;
-        box-sizing: border-box;
-        background: rgba(12, 14, 18, 0.92);
-        border: 1px solid rgba(255, 176, 92, 0.45);
-        padding: 12px;
-        font-size: 14px;
-        line-height: 1.6;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-      }
-      #chat.hidden { display: none; }
-      #chat-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-      #reply {
-        min-height: 56px;
-        max-height: 380px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-        margin-bottom: 10px;
-        padding: 8px;
-        background: rgba(255, 255, 255, 0.06);
-        border-radius: 8px;
-      }
-      #status { min-height: 18px; font-size: 12px; color: #c8c2b4; font-style: italic; margin-bottom: 8px; }
-      #bar { display: flex; gap: 8px; }
-      #msg { flex: 1; border: 1px solid rgba(255, 176, 92, 0.35); border-radius: 2px; padding: 8px; font-size: 14px; background: transparent; color: #f4f1ea; }
+      #menu button:last-child { border-bottom: 0; }
+      #menu button:hover { background: rgba(255, 212, 41, 0.16); color: #ffd429; }
     </style>
   </head>
   <body>
     <canvas id="stage"></canvas>
-    <div id="dock">
-      <button id="toggle-chat" type="button">对话</button>
-      <button id="hide-pet" type="button">隐藏桌宠</button>
-    </div>
-    <div id="chat">
-      <div id="chat-head">
-        <span>凯尔希</span>
-        <button id="close-chat" type="button">收起对话</button>
-      </div>
-      <div id="reply">跟凯尔希说点什么…</div>
-      <div id="status"></div>
-      <div id="bar">
-        <input id="msg" placeholder="回车发送" />
-        <button id="send">发送</button>
-      </div>
+    <div id="bubble" class="hidden" data-pet-bubble data-kind="line"></div>
+    <div id="menu" class="hidden" data-pet-menu>
+      <button type="button" data-action="hide">隐藏</button>
+      <button type="button" data-action="main">打开主窗口</button>
+      <button type="button" data-action="quit">退出</button>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
