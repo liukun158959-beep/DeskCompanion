@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DEBUG_FIXTURE, debugRequested, installDeskDebug } from "./debug";
+import { BoardPane, type BoardPayload } from "./board";
+import { BOARD_FIXTURE, BOARD_NOW, DEBUG_FIXTURE, debugPane, debugRequested, installDeskDebug } from "./debug";
 import { Markdown } from "./Markdown";
 import {
   backendInfo,
@@ -21,14 +22,16 @@ type Thread = {
 
 export function App() {
   const [dark, setDark] = useState(false);
-  const [pane, setPane] = useState<Pane>("chat");
+  const [pane, setPane] = useState<Pane>(debugPane() === "board" ? "board" : "chat");
   const [info, setInfo] = useState<BackendInfo | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [boardText, setBoardText] = useState("打开看板页时再拉今日数据。");
+  const [board, setBoard] = useState<BoardPayload | null>(debugPane() === "board" ? BOARD_FIXTURE : null);
+  const [boardClock, setBoardClock] = useState<string | null>(debugPane() === "board" ? BOARD_NOW : null);
+  const [boardLoading, setBoardLoading] = useState(false);
   const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
   const notesRef = useRef<string[]>([]);
@@ -52,8 +55,15 @@ export function App() {
   }
 
   useEffect(() => {
-    installDeskDebug(setPreview);
-    if (debugRequested()) return;
+    installDeskDebug({
+      seed: setPreview,
+      seedBoard: (payload, nowIso) => {
+        setPane("board");
+        setBoard(payload);
+        setBoardClock(nowIso);
+      },
+    });
+    if (debugPane()) return;
     backendInfo()
       .then(async (backend) => {
         setInfo(backend);
@@ -146,16 +156,22 @@ export function App() {
     });
   }
 
-  async function openBoard() {
+  async function openBoard(refresh = false) {
     setPane("board");
-    if (!info) return;
-    setBoardText("正在读取今日看板…");
+    if (boardClock) return;
+    if (!info) {
+      setBoard({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。" });
+      return;
+    }
+    setBoardLoading(true);
     try {
-      const data = await rpc<Record<string, unknown>>(info, "load_board");
-      const summary = typeof data.summary === "string" ? data.summary : "";
-      setBoardText(summary || "看板已接通，今日摘要为空。");
+      const data = await rpc<BoardPayload>(info, "load_board", refresh ? { refresh: true } : {});
+      setBoardClock(null);
+      setBoard(data);
     } catch (err) {
-      setBoardText(String(err));
+      setBoard({ ok: false, error: String(err) });
+    } finally {
+      setBoardLoading(false);
     }
   }
 
@@ -256,8 +272,13 @@ export function App() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.18 }}
             >
-              <h1 className="mb-4 text-xl font-semibold">今日看板</h1>
-              <pre className="whitespace-pre-wrap rounded-2xl bg-panel p-5 text-sm leading-7">{boardText}</pre>
+              <BoardPane
+                data={board}
+                nowIso={boardClock}
+                loading={boardLoading}
+                debug={boardClock !== null}
+                onRefresh={() => void openBoard(true)}
+              />
             </motion.section>
           )}
         </AnimatePresence>

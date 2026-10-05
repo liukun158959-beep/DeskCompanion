@@ -1,0 +1,191 @@
+import type { ReactNode } from "react";
+
+// 把 load_board 的今日快照收成看板视图。缺字段或失败就露出错误，不当成「今天没有安排」。
+
+export type AgendaItem = { summary: string; start: string; end?: string };
+export type TaskItem = { summary: string; due_at?: string; url?: string };
+
+export type BoardSection<T> = {
+  ok: boolean;
+  items?: T[];
+  error?: string;
+};
+
+export type BoardPayload = {
+  ok?: boolean;
+  error?: string;
+  date?: string;
+  agenda?: BoardSection<AgendaItem>;
+  tasks?: BoardSection<TaskItem>;
+  summary?: string;
+};
+
+export type BoardEvent = { time: string; title: string; end: string };
+export type BoardTask = { title: string; when: string; overdue: boolean };
+
+export type BoardModel = {
+  fatal: string;
+  date: string;
+  events: BoardEvent[];
+  agendaError: string;
+  agendaEmpty: boolean;
+  tasks: BoardTask[];
+  taskError: string;
+  taskEmpty: boolean;
+  summary: string;
+};
+
+const EMPTY: BoardModel = {
+  fatal: "",
+  date: "",
+  events: [],
+  agendaError: "",
+  agendaEmpty: false,
+  tasks: [],
+  taskError: "",
+  taskEmpty: false,
+  summary: "",
+};
+
+function timeKey(start: string): string {
+  if (start.includes("全天")) return `0-${start}`;
+  const hit = start.match(/\d{2}:\d{2}/);
+  if (hit) return `1-${hit[0]}`;
+  return `2-${start}`;
+}
+
+function clock(due: string, now: Date): { when: string; overdue: boolean } {
+  const text = due.trim();
+  if (!text) return { when: "未设截止", overdue: false };
+  const dt = new Date(text);
+  if (Number.isNaN(dt.getTime())) return { when: text, overdue: false };
+  const when = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(dt);
+  return { when, overdue: dt.getTime() < now.getTime() };
+}
+
+export function boardModel(data: BoardPayload, now: Date): BoardModel {
+  if (data.ok === false) {
+    return { ...EMPTY, fatal: data.error || "看板读取失败。" };
+  }
+  if (!data.agenda || !data.tasks) {
+    return { ...EMPTY, fatal: "看板数据缺 agenda 或 tasks。" };
+  }
+  const model: BoardModel = {
+    ...EMPTY,
+    date: data.date || "",
+    summary: data.summary || "",
+  };
+  if (!data.agenda.ok) {
+    model.agendaError = data.agenda.error || "读取日程失败。";
+  } else {
+    const items = data.agenda.items || [];
+    model.agendaEmpty = items.length === 0;
+    model.events = items
+      .map((item) => ({
+        time: item.start,
+        title: item.summary,
+        end: item.end || "",
+      }))
+      .sort((a, b) => timeKey(a.time).localeCompare(timeKey(b.time)));
+  }
+  if (!data.tasks.ok) {
+    model.taskError = data.tasks.error || "读取待办失败。";
+  } else {
+    const items = data.tasks.items || [];
+    model.taskEmpty = items.length === 0;
+    model.tasks = items.map((item) => {
+      const due = clock(item.due_at || "", now);
+      return { title: item.summary, when: due.when, overdue: due.overdue };
+    });
+  }
+  return model;
+}
+
+export function BoardPane(props: {
+  data: BoardPayload | null;
+  nowIso: string | null;
+  loading: boolean;
+  debug: boolean;
+  onRefresh: () => void;
+}) {
+  if (!props.data) {
+    return <p className="text-sm text-muted">打开看板页时再拉今日数据。</p>;
+  }
+  const now = props.nowIso ? new Date(props.nowIso) : new Date();
+  const model = boardModel(props.data, now);
+  return (
+    <div data-board>
+      <div className="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">今日看板</h1>
+          {model.date ? <div className="mt-1 text-sm text-muted">{model.date}</div> : null}
+        </div>
+        <button
+          type="button"
+          className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted disabled:opacity-40"
+          disabled={props.debug || props.loading}
+          onClick={props.onRefresh}
+        >
+          {props.loading ? "读取中…" : "刷新"}
+        </button>
+      </div>
+      {props.debug ? <div className="mb-4 text-xs text-muted">调试样本，未连接后端</div> : null}
+      {model.fatal ? (
+        <div data-board-error className="rounded-2xl bg-panel p-5 text-sm text-red-700 dark:text-red-300">
+          {model.fatal}
+        </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Section title="日程">
+            {model.agendaError ? <p data-agenda-error className="text-sm text-red-700 dark:text-red-300">{model.agendaError}</p> : null}
+            {model.agendaEmpty ? <p data-agenda-empty className="text-sm text-muted">今天没有日程。</p> : null}
+            <ol className="tl">
+              {model.events.map((event) => (
+                <li key={`${event.time}-${event.title}`} data-event>
+                  <div data-time className="text-xs text-muted">{event.time}</div>
+                  <div data-title>{event.title}</div>
+                  {event.end ? <div className="text-xs text-muted">至 {event.end}</div> : null}
+                </li>
+              ))}
+            </ol>
+          </Section>
+          <Section title="待办">
+            {model.taskError ? <p data-task-error className="text-sm text-red-700 dark:text-red-300">{model.taskError}</p> : null}
+            {model.taskEmpty ? <p data-task-empty className="text-sm text-muted">今天没有待办。</p> : null}
+            <ul className="space-y-2">
+              {model.tasks.map((task) => (
+                <li
+                  key={`${task.title}-${task.when}`}
+                  data-task
+                  data-overdue={task.overdue ? "1" : "0"}
+                  className="rounded-xl bg-panel px-4 py-3"
+                >
+                  <div data-task-title>{task.title}</div>
+                  <div data-task-when className="text-xs text-muted">
+                    {task.when}
+                    {task.overdue ? " 已过期" : ""}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        </div>
+      )}
+      {model.summary ? <p data-summary className="mt-6 text-sm leading-6 text-muted">{model.summary}</p> : null}
+    </div>
+  );
+}
+
+function Section(props: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-2xl bg-panel/60 p-5">
+      <h2 className="mb-3 text-sm font-semibold">{props.title}</h2>
+      {props.children}
+    </section>
+  );
+}
