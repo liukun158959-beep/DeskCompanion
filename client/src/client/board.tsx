@@ -5,7 +5,7 @@ import { StatusGrid, type StatusView } from "./status";
 // 把 load_board 的今日快照收成看板视图。缺字段或失败就露出错误，不当成「今天没有安排」。
 
 export type AgendaItem = { summary: string; start: string; end?: string; event_id?: string };
-export type TaskItem = { summary: string; due_at?: string; url?: string };
+export type TaskItem = { summary: string; due_at?: string; url?: string; guid?: string };
 
 export type BoardSection<T> = {
   ok: boolean;
@@ -23,7 +23,7 @@ export type BoardPayload = {
 };
 
 export type BoardEvent = { time: string; title: string; end: string; eventId: string };
-export type BoardTask = { title: string; when: string; overdue: boolean };
+export type BoardTask = { title: string; when: string; overdue: boolean; guid: string };
 
 export type BoardModel = {
   fatal: string;
@@ -103,7 +103,7 @@ export function boardModel(data: BoardPayload, now: Date): BoardModel {
     model.taskEmpty = items.length === 0;
     model.tasks = items.map((item) => {
       const due = clock(item.due_at || "", now);
-      return { title: item.summary, when: due.when, overdue: due.overdue };
+      return { title: item.summary, when: due.when, overdue: due.overdue, guid: item.guid?.trim() || "" };
     });
   }
   return model;
@@ -129,6 +129,8 @@ export function BoardPane(props: {
   deleting?: boolean;
   deleteErrors?: Record<string, string>;
   onDeleteEvent?: (eventId: string) => void;
+  taskErrors?: Record<string, string>;
+  onDeleteTask?: (guid: string) => void;
 }) {
   if (!props.data) {
     return (
@@ -198,16 +200,38 @@ export function BoardPane(props: {
             <ul className="space-y-2">
               {model.tasks.map((task) => (
                 <li
-                  key={`${task.title}-${task.when}`}
+                  key={`${task.guid}-${task.title}-${task.when}`}
                   data-task
+                  data-task-id={task.guid}
                   data-overdue={task.overdue ? "1" : "0"}
-                  className="border border-border bg-background px-4 py-3"
+                  className="flex items-start justify-between gap-3 border border-border bg-background px-4 py-3"
                 >
-                  <div data-task-title>{task.title}</div>
-                  <div data-task-when className="text-xs text-muted-foreground">
-                    {task.when}
-                    {task.overdue ? " 已过期" : ""}
+                  <div>
+                    <div data-task-title>{task.title}</div>
+                    <div data-task-when className="text-xs text-muted-foreground">
+                      {task.when}
+                      {task.overdue ? " 已过期" : ""}
+                    </div>
+                    {task.guid ? null : (
+                      <p data-task-nodelete className="text-xs text-muted-foreground">没有任务 ID，不能删除。</p>
+                    )}
+                    {task.guid && props.taskErrors?.[task.guid] ? (
+                      <p data-task-error className="text-xs text-destructive">{props.taskErrors[task.guid]}</p>
+                    ) : null}
                   </div>
+                  {task.guid ? (
+                    <span data-task-delete="" data-task-delete-disabled={props.deleting ? "1" : "0"}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={props.deleting}
+                        onClick={() => props.onDeleteTask?.(task.guid)}
+                      >
+                        删除
+                      </Button>
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

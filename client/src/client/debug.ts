@@ -59,7 +59,7 @@ export const BOARD_FIXTURE: BoardPayload = {
   tasks: {
     ok: true,
     items: [
-      { summary: "交周报", due_at: "2026-10-05T10:00:00+08:00" },
+      { summary: "交周报", due_at: "2026-10-05T10:00:00+08:00", guid: "task-report" },
       { summary: "看看板", due_at: "2026-10-05T20:00:00+08:00" },
     ],
   },
@@ -163,7 +163,7 @@ export type BoardSnap = {
   fatal: string;
   times: string[];
   titles: string[];
-  tasks: { title: string; when: string; overdue: string }[];
+  tasks: { title: string; when: string; overdue: string; id: string; nodelete: string; error: string; deleteDisabled: string }[];
   events: { title: string; id: string; nodelete: string; error: string; deleteDisabled: string }[];
   agendaError: string;
   taskError: string;
@@ -238,6 +238,10 @@ export function installDeskDebug(api: {
           title: (el.querySelector("[data-task-title]") as HTMLElement | null)?.innerText || "",
           when: (el.querySelector("[data-task-when]") as HTMLElement | null)?.innerText || "",
           overdue: el.getAttribute("data-overdue") || "",
+          id: el.getAttribute("data-task-id") || "",
+          nodelete: (el.querySelector("[data-task-nodelete]") as HTMLElement | null)?.innerText || "",
+          error: (el.querySelector("[data-task-error]") as HTMLElement | null)?.innerText || "",
+          deleteDisabled: el.querySelector("[data-task-delete]")?.getAttribute("data-task-delete-disabled") || "",
         })),
         events: [...document.querySelectorAll("[data-event]")].map((el) => ({
           title: (el.querySelector("[data-title]") as HTMLElement | null)?.innerText || "",

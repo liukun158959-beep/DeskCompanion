@@ -82,9 +82,10 @@ export function App() {
   const boardSeen = useRef(false);
   const boardFetches = useRef(0);
   const [fetchCount, setFetchCount] = useState(0);
-  const [agendaDeleting, setAgendaDeleting] = useState(false);
-  const agendaDeletingRef = useRef(false);
+  const [rowDeleting, setRowDeleting] = useState(false);
+  const rowDeletingRef = useRef(false);
   const [agendaErrors, setAgendaErrors] = useState<Record<string, string>>({});
+  const [taskErrors, setTaskErrors] = useState<Record<string, string>>({});
   const openBoardRef = useRef<(refresh?: boolean) => void>(() => {});
   const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -304,6 +305,7 @@ export function App() {
       setBoardClock(null);
       setBoard(data);
       setAgendaErrors({});
+      setTaskErrors({});
     } catch (err) {
       setBoard({ ok: false, error: String(err) });
     } finally {
@@ -312,9 +314,9 @@ export function App() {
   }
 
   async function deleteAgenda(eventId: string) {
-    if (!eventId || agendaDeletingRef.current) return;
-    agendaDeletingRef.current = true;
-    setAgendaDeleting(true);
+    if (!eventId || rowDeletingRef.current) return;
+    rowDeletingRef.current = true;
+    setRowDeleting(true);
     setAgendaErrors((cur) => {
       const next = { ...cur };
       delete next[eventId];
@@ -343,8 +345,45 @@ export function App() {
     } catch (err) {
       setAgendaErrors((cur) => ({ ...cur, [eventId]: String(err) }));
     } finally {
-      agendaDeletingRef.current = false;
-      setAgendaDeleting(false);
+      rowDeletingRef.current = false;
+      setRowDeleting(false);
+    }
+  }
+
+  async function deleteTask(guid: string) {
+    if (!guid || rowDeletingRef.current) return;
+    rowDeletingRef.current = true;
+    setRowDeleting(true);
+    setTaskErrors((cur) => {
+      const next = { ...cur };
+      delete next[guid];
+      return next;
+    });
+    try {
+      if (boardClock !== null) {
+        setBoard((cur) => {
+          if (!cur?.tasks?.items) return cur;
+          return {
+            ...cur,
+            tasks: {
+              ...cur.tasks,
+              items: cur.tasks.items.filter((item) => item.guid !== guid),
+            },
+          };
+        });
+        return;
+      }
+      if (!info) {
+        setTaskErrors((cur) => ({ ...cur, [guid]: "还没有连上本地后端。恢复：重启客户端。" }));
+        return;
+      }
+      const data = await rpc<BoardPayload>(info, "delete_task", { guid });
+      setBoard(data);
+    } catch (err) {
+      setTaskErrors((cur) => ({ ...cur, [guid]: String(err) }));
+    } finally {
+      rowDeletingRef.current = false;
+      setRowDeleting(false);
     }
   }
 
@@ -797,9 +836,11 @@ export function App() {
                 fetches={fetchCount}
                 onOpenMaa={() => void openMaa()}
                 onOpenFeishu={() => void openFeishu()}
-                deleting={agendaDeleting}
+                deleting={rowDeleting}
                 deleteErrors={agendaErrors}
                 onDeleteEvent={(eventId) => void deleteAgenda(eventId)}
+                taskErrors={taskErrors}
+                onDeleteTask={(guid) => void deleteTask(guid)}
               />
             </motion.section>
           )}

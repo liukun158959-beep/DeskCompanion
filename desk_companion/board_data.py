@@ -57,14 +57,17 @@ def fetch_week_feishu(monday: datetime, now: datetime) -> dict:
 
 def fetch_board() -> dict:
     agenda = _section(lambda: parse_agenda(_lark_data(["calendar", "+agenda"])))
+    return {"agenda": agenda, "tasks": _open_tasks_due_today()}
+
+
+def _open_tasks_due_today() -> dict:
     due = datetime.now(TZ).replace(hour=23, minute=59, second=59, microsecond=0)
     due_s = due.strftime("%Y-%m-%dT%H:%M:%S+08:00")
-    tasks = _section(
+    return _section(
         lambda: parse_tasks(
             _lark_data(["task", "+get-my-tasks", "--complete=false", f"--due-end={due_s}"])
         )
     )
-    return {"agenda": agenda, "tasks": tasks}
 
 
 def load_today_snapshot(*, refresh: bool) -> dict:
@@ -251,9 +254,19 @@ def parse_tasks(data) -> list[dict]:
                 "summary": str(summary),
                 "due_at": item.get("due_at") or "",
                 "url": item.get("url") or "",
+                "guid": _task_guid(item, str(summary)),
             }
         )
     return out
+
+
+def _task_guid(item: dict, summary: str) -> str:
+    raw = item.get("guid")
+    if raw is None or raw == "":
+        return ""
+    if type(raw) is not str:
+        raise RuntimeError(f"待办「{summary}」的 guid 必须是字符串。")
+    return raw.strip()
 
 
 def _as_items(data, label: str) -> list:
@@ -309,6 +322,36 @@ def delete_agenda_event(event_id: object) -> dict:
     agenda = _section(lambda: parse_agenda(_lark_data(["calendar", "+agenda"])))
     snap = dict(cached)
     snap["agenda"] = agenda
+    snap["fetched_at"] = datetime.now(TZ).isoformat(timespec="seconds")
+    _write_today_file(snap)
+    return {"ok": True, **snap}
+
+
+def delete_board_task(guid: object) -> dict:
+    """删掉这一条待办，再只重查今日待办。行内按钮就是确认，所以带 --yes。"""
+    if type(guid) is not str or not guid.strip():
+        raise RuntimeError("没有任务 ID，不能删除。")
+    if any(ch in guid for ch in "\n\r"):
+        raise RuntimeError("任务 ID 不能包含换行。")
+    day = today_date()
+    cached = _read_today_file()
+    if cached is None or cached["date"] != day:
+        raise RuntimeError("还没有今天的看板。先打开今日页再删除。")
+    raw = _run_lark(
+        [
+            "task",
+            "tasks",
+            "delete",
+            "--task-guid",
+            guid.strip(),
+            "--as",
+            "user",
+            "--yes",
+        ]
+    )
+    _require_lark_ok(raw)
+    snap = dict(cached)
+    snap["tasks"] = _open_tasks_due_today()
     snap["fetched_at"] = datetime.now(TZ).isoformat(timespec="seconds")
     _write_today_file(snap)
     return {"ok": True, **snap}

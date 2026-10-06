@@ -61,6 +61,11 @@ class Bridge:
 
         return delete_agenda_event(event_id)
 
+    def delete_task(self, guid: str) -> dict:
+        from .board_data import delete_board_task
+
+        return delete_board_task(guid)
+
     def load_log_errors(self) -> dict:
         return self._host.board_log_errors()
 
