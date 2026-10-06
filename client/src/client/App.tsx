@@ -20,6 +20,7 @@ import { columnItems, MaaPane, type LogPayload, type MaaSnap } from "./maa";
 import { matchRules, parseRules, type Analysis, type MaaRule } from "./maa-rules";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
 import { Markdown } from "./Markdown";
+import { DEFAULT_SAMPLING, samplingFromInputs, EFFORTS, type Sampling } from "./sampling";
 import {
   backendInfo,
   rpc,
@@ -45,6 +46,7 @@ export function App() {
   const [info, setInfo] = useState<BackendInfo | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
   const [draft, setDraft] = useState("");
+  const [sampling, setSampling] = useState<Sampling>(DEFAULT_SAMPLING);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -73,6 +75,7 @@ export function App() {
   const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
   const notesRef = useRef<string[]>([]);
+  const thinkingRef = useRef("");
   const debugMode = preview !== null;
 
   useEffect(() => {
@@ -122,6 +125,9 @@ export function App() {
       analyzeMaa: () => analyzeRef.current(),
       seedMaaLogs: (next) => seedLogsRef.current(next),
       shouldReloadBoard,
+      setSampling: (effort, temperature, topP) => {
+        setSampling(samplingFromInputs(effort, temperature, topP));
+      },
     });
     if (debugPane()) return;
     backendInfo()
@@ -159,11 +165,13 @@ export function App() {
     setError("");
     setStatus("凯尔希思考中…");
     notesRef.current = [];
+    thinkingRef.current = "";
+    const sent = sampling;
     setThread({
       ...thread,
       items: [...thread.items, { role: "user", text }, { role: "pet", text: "" }],
     });
-    streamChat(info, text, {
+    streamChat(info, text, sent, {
       onStatus: (line) => {
         if (!line) return;
         setStatus("");
@@ -175,6 +183,19 @@ export function App() {
           const last = items[items.length - 1];
           if (!last || last.role !== "pet") return cur;
           items[items.length - 1] = { ...last, notes };
+          return { ...cur, items };
+        });
+      },
+      onThink: (piece) => {
+        setStatus("");
+        thinkingRef.current += piece;
+        const thinking = thinkingRef.current;
+        setThread((cur) => {
+          if (!cur) return cur;
+          const items = cur.items.slice();
+          const last = items[items.length - 1];
+          if (!last || last.role !== "pet") return cur;
+          items[items.length - 1] = { ...last, thinking };
           return { ...cur, items };
         });
       },
@@ -192,16 +213,21 @@ export function App() {
       },
       onDone: async () => {
         const notes = notesRef.current.slice();
+        const thinking = thinkingRef.current;
         setStatus("");
         setBusy(false);
         await loadThread(info);
-        if (!notes.length) return;
+        if (!notes.length && !thinking) return;
         setThread((cur) => {
           if (!cur) return cur;
           const items = cur.items.slice();
           for (let i = items.length - 1; i >= 0; i -= 1) {
             if (items[i].role === "pet") {
-              items[i] = { ...items[i], notes };
+              items[i] = {
+                ...items[i],
+                notes: notes.length ? notes : items[i].notes,
+                thinking: thinking || items[i].thinking,
+              };
               break;
             }
           }
@@ -528,19 +554,22 @@ export function App() {
                     role={item.role}
                     text={item.text}
                     notes={item.notes}
+                    thinking={item.thinking}
                     live={busy && !preview && idx === all.length - 1 && item.role === "pet"}
                   />
                 ))}
                 {status ? <div className="text-sm italic text-muted-foreground">{status}</div> : null}
                 {error ? <div className="text-sm text-destructive">{error}</div> : null}
               </div>
-              <form
-                className="flex gap-2 border-t border-border px-6 py-4"
-                onSubmit={(ev) => {
-                  ev.preventDefault();
-                  send();
-                }}
-              >
+              <div className="border-t border-border px-6 py-4">
+                <SamplingBar value={sampling} onChange={setSampling} />
+                <form
+                  className="flex gap-2"
+                  onSubmit={(ev) => {
+                    ev.preventDefault();
+                    send();
+                  }}
+                >
                 <Input
                   value={draft}
                   onChange={(ev) => setDraft(ev.target.value)}
@@ -550,7 +579,8 @@ export function App() {
                 <Button type="submit" variant="primary" disabled={busy}>
                   发送
                 </Button>
-              </form>
+                </form>
+              </div>
             </motion.section>
           ) : pane === "maa" ? (
             <motion.section
@@ -611,7 +641,7 @@ function NavButton(props: { active: boolean; label: string; onClick: () => void 
   );
 }
 
-function Bubble(props: { role: string; text: string; notes?: string[]; live?: boolean }) {
+function Bubble(props: { role: string; text: string; notes?: string[]; thinking?: string; live?: boolean }) {
   const mine = props.role === "user";
   let body: ReactNode = "…";
   if (props.text) {
@@ -621,12 +651,90 @@ function Bubble(props: { role: string; text: string; notes?: string[]; live?: bo
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`} data-bubble data-role={props.role}>
       <Card className={`max-w-[70%] text-sm leading-6 ${mine ? "whitespace-pre-wrap" : ""}`} selected={mine}>
         <CardBody>
+        {!mine && props.thinking ? <ThinkCard text={props.thinking} live={!!props.live} /> : null}
         {!mine && props.notes && props.notes.length > 0 ? (
           <ToolCard notes={props.notes} live={!!props.live} />
         ) : null}
         {body}
         </CardBody>
       </Card>
+    </div>
+  );
+}
+
+function ThinkCard(props: { text: string; live: boolean }) {
+  const [opened, setOpened] = useState(props.live);
+  useEffect(() => {
+    setOpened(props.live);
+  }, [props.live]);
+  return (
+    <details
+      className="tool-card"
+      open={opened}
+      data-thinking=""
+      data-thinking-live={props.live ? "1" : "0"}
+      data-thinking-body={props.text}
+      onToggle={(ev) => {
+        if (props.live) return;
+        setOpened(ev.currentTarget.open);
+      }}
+    >
+      <summary>思考</summary>
+      <p className="whitespace-pre-wrap">{props.text}</p>
+    </details>
+  );
+}
+
+function SamplingBar(props: { value: Sampling; onChange: (next: Sampling) => void }) {
+  return (
+    <div
+      className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground"
+      data-sampling=""
+      data-sampling-effort={props.value.reasoning_effort}
+      data-sampling-temperature={props.value.temperature.toFixed(1)}
+      data-sampling-top-p={props.value.top_p.toFixed(2)}
+    >
+      <span>思考</span>
+      {EFFORTS.map((effort) => (
+        <span key={effort} data-effort={effort} data-selected={props.value.reasoning_effort === effort ? "1" : "0"}>
+          <Button
+            type="button"
+            size="sm"
+            variant={props.value.reasoning_effort === effort ? "primary" : "ghost"}
+            onClick={() => props.onChange({ ...props.value, reasoning_effort: effort })}
+          >
+            {effort}
+          </Button>
+        </span>
+      ))}
+      <label className="flex items-center gap-2">
+        温度
+        <input
+          className="w-24"
+          type="range"
+          min={0}
+          max={1}
+          step={0.1}
+          value={props.value.temperature}
+          data-temperature=""
+          onChange={(ev) => props.onChange({ ...props.value, temperature: Number(ev.target.value) })}
+        />
+        <span data-temperature-value="">{props.value.temperature.toFixed(1)}</span>
+      </label>
+      <label className="flex items-center gap-2">
+        top_p
+        <input
+          className="w-24"
+          type="range"
+          min={0.01}
+          max={1}
+          step={0.01}
+          value={props.value.top_p}
+          data-top-p=""
+          onChange={(ev) => props.onChange({ ...props.value, top_p: Number(ev.target.value) })}
+        />
+        <span data-top-p-value="">{props.value.top_p.toFixed(2)}</span>
+      </label>
     </div>
   );
 }

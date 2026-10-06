@@ -15,6 +15,7 @@ import json
 
 from websockets.asyncio.server import serve
 
+from ..sampling import parse_sampling
 from .host import HeadlessApp
 
 # 白名单：bridge 上可无头调用的数据方法。窗口/UI 类（close_bubble/fit_card/
@@ -89,18 +90,33 @@ async def _handler(ws):
 
 async def _handle_chat(ws, msg: dict) -> None:
     # 流式对话：agent.run 阻塞跑在线程池，deltas 经线程安全队列回推 WS。
+    try:
+        sampling = parse_sampling(msg.get("sampling"))
+    except RuntimeError as exc:
+        await ws.send(json.dumps({"type": "error", "data": str(exc)}))
+        return
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
 
     def delta_sink(piece: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, ("token", piece))
 
+    def think_sink(piece: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, ("think", piece))
+
     def status_sink(text: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, ("status", text))
 
     def run() -> None:
         try:
-            answer = HOST.run_chat(str(msg.get("text", "")), msg.get("chips"), delta_sink, status_sink)
+            answer = HOST.run_chat(
+                str(msg.get("text", "")),
+                msg.get("chips"),
+                delta_sink,
+                status_sink,
+                sampling,
+                think_sink,
+            )
             loop.call_soon_threadsafe(queue.put_nowait, ("done", answer))
         except Exception as exc:
             loop.call_soon_threadsafe(queue.put_nowait, ("error", f"{type(exc).__name__}: {exc}"))

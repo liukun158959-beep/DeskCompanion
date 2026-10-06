@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Sampling } from "./sampling";
 
 export type BackendInfo = { port: number; token: string };
 
-export type ChatItem = { role: string; text: string; ts?: string; notes?: string[] };
+export type ChatItem = { role: string; text: string; ts?: string; notes?: string[]; thinking?: string };
 
 export type SessionItem = {
   id: string;
@@ -23,17 +24,24 @@ function wsUrl(info: BackendInfo): string {
 
 export type StreamHandlers = {
   onToken: (piece: string) => void;
+  onThink: (piece: string) => void;
   onStatus: (text: string) => void;
   onDone: (answer: string) => void;
   onError: (message: string) => void;
 };
 
-export function streamChat(info: BackendInfo, text: string, handlers: StreamHandlers): void {
+export function streamChat(
+  info: BackendInfo,
+  text: string,
+  sampling: Sampling,
+  handlers: StreamHandlers,
+): void {
   const ws = new WebSocket(wsUrl(info));
-  ws.onopen = () => ws.send(JSON.stringify({ type: "chat", text }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "chat", text, sampling }));
   ws.onmessage = (ev) => {
     const msg = JSON.parse(String(ev.data)) as { type: string; data?: string };
     if (msg.type === "token") handlers.onToken(msg.data || "");
+    else if (msg.type === "think") handlers.onThink(msg.data || "");
     else if (msg.type === "status") handlers.onStatus(msg.data || "");
     else if (msg.type === "done") {
       handlers.onDone(msg.data || "");

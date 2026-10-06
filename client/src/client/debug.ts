@@ -28,6 +28,7 @@ export const DEBUG_FIXTURE: ChatItem[] = [
       "见 [说明](https://example.com/help)",
     ].join("\n"),
     notes: ["在看今天的日程…", "在看未完成的待办…"],
+    thinking: "先看今天有没有空，再排这三步。",
   },
 ];
 
@@ -35,6 +36,8 @@ export type BubbleSnap = {
   role: string;
   tags: string[];
   text: string;
+  thinking: string;
+  thinkingLive: string;
 };
 
 export const BOARD_NOW = "2026-10-05T15:00:00+08:00";
@@ -161,6 +164,7 @@ export function installDeskDebug(api: {
   analyzeMaa: () => void;
   seedMaaLogs: (logs: LogPayload) => void;
   shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
+  setSampling: (effort: string, temperature: number, topP: number) => void;
 }): void {
   if (!import.meta.env.DEV) return;
   window.__deskDebug = {
@@ -173,11 +177,22 @@ export function installDeskDebug(api: {
     analyzeMaa: api.analyzeMaa,
     seedMaaLogs: api.seedMaaLogs,
     shouldReloadBoard: api.shouldReloadBoard,
+    setSampling: api.setSampling,
+    samplingSnapshot(): { effort: string; temperature: string; topP: string } {
+      const row = document.querySelector("[data-sampling]");
+      return {
+        effort: row?.getAttribute("data-sampling-effort") || "",
+        temperature: row?.getAttribute("data-sampling-temperature") || "",
+        topP: row?.getAttribute("data-sampling-top-p") || "",
+      };
+    },
     snapshot(): BubbleSnap[] {
       return [...document.querySelectorAll("[data-bubble]")].map((el) => ({
         role: el.getAttribute("data-role") || "",
         tags: [...el.querySelectorAll("*")].map((node) => node.tagName.toLowerCase()),
         text: (el as HTMLElement).innerText,
+        thinking: el.querySelector("[data-thinking]")?.getAttribute("data-thinking-body") || "",
+        thinkingLive: el.querySelector("[data-thinking]")?.getAttribute("data-thinking-live") || "",
       }));
     },
     boardSnapshot(): BoardSnap {
@@ -244,6 +259,8 @@ declare global {
       analyzeMaa: () => void;
       seedMaaLogs: (logs: LogPayload) => void;
       shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
+      setSampling: (effort: string, temperature: number, topP: number) => void;
+      samplingSnapshot: () => { effort: string; temperature: string; topP: string };
       snapshot: () => BubbleSnap[];
       boardSnapshot: () => BoardSnap;
       statusSnapshot: () => StatusSnap;
