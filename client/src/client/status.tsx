@@ -60,7 +60,9 @@ export function statusFromPayload(kind: StatusKind, data: unknown): StatusView {
     return { kind, title, state: "ready", line: repos === null ? line : `${line}，${repos} 个仓库` };
   }
   if (kind === "maa") {
-    return { kind, title, state: "ready", line: text(row.message) || text(row.status) || "已连接" };
+    const line = text(row.message) || text(row.error) || text(row.status) || "已连接";
+    const failed = row.status === "error" || text(row.task_error).length > 0;
+    return { kind, title, state: failed ? "error" : "ready", line };
   }
   if (row.has_token === false) {
     return { kind, title, state: "off", line: text(row.hint) || "未配置" };
@@ -77,22 +79,45 @@ export function statusFromPayload(kind: StatusKind, data: unknown): StatusView {
   return { kind, title, state: "off", line: text(row.hint) || "未同步" };
 }
 
-export function StatusGrid(props: { cards: StatusView[] }) {
+export function StatusGrid(props: { cards: StatusView[]; onOpenMaa?: () => void }) {
   if (props.cards.length === 0) return null;
   return (
     <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {props.cards.map((card) => (
-        <Card key={card.kind} data-status={card.kind} data-state={card.state} hoverable>
-          <CardHeader>
-            <CardTitle className="text-xs text-muted-foreground">{card.title}</CardTitle>
-          </CardHeader>
-          <CardBody>
-            <div data-status-line className={`text-sm leading-6 ${card.state === "error" ? "text-destructive" : ""}`}>
-              {card.line}
-            </div>
-          </CardBody>
-        </Card>
-      ))}
+      {props.cards.map((card) => {
+        const open = card.kind === "maa" && props.onOpenMaa ? props.onOpenMaa : null;
+        return (
+          <Card
+            key={card.kind}
+            data-status={card.kind}
+            data-state={card.state}
+            data-open={open ? "maa" : undefined}
+            hoverable
+            role={open ? "button" : undefined}
+            tabIndex={open ? 0 : undefined}
+            className={open ? "cursor-pointer text-left" : undefined}
+            onClick={open || undefined}
+            onKeyDown={
+              open
+                ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      open();
+                    }
+                  }
+                : undefined
+            }
+          >
+            <CardHeader>
+              <CardTitle className="text-xs text-muted-foreground">{card.title}</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <div data-status-line className={`text-sm leading-6 ${card.state === "error" ? "text-destructive" : ""}`}>
+                {card.line}
+              </div>
+            </CardBody>
+          </Card>
+        );
+      })}
     </div>
   );
 }

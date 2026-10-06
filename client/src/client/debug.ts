@@ -1,7 +1,9 @@
 /// <reference types="vite/client" />
 import type { ChatItem } from "./api";
 import type { BoardPayload } from "./board";
+import type { LogPayload, MaaSnap } from "./maa";
 import { statusFromPayload, type StatusKind, type StatusView } from "./status";
+import skillRaw from "../../../skills/maa-log-analysis/SKILL.md?raw";
 
 // 仅开发态。浏览器打开 /client.html?debug=1 不连 Tauri、不打模型，直接铺一条样本回复。
 // 代理用 window.__deskDebug.snapshot() 读气泡里的标签，确认列表和代码块真的排出来了。
@@ -70,11 +72,55 @@ export const STATUS_FIXTURE: StatusView[] = (Object.keys(STATUS_RAW) as StatusKi
   statusFromPayload(kind, STATUS_RAW[kind]),
 );
 
-export function debugPane(): "chat" | "board" | null {
+export const MAA_SKILL_RAW = skillRaw;
+
+export const MAA_IDLE_FIXTURE: MaaSnap = {
+  ok: true,
+  status: "idle",
+  message: "还没开始。",
+  running: false,
+  current_task: "",
+  task_error: "",
+};
+
+export const MAA_LOG_FIXTURE: LogPayload = {
+  ok: true,
+  highlights: [{ time: "15:01:00", title: "任务出错: 仓库识别", text: "任务出错: 仓库识别" }],
+  desk: { path: "desk_companion.log", note: "", items: [] },
+  maa_gui: {
+    path: "gui.log",
+    note: "",
+    items: [{ time: "15:01:00", title: "任务出错: 仓库识别", text: "任务出错: 仓库识别" }],
+  },
+  maa_depot: {
+    path: "asst.log",
+    note: "",
+    items: [{ time: "15:01:02", title: "没对上「全部」页签", text: "failed to match DepotAllTab" }],
+  },
+};
+
+export const MAA_EMPTY_LOG: LogPayload = {
+  ok: true,
+  highlights: [],
+  desk: { path: "desk_companion.log", note: "今日没有出错。", items: [] },
+  maa_gui: { path: "gui.log", note: "", items: [] },
+  maa_depot: { path: "asst.log", note: "", items: [] },
+};
+
+export const MAA_UNKNOWN_LOG: LogPayload = {
+  ok: true,
+  highlights: [],
+  desk: { path: "desk_companion.log", items: [{ title: "崩溃", text: "CRASH 样本，技能表里没有这条。" }] },
+  maa_gui: { path: "gui.log", items: [] },
+  maa_depot: { path: "asst.log", items: [] },
+};
+
+export function debugPane(): "chat" | "board" | "maa" | null {
   if (!import.meta.env.DEV) return null;
   const value = new URLSearchParams(location.search).get("debug");
   if (value === "1" || value === "chat") return "chat";
   if (value === "board") return "board";
+  if (value === "maa") return "maa";
   return null;
 }
 
@@ -93,12 +139,27 @@ export type BoardSnap = {
 
 export type StatusSnap = { kind: string; state: string; line: string }[];
 
+export type MaaSnapShot = {
+  pane: string;
+  running: string;
+  message: string;
+  task: string;
+  startDisabled: boolean;
+  stopDisabled: boolean;
+  kind: string;
+  hits: { source: string; text: string }[];
+  fetches: string;
+};
+
 export function installDeskDebug(api: {
   seed: (items: ChatItem[]) => void;
   seedBoard: (payload: BoardPayload, nowIso: string) => void;
   seedStatus: (raw: Record<string, unknown>) => void;
   openBoard: (refresh?: boolean) => void;
   requestToday: () => void;
+  openMaa: () => void;
+  analyzeMaa: () => void;
+  seedMaaLogs: (logs: LogPayload) => void;
   shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
 }): void {
   if (!import.meta.env.DEV) return;
@@ -108,6 +169,9 @@ export function installDeskDebug(api: {
     seedStatus: api.seedStatus,
     openBoard: api.openBoard,
     requestToday: api.requestToday,
+    openMaa: api.openMaa,
+    analyzeMaa: api.analyzeMaa,
+    seedMaaLogs: api.seedMaaLogs,
     shouldReloadBoard: api.shouldReloadBoard,
     snapshot(): BubbleSnap[] {
       return [...document.querySelectorAll("[data-bubble]")].map((el) => ({
@@ -138,6 +202,26 @@ export function installDeskDebug(api: {
         line: (el.querySelector("[data-status-line]") as HTMLElement | null)?.innerText || "",
       }));
     },
+    maaSnapshot(): MaaSnapShot {
+      const root = document.querySelector("[data-maa]");
+      const start = document.querySelector("[data-maa-start]") as HTMLButtonElement | null;
+      const stop = document.querySelector("[data-maa-stop]") as HTMLButtonElement | null;
+      const board = document.querySelector("[data-board]");
+      return {
+        pane: document.querySelector("[data-pane]")?.getAttribute("data-pane") || "",
+        running: root?.getAttribute("data-maa-running") || "",
+        message: (document.querySelector("[data-maa-message]") as HTMLElement | null)?.innerText || "",
+        task: (document.querySelector("[data-maa-task]") as HTMLElement | null)?.innerText || "",
+        startDisabled: !!start?.disabled,
+        stopDisabled: !!stop?.disabled,
+        kind: document.querySelector("[data-maa-analysis]")?.getAttribute("data-maa-kind") || "",
+        hits: [...document.querySelectorAll("[data-maa-hit]")].map((el) => ({
+          source: el.getAttribute("data-source") || "",
+          text: (el as HTMLElement).innerText,
+        })),
+        fetches: board?.getAttribute("data-board-fetches") || "",
+      };
+    },
     bgMotion(): { grid: string; particles: string } {
       const layer = document.querySelector("[data-bg-motion]");
       if (!layer) return { grid: "", particles: "" };
@@ -156,10 +240,14 @@ declare global {
       seedStatus: (raw: Record<string, unknown>) => void;
       openBoard: (refresh?: boolean) => void;
       requestToday: () => void;
+      openMaa: () => void;
+      analyzeMaa: () => void;
+      seedMaaLogs: (logs: LogPayload) => void;
       shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
       snapshot: () => BubbleSnap[];
       boardSnapshot: () => BoardSnap;
       statusSnapshot: () => StatusSnap;
+      maaSnapshot: () => MaaSnapShot;
       bgMotion: () => { grid: string; particles: string };
     };
   }

@@ -9,6 +9,10 @@ export default defineConfig({
   server: {
     port: 5180,
     strictPort: true,
+    // 调试页直接读技能原文，避免再抄一份对照表。
+    fs: {
+      allow: [resolve(__dirname, "..")],
+    },
   },
   build: {
     target: "esnext",

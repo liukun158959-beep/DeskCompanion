@@ -20,6 +20,57 @@ description: 根据桌宠与 MAA 出错段判断清日常/仓库识别失败原�
 - `Save image` 路径：失败截图，不要读 png。
 - `任务跳过` 且空 `data`：今晚已触发过更新数据（含失败），Daily 不再 OCR。
 
+## 对照表
+
+分析按钮只读下面的 `maa-rules`，按单条出错原文匹配，不调用模型。`all` 是关键词都要出现，`any` 是出现一个即可。`source` 为 `rule` 时界面标「桌宠规则」，为 `doc` 时标「文档原句」。这一刀没有 `doc`。
+
+```maa-rules
+[
+  {
+    "id": "empty-data",
+    "match": "all",
+    "keywords": ["maa_job daily", "data 是空的"],
+    "source": "rule",
+    "text": "桌宠拒写空仓，账本日期未改。"
+  },
+  {
+    "id": "depot-date",
+    "match": "all",
+    "keywords": ["仓库日期是"],
+    "source": "rule",
+    "text": "Daily 跳过或根本没扫到今天。"
+  },
+  {
+    "id": "depot-task",
+    "match": "all",
+    "keywords": ["任务出错: 仓库识别"],
+    "source": "rule",
+    "text": "MAA 扫仓失败，不等于长草整段没跑。"
+  },
+  {
+    "id": "depot-tab",
+    "match": "any",
+    "keywords": ["failed to match DepotAllTab", "候选模板 0"],
+    "source": "rule",
+    "text": "多半还在家园，没进仓库。"
+  },
+  {
+    "id": "save-image",
+    "match": "all",
+    "keywords": ["Save image"],
+    "source": "rule",
+    "text": "失败截图，不要读 png。"
+  },
+  {
+    "id": "task-skip",
+    "match": "all",
+    "keywords": ["任务跳过", "data"],
+    "source": "rule",
+    "text": "今晚已触发过更新数据（含失败），Daily 不再 OCR。"
+  }
+]
+```
+
 ## 回答结构
 
 1. 一句结论（桌宠拒写 / MAA 没进仓 / Daily 跳过）。
