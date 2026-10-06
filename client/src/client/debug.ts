@@ -255,8 +255,8 @@ export function installDeskDebug(api: {
         taskError: (document.querySelector("[data-task-error]") as HTMLElement | null)?.innerText || "",
         create: {
           summary: (document.querySelector("[data-event-summary]") as HTMLInputElement | null)?.value || "",
-          start: (document.querySelector("[data-event-start]") as HTMLInputElement | null)?.value || "",
-          end: (document.querySelector("[data-event-end]") as HTMLInputElement | null)?.value || "",
+          start: document.querySelector("[data-event-time='start']")?.getAttribute("data-value") || "",
+          end: document.querySelector("[data-event-time='end']")?.getAttribute("data-value") || "",
           error: (document.querySelector("[data-event-create-error]") as HTMLElement | null)?.innerText || "",
           notice: (document.querySelector("[data-event-create-notice]") as HTMLElement | null)?.innerText || "",
           disabled: document.querySelector("[data-event-create]")?.getAttribute("data-event-create-disabled") || "",

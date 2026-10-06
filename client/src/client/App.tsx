@@ -445,7 +445,12 @@ export function App() {
       setCreateNotice(data.notice || "");
       setCreateNonce((n) => n + 1);
     } catch (err) {
-      setCreateError(String(err));
+      const text = String(err);
+      if (text.includes("create_agenda")) {
+        setCreateError("后端还没有创建日程。恢复：停掉当前客户端，在 desk-companion\\client 里重新运行 pnpm tauri dev。");
+      } else {
+        setCreateError(text);
+      }
     } finally {
       rowDeletingRef.current = false;
       setRowDeleting(false);

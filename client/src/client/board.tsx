@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Button, TacticalPanel } from "reend-components";
 import { StatusGrid, type StatusView } from "./status";
+import { DateTimeField } from "./datetime-field";
 
 // 把 load_board 的今日快照收成看板视图。缺字段或失败就露出错误，不当成「今天没有安排」。
 
@@ -287,6 +288,7 @@ function CreateEventBox(props: {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [localError, setLocalError] = useState("");
+  const [open, setOpen] = useState<"" | "start" | "end">("");
   const shownError = localError || props.error;
   return (
     <form
@@ -312,19 +314,25 @@ function CreateEventBox(props: {
         onChange={(ev) => setSummary(ev.target.value)}
       />
       <div className="flex gap-2">
-        <input
-          className="min-w-0 flex-1 border border-border bg-background px-2 py-1 text-sm"
-          data-event-start=""
-          type="datetime-local"
+        <DateTimeField
+          marker="start"
+          placeholder="选择开始"
           value={start}
-          onChange={(ev) => setStart(ev.target.value)}
+          disabled={props.disabled}
+          open={open === "start"}
+          onOpen={() => setOpen("start")}
+          onClose={() => setOpen("")}
+          onChange={setStart}
         />
-        <input
-          className="min-w-0 flex-1 border border-border bg-background px-2 py-1 text-sm"
-          data-event-end=""
-          type="datetime-local"
+        <DateTimeField
+          marker="end"
+          placeholder="选择结束"
           value={end}
-          onChange={(ev) => setEnd(ev.target.value)}
+          disabled={props.disabled}
+          open={open === "end"}
+          onOpen={() => setOpen("end")}
+          onClose={() => setOpen("")}
+          onChange={setEnd}
         />
       </div>
       <Button type="submit" variant="secondary" size="sm" disabled={props.disabled}>
