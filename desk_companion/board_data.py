@@ -231,6 +231,7 @@ def parse_agenda(data, *, with_date: bool = False) -> list[dict]:
                 "summary": str(summary),
                 "start": start,
                 "end": _event_time(item, "end", with_date=with_date),
+                "event_id": _event_id(item, str(summary)),
             }
         )
     return out
@@ -268,6 +269,58 @@ def _as_items(data, label: str) -> list:
             raise RuntimeError(f"{label} data.items 不是列表。")
         return items
     raise RuntimeError(f"无法解析{label}：期望列表或带 items 的对象，实际 {type(data).__name__}。")
+
+
+def _event_id(item: dict, summary: str) -> str:
+    raw = item.get("event_id")
+    if raw is None or raw == "":
+        return ""
+    if type(raw) is not str:
+        raise RuntimeError(f"日程「{summary}」的 event_id 必须是字符串。")
+    return raw.strip()
+
+
+def delete_agenda_event(event_id: object) -> dict:
+    """删掉主日历上这一条日程，再只重查今日日程。"""
+    if type(event_id) is not str or not event_id.strip():
+        raise RuntimeError("没有日程 ID，不能删除。")
+    if any(ch in event_id for ch in "\n\r"):
+        raise RuntimeError("日程 ID 不能包含换行。")
+    day = today_date()
+    cached = _read_today_file()
+    if cached is None or cached["date"] != day:
+        raise RuntimeError("还没有今天的看板。先打开今日页再删除。")
+    raw = _run_lark(
+        [
+            "calendar",
+            "events",
+            "delete",
+            "--calendar-id",
+            "primary",
+            "--event-id",
+            event_id.strip(),
+            "--need-notification",
+            "true",
+            "--as",
+            "user",
+        ]
+    )
+    _require_lark_ok(raw)
+    agenda = _section(lambda: parse_agenda(_lark_data(["calendar", "+agenda"])))
+    snap = dict(cached)
+    snap["agenda"] = agenda
+    snap["fetched_at"] = datetime.now(TZ).isoformat(timespec="seconds")
+    _write_today_file(snap)
+    return {"ok": True, **snap}
+
+
+def _require_lark_ok(raw: str) -> None:
+    try:
+        env = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"lark-cli 未返回 JSON。\n{raw}") from exc
+    if not isinstance(env, dict) or env.get("ok") is not True:
+        raise RuntimeError(f"lark-cli 返回失败信封。\n{raw}")
 
 
 def _event_time(item: dict, which: str, *, with_date: bool = False) -> str:

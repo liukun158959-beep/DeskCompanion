@@ -4,7 +4,7 @@ import { StatusGrid, type StatusView } from "./status";
 
 // 把 load_board 的今日快照收成看板视图。缺字段或失败就露出错误，不当成「今天没有安排」。
 
-export type AgendaItem = { summary: string; start: string; end?: string };
+export type AgendaItem = { summary: string; start: string; end?: string; event_id?: string };
 export type TaskItem = { summary: string; due_at?: string; url?: string };
 
 export type BoardSection<T> = {
@@ -22,7 +22,7 @@ export type BoardPayload = {
   summary?: string;
 };
 
-export type BoardEvent = { time: string; title: string; end: string };
+export type BoardEvent = { time: string; title: string; end: string; eventId: string };
 export type BoardTask = { title: string; when: string; overdue: boolean };
 
 export type BoardModel = {
@@ -92,6 +92,7 @@ export function boardModel(data: BoardPayload, now: Date): BoardModel {
         time: item.start,
         title: item.summary,
         end: item.end || "",
+        eventId: item.event_id?.trim() || "",
       }))
       .sort((a, b) => timeKey(a.time).localeCompare(timeKey(b.time)));
   }
@@ -125,6 +126,9 @@ export function BoardPane(props: {
   fetches: number;
   onOpenMaa?: () => void;
   onOpenFeishu?: () => void;
+  deleting?: boolean;
+  deleteErrors?: Record<string, string>;
+  onDeleteEvent?: (eventId: string) => void;
 }) {
   if (!props.data) {
     return (
@@ -159,10 +163,31 @@ export function BoardPane(props: {
             {model.agendaEmpty ? <p data-agenda-empty className="text-sm text-muted-foreground">今天没有日程。</p> : null}
             <ol className="tl">
               {model.events.map((event) => (
-                <li key={`${event.time}-${event.title}`} data-event>
-                  <div data-time className="text-xs text-muted-foreground">{event.time}</div>
-                  <div data-title>{event.title}</div>
-                  {event.end ? <div className="text-xs text-muted-foreground">至 {event.end}</div> : null}
+                <li key={`${event.eventId}-${event.time}-${event.title}`} data-event data-event-id={event.eventId} className="flex items-start justify-between gap-3">
+                  <div>
+                    <div data-time className="text-xs text-muted-foreground">{event.time}</div>
+                    <div data-title>{event.title}</div>
+                    {event.end ? <div className="text-xs text-muted-foreground">至 {event.end}</div> : null}
+                    {event.eventId ? null : (
+                      <p data-event-nodelete className="text-xs text-muted-foreground">没有日程 ID，不能删除。</p>
+                    )}
+                    {event.eventId && props.deleteErrors?.[event.eventId] ? (
+                      <p data-event-error className="text-xs text-destructive">{props.deleteErrors[event.eventId]}</p>
+                    ) : null}
+                  </div>
+                  {event.eventId ? (
+                    <span data-event-delete="" data-event-delete-disabled={props.deleting ? "1" : "0"}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={props.deleting}
+                        onClick={() => props.onDeleteEvent?.(event.eventId)}
+                      >
+                        删除
+                      </Button>
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ol>

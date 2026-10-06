@@ -56,6 +56,11 @@ class Bridge:
     def load_board(self, refresh: bool = False) -> dict:
         return self._host.load_today_board(bool(refresh))
 
+    def delete_agenda(self, event_id: str) -> dict:
+        from .board_data import delete_agenda_event
+
+        return delete_agenda_event(event_id)
+
     def load_log_errors(self) -> dict:
         return self._host.board_log_errors()
 

@@ -82,6 +82,9 @@ export function App() {
   const boardSeen = useRef(false);
   const boardFetches = useRef(0);
   const [fetchCount, setFetchCount] = useState(0);
+  const [agendaDeleting, setAgendaDeleting] = useState(false);
+  const agendaDeletingRef = useRef(false);
+  const [agendaErrors, setAgendaErrors] = useState<Record<string, string>>({});
   const openBoardRef = useRef<(refresh?: boolean) => void>(() => {});
   const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -300,10 +303,48 @@ export function App() {
       const data = await rpc<BoardPayload>(info, "load_board", refresh ? { refresh: true } : {});
       setBoardClock(null);
       setBoard(data);
+      setAgendaErrors({});
     } catch (err) {
       setBoard({ ok: false, error: String(err) });
     } finally {
       setBoardLoading(false);
+    }
+  }
+
+  async function deleteAgenda(eventId: string) {
+    if (!eventId || agendaDeletingRef.current) return;
+    agendaDeletingRef.current = true;
+    setAgendaDeleting(true);
+    setAgendaErrors((cur) => {
+      const next = { ...cur };
+      delete next[eventId];
+      return next;
+    });
+    try {
+      if (boardClock !== null) {
+        setBoard((cur) => {
+          if (!cur?.agenda?.items) return cur;
+          return {
+            ...cur,
+            agenda: {
+              ...cur.agenda,
+              items: cur.agenda.items.filter((item) => item.event_id !== eventId),
+            },
+          };
+        });
+        return;
+      }
+      if (!info) {
+        setAgendaErrors((cur) => ({ ...cur, [eventId]: "还没有连上本地后端。恢复：重启客户端。" }));
+        return;
+      }
+      const data = await rpc<BoardPayload>(info, "delete_agenda", { event_id: eventId });
+      setBoard(data);
+    } catch (err) {
+      setAgendaErrors((cur) => ({ ...cur, [eventId]: String(err) }));
+    } finally {
+      agendaDeletingRef.current = false;
+      setAgendaDeleting(false);
     }
   }
 
@@ -756,6 +797,9 @@ export function App() {
                 fetches={fetchCount}
                 onOpenMaa={() => void openMaa()}
                 onOpenFeishu={() => void openFeishu()}
+                deleting={agendaDeleting}
+                deleteErrors={agendaErrors}
+                onDeleteEvent={(eventId) => void deleteAgenda(eventId)}
               />
             </motion.section>
           )}
