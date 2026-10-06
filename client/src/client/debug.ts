@@ -2,6 +2,7 @@
 import type { ChatItem } from "./api";
 import type { BoardPayload } from "./board";
 import type { LogPayload, MaaSnap } from "./maa";
+import type { FeishuSnap } from "./feishu";
 import { statusFromPayload, type StatusKind, type StatusView } from "./status";
 import skillRaw from "../../../skills/maa-log-analysis/SKILL.md?raw";
 
@@ -118,12 +119,39 @@ export const MAA_UNKNOWN_LOG: LogPayload = {
   maa_depot: { path: "asst.log", items: [] },
 };
 
-export function debugPane(): "chat" | "board" | "maa" | null {
+export const FEISHU_LOGGED_OUT: FeishuSnap = {
+  ok: true,
+  installed: true,
+  logged_in: false,
+  login_busy: false,
+  hint: "请在看板「飞书」页登录。需要日历、待办和云文档权限：lark-cli auth login --domain calendar,task,docs",
+};
+
+export const FEISHU_WAITING: FeishuSnap = {
+  ok: true,
+  installed: true,
+  logged_in: false,
+  login_busy: true,
+};
+
+export const FEISHU_LOGGED_IN: FeishuSnap = {
+  ok: true,
+  installed: true,
+  logged_in: true,
+  login_busy: false,
+  user_name: "博士",
+  has_calendar: true,
+  has_task: true,
+  has_docs: false,
+};
+
+export function debugPane(): "chat" | "board" | "maa" | "feishu" | null {
   if (!import.meta.env.DEV) return null;
   const value = new URLSearchParams(location.search).get("debug");
   if (value === "1" || value === "chat") return "chat";
   if (value === "board") return "board";
   if (value === "maa") return "maa";
+  if (value === "feishu") return "feishu";
   return null;
 }
 
@@ -163,6 +191,8 @@ export function installDeskDebug(api: {
   openMaa: () => void;
   analyzeMaa: () => void;
   seedMaaLogs: (logs: LogPayload) => void;
+  openFeishu: () => void;
+  seedFeishu: (snap: FeishuSnap) => void;
   shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
   setSampling: (effort: string, temperature: number, topP: number) => void;
 }): void {
@@ -176,6 +206,8 @@ export function installDeskDebug(api: {
     openMaa: api.openMaa,
     analyzeMaa: api.analyzeMaa,
     seedMaaLogs: api.seedMaaLogs,
+    openFeishu: api.openFeishu,
+    seedFeishu: api.seedFeishu,
     shouldReloadBoard: api.shouldReloadBoard,
     setSampling: api.setSampling,
     samplingSnapshot(): { effort: string; temperature: string; topP: string } {
@@ -237,6 +269,34 @@ export function installDeskDebug(api: {
         fetches: board?.getAttribute("data-board-fetches") || "",
       };
     },
+    navSnapshot(): { mode: string; sub: string; subs: string[] } {
+      const nav = document.querySelector("[data-nav]");
+      return {
+        mode: nav?.getAttribute("data-nav") || "",
+        sub: document.querySelector("[data-sub][data-selected='1']")?.getAttribute("data-sub") || "",
+        subs: [...document.querySelectorAll("[data-sub]")].map((el) => el.getAttribute("data-sub") || ""),
+      };
+    },
+    feishuSnapshot(): {
+      pane: string;
+      logged: string;
+      busy: string;
+      message: string;
+      missing: string[];
+      loginDisabled: string;
+      hasLogout: boolean;
+    } {
+      const root = document.querySelector("[data-feishu]");
+      return {
+        pane: document.querySelector("[data-pane]")?.getAttribute("data-pane") || "",
+        logged: root?.getAttribute("data-feishu-logged") || "",
+        busy: root?.getAttribute("data-feishu-busy") || "",
+        message: (document.querySelector("[data-feishu-message]") as HTMLElement | null)?.innerText || "",
+        missing: [...document.querySelectorAll("[data-feishu-missing]")].map((el) => (el as HTMLElement).innerText),
+        loginDisabled: document.querySelector("[data-feishu-login]")?.getAttribute("data-feishu-login-disabled") || "",
+        hasLogout: !!document.querySelector("[data-feishu-logout]"),
+      };
+    },
     bgMotion(): { grid: string; particles: string } {
       const layer = document.querySelector("[data-bg-motion]");
       if (!layer) return { grid: "", particles: "" };
@@ -258,6 +318,8 @@ declare global {
       openMaa: () => void;
       analyzeMaa: () => void;
       seedMaaLogs: (logs: LogPayload) => void;
+      openFeishu: () => void;
+      seedFeishu: (snap: FeishuSnap) => void;
       shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
       setSampling: (effort: string, temperature: number, topP: number) => void;
       samplingSnapshot: () => { effort: string; temperature: string; topP: string };
@@ -265,6 +327,16 @@ declare global {
       boardSnapshot: () => BoardSnap;
       statusSnapshot: () => StatusSnap;
       maaSnapshot: () => MaaSnapShot;
+      navSnapshot: () => { mode: string; sub: string; subs: string[] };
+      feishuSnapshot: () => {
+        pane: string;
+        logged: string;
+        busy: string;
+        message: string;
+        missing: string[];
+        loginDisabled: string;
+        hasLogout: boolean;
+      };
       bgMotion: () => { grid: string; particles: string };
     };
   }

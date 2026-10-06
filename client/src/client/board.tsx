@@ -124,12 +124,13 @@ export function BoardPane(props: {
   statuses: StatusView[];
   fetches: number;
   onOpenMaa?: () => void;
+  onOpenFeishu?: () => void;
 }) {
   if (!props.data) {
     return (
       <div data-board data-board-fetches={props.fetches}>
         <p className="text-sm text-muted-foreground">{props.loading ? "正在读取今日看板…" : "打开看板页时再拉今日数据。"}</p>
-        <StatusGrid cards={props.statuses} onOpenMaa={props.onOpenMaa} />
+        <StatusGrid cards={props.statuses} onOpenMaa={props.onOpenMaa} onOpenFeishu={props.onOpenFeishu} />
       </div>
     );
   }
@@ -189,7 +190,7 @@ export function BoardPane(props: {
         </div>
       )}
       {model.summary ? <p data-summary className="mt-6 text-sm leading-6 text-muted-foreground">{model.summary}</p> : null}
-      <StatusGrid cards={props.statuses} onOpenMaa={props.onOpenMaa} />
+      <StatusGrid cards={props.statuses} onOpenMaa={props.onOpenMaa} onOpenFeishu={props.onOpenFeishu} />
     </div>
   );
 }

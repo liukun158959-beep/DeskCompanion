@@ -49,7 +49,6 @@ export function MaaPane(props: {
   busy: boolean;
   loading: boolean;
   debug: boolean;
-  onBack: () => void;
   onStart: () => void;
   onStop: () => void;
   onAnalyze: () => void;
@@ -66,9 +65,6 @@ export function MaaPane(props: {
           <h1 className="text-xl font-semibold">清日常</h1>
           <div className="mt-1 text-sm text-muted-foreground">开始、停止，以及今日出错原文</div>
         </div>
-        <Button type="button" variant="secondary" size="sm" onClick={props.onBack}>
-          返回看板
-        </Button>
       </div>
       {props.debug ? <div className="mb-4 text-xs text-muted-foreground">调试样本，未连接后端</div> : null}
       {props.loading ? <p className="mb-4 text-sm text-muted-foreground">正在读取 MAA…</p> : null}

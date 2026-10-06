@@ -135,7 +135,7 @@ def feishu_login_start() -> dict:
         return {
             "ok": True,
             "url": str(url),
-            "message": "已打开浏览器。请完成授权；完成后点「刷新」。",
+            "message": "已打开浏览器。请完成授权。",
         }
     except Exception:
         with _login_lock:

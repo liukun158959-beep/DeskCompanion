@@ -8,6 +8,8 @@ import {
   BOARD_FIXTURE,
   BOARD_NOW,
   DEBUG_FIXTURE,
+  FEISHU_LOGGED_OUT,
+  FEISHU_WAITING,
   MAA_IDLE_FIXTURE,
   MAA_LOG_FIXTURE,
   MAA_SKILL_RAW,
@@ -17,6 +19,7 @@ import {
   installDeskDebug,
 } from "./debug";
 import { columnItems, MaaPane, type LogPayload, type MaaSnap } from "./maa";
+import { FeishuPane, feishuLoggedIn, feishuWaiting, type FeishuSnap } from "./feishu";
 import { matchRules, parseRules, type Analysis, type MaaRule } from "./maa-rules";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
 import { Markdown } from "./Markdown";
@@ -30,9 +33,10 @@ import {
   type SessionItem,
 } from "./api";
 
-type Pane = "chat" | "board" | "maa";
+type Pane = "chat" | "board" | "maa" | "feishu";
 
 const debugKind = debugPane();
+const boardDebug = debugKind === "board" || debugKind === "maa" || debugKind === "feishu";
 
 type Thread = {
   sessionId: string;
@@ -42,7 +46,9 @@ type Thread = {
 
 export function App() {
   const [dark, setDark] = useState(true);
-  const [pane, setPane] = useState<Pane>(debugKind === "maa" ? "maa" : debugKind === "board" ? "board" : "chat");
+  const [pane, setPane] = useState<Pane>(
+    debugKind === "maa" ? "maa" : debugKind === "feishu" ? "feishu" : debugKind === "board" ? "board" : "chat",
+  );
   const [info, setInfo] = useState<BackendInfo | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
   const [draft, setDraft] = useState("");
@@ -50,10 +56,10 @@ export function App() {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [board, setBoard] = useState<BoardPayload | null>(debugKind === "board" || debugKind === "maa" ? BOARD_FIXTURE : null);
-  const [boardClock, setBoardClock] = useState<string | null>(debugKind === "board" || debugKind === "maa" ? BOARD_NOW : null);
+  const [board, setBoard] = useState<BoardPayload | null>(boardDebug ? BOARD_FIXTURE : null);
+  const [boardClock, setBoardClock] = useState<string | null>(boardDebug ? BOARD_NOW : null);
   const [boardLoading, setBoardLoading] = useState(false);
-  const [statuses, setStatuses] = useState<StatusView[]>(debugKind === "board" || debugKind === "maa" ? STATUS_FIXTURE : []);
+  const [statuses, setStatuses] = useState<StatusView[]>(boardDebug ? STATUS_FIXTURE : []);
   const [maa, setMaa] = useState<MaaSnap | null>(debugKind === "maa" ? MAA_IDLE_FIXTURE : null);
   const [logs, setLogs] = useState<LogPayload | null>(debugKind === "maa" ? MAA_LOG_FIXTURE : null);
   const logsRef = useRef<LogPayload | null>(debugKind === "maa" ? MAA_LOG_FIXTURE : null);
@@ -63,8 +69,13 @@ export function App() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [maaBusy, setMaaBusy] = useState(false);
   const [maaLoading, setMaaLoading] = useState(false);
+  const [feishu, setFeishu] = useState<FeishuSnap | null>(debugKind === "feishu" ? FEISHU_LOGGED_OUT : null);
+  const [feishuBusy, setFeishuBusy] = useState(false);
+  const feishuBusyRef = useRef(false);
   const maaBusyRef = useRef(false);
   const openMaaRef = useRef<() => void>(() => {});
+  const openFeishuRef = useRef<() => void>(() => {});
+  const rememberFeishuRef = useRef<(snap: FeishuSnap) => void>(() => {});
   const analyzeRef = useRef<() => void>(() => {});
   const seedLogsRef = useRef<(next: LogPayload) => void>(() => {});
   const statusGen = useRef(0);
@@ -124,6 +135,8 @@ export function App() {
       openMaa: () => openMaaRef.current(),
       analyzeMaa: () => analyzeRef.current(),
       seedMaaLogs: (next) => seedLogsRef.current(next),
+      openFeishu: () => openFeishuRef.current(),
+      seedFeishu: (snap) => rememberFeishuRef.current(snap),
       shouldReloadBoard,
       setSampling: (effort, temperature, topP) => {
         setSampling(samplingFromInputs(effort, temperature, topP));
@@ -462,6 +475,9 @@ export function App() {
   openMaaRef.current = () => {
     void openMaa();
   };
+  openFeishuRef.current = () => {
+    void openFeishu();
+  };
   analyzeRef.current = analyzeLogs;
   seedLogsRef.current = (next) => {
     logsRef.current = next;
@@ -480,6 +496,91 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [pane, boardClock, info, maa?.running]);
 
+  function rememberFeishu(snap: FeishuSnap) {
+    setFeishu(snap);
+    setStatuses((cur) => cur.map((card) => (card.kind === "feishu" ? statusFromPayload("feishu", snap) : card)));
+  }
+  rememberFeishuRef.current = rememberFeishu;
+
+  async function pullFeishu(backend: BackendInfo) {
+    const snap = await rpc<FeishuSnap>(backend, "load_feishu");
+    rememberFeishu(snap);
+  }
+
+  async function openFeishu() {
+    setPane("feishu");
+    if (boardClock !== null) {
+      setFeishu((cur) => cur || FEISHU_LOGGED_OUT);
+      return;
+    }
+    if (!info) {
+      setFeishu({ ok: false, logged_in: false, error: "还没有连上本地后端。恢复：重启客户端。" });
+      return;
+    }
+    try {
+      await pullFeishu(info);
+    } catch (err) {
+      setFeishu({ ok: false, logged_in: false, error: String(err) });
+    }
+  }
+
+  async function startFeishuLogin() {
+    if (feishuBusyRef.current || feishuWaiting(feishu)) return;
+    feishuBusyRef.current = true;
+    setFeishuBusy(true);
+    try {
+      if (boardClock !== null) {
+        rememberFeishu(FEISHU_WAITING);
+        return;
+      }
+      if (!info) {
+      setFeishu({ ok: false, logged_in: false, error: "还没有连上本地后端。恢复：重启客户端。" });
+        return;
+      }
+      await rpc(info, "feishu_login");
+      await pullFeishu(info);
+    } catch (err) {
+      setFeishu({ ...(feishu || {}), ok: false, logged_in: false, login_busy: false, error: String(err) });
+    } finally {
+      feishuBusyRef.current = false;
+      setFeishuBusy(false);
+    }
+  }
+
+  async function logoutFeishu() {
+    if (feishuBusyRef.current || !feishuLoggedIn(feishu)) return;
+    feishuBusyRef.current = true;
+    setFeishuBusy(true);
+    try {
+      if (boardClock !== null) {
+        rememberFeishu(FEISHU_LOGGED_OUT);
+        return;
+      }
+      if (!info) {
+        setFeishu({ ...(feishu || {}), ok: false, error: "还没有连上本地后端。恢复：重启客户端。" });
+        return;
+      }
+      await rpc(info, "feishu_logout");
+      await pullFeishu(info);
+    } catch (err) {
+      setFeishu({ ...(feishu || {}), ok: false, error: String(err) });
+    } finally {
+      feishuBusyRef.current = false;
+      setFeishuBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (pane !== "feishu" || boardClock !== null || !info || !feishuWaiting(feishu)) return;
+    const timer = window.setInterval(() => {
+      if (feishuBusyRef.current) return;
+      void pullFeishu(info).catch((err: unknown) => {
+        setFeishu({ ok: false, logged_in: false, error: String(err) });
+      });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [pane, boardClock, info, feishu]);
+
   return (
     <div className="relative flex h-full overflow-hidden bg-background text-foreground" data-pane={pane}>
       <div className="desk-bg" data-bg-motion aria-hidden="true" />
@@ -492,30 +593,44 @@ export function App() {
         </div>
         <nav className="flex gap-2 px-3">
           <NavButton active={pane === "chat"} onClick={() => setPane("chat")} label="对话" />
-          <NavButton active={pane === "board"} onClick={() => void openBoard()} label="看板" />
+          <NavButton
+            active={pane === "board" || pane === "maa" || pane === "feishu"}
+            onClick={() => void openBoard()}
+            label="看板"
+          />
         </nav>
-        <div className="mt-4 flex items-center justify-between px-4 text-xs text-muted-foreground">
-          <span>会话</span>
-          <Button type="button" variant="ghost" size="sm" onClick={() => void newSession()}>
-            新对话
-          </Button>
-        </div>
-        <div className="mt-2 flex-1 overflow-y-auto px-2">
-          {(thread?.sessions || []).map((session) => (
-            <button
-              key={session.id}
-              type="button"
-              onClick={() => void openSession(session.id)}
-              className={`mb-1 w-full px-3 py-2 text-left text-sm transition-colors duration-200 ${
-                session.id === thread?.sessionId
-                  ? "bg-primary/15 text-primary"
-                  : "text-muted-foreground hover:bg-secondary"
-              }`}
-            >
-              <div className="truncate">{session.title || "未命名对话"}</div>
-            </button>
-          ))}
-        </div>
+        {pane === "chat" ? (
+          <>
+            <div className="mt-4 flex items-center justify-between px-4 text-xs text-muted-foreground">
+              <span>会话</span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void newSession()}>
+                新对话
+              </Button>
+            </div>
+            <div className="mt-2 flex-1 overflow-y-auto px-2" data-nav="sessions">
+              {(thread?.sessions || []).map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => void openSession(session.id)}
+                  className={`mb-1 w-full px-3 py-2 text-left text-sm transition-colors duration-200 ${
+                    session.id === thread?.sessionId
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:bg-secondary"
+                  }`}
+                >
+                  <div className="truncate">{session.title || "未命名对话"}</div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="mt-4 flex-1 overflow-y-auto px-2" data-nav="board">
+            <SideLink label="今日" sub="today" selected={pane === "board"} onClick={() => openBoard()} />
+            <SideLink label="清日常" sub="maa" selected={pane === "maa"} onClick={() => void openMaa()} />
+            <SideLink label="飞书" sub="feishu" selected={pane === "feishu"} onClick={() => void openFeishu()} />
+          </div>
+        )}
         <Button
           type="button"
           variant="secondary"
@@ -600,10 +715,26 @@ export function App() {
                 busy={maaBusy}
                 loading={maaLoading}
                 debug={boardClock !== null}
-                onBack={() => setPane("board")}
                 onStart={() => void startDaily()}
                 onStop={() => void stopDaily()}
                 onAnalyze={analyzeLogs}
+              />
+            </motion.section>
+          ) : pane === "feishu" ? (
+            <motion.section
+              key="feishu"
+              className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <FeishuPane
+                snap={feishu}
+                busy={feishuBusy}
+                debug={boardClock !== null}
+                onLogin={() => void startFeishuLogin()}
+                onLogout={() => void logoutFeishu()}
               />
             </motion.section>
           ) : (
@@ -624,6 +755,7 @@ export function App() {
                 statuses={statuses}
                 fetches={fetchCount}
                 onOpenMaa={() => void openMaa()}
+                onOpenFeishu={() => void openFeishu()}
               />
             </motion.section>
           )}
@@ -638,6 +770,22 @@ function NavButton(props: { active: boolean; label: string; onClick: () => void 
     <Button type="button" size="sm" variant={props.active ? "primary" : "ghost"} onClick={props.onClick}>
       {props.label}
     </Button>
+  );
+}
+
+function SideLink(props: { label: string; sub: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-sub={props.sub}
+      data-selected={props.selected ? "1" : "0"}
+      onClick={props.onClick}
+      className={`mb-1 w-full px-3 py-2 text-left text-sm transition-colors duration-200 ${
+        props.selected ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary"
+      }`}
+    >
+      {props.label}
+    </button>
   );
 }
 

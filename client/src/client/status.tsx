@@ -51,6 +51,9 @@ export function statusFromPayload(kind: StatusKind, data: unknown): StatusView {
       const name = text(row.user_name);
       return { kind, title, state: "ready", line: name ? `已登录 ${name}` : "已登录" };
     }
+    if (row.login_busy === true) {
+      return { kind, title, state: "off", line: "正在等授权" };
+    }
     return { kind, title, state: "off", line: text(row.hint) || text(row.error) || "未登录" };
   }
   if (kind === "github") {
@@ -79,18 +82,24 @@ export function statusFromPayload(kind: StatusKind, data: unknown): StatusView {
   return { kind, title, state: "off", line: text(row.hint) || "未同步" };
 }
 
-export function StatusGrid(props: { cards: StatusView[]; onOpenMaa?: () => void }) {
+export function StatusGrid(props: { cards: StatusView[]; onOpenMaa?: () => void; onOpenFeishu?: () => void }) {
   if (props.cards.length === 0) return null;
   return (
     <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {props.cards.map((card) => {
-        const open = card.kind === "maa" && props.onOpenMaa ? props.onOpenMaa : null;
+        const open =
+          card.kind === "maa" && props.onOpenMaa
+            ? props.onOpenMaa
+            : card.kind === "feishu" && props.onOpenFeishu
+              ? props.onOpenFeishu
+              : null;
+        const target = card.kind === "maa" && open ? "maa" : card.kind === "feishu" && open ? "feishu" : undefined;
         return (
           <Card
             key={card.kind}
             data-status={card.kind}
             data-state={card.state}
-            data-open={open ? "maa" : undefined}
+            data-open={target}
             hoverable
             role={open ? "button" : undefined}
             tabIndex={open ? 0 : undefined}
