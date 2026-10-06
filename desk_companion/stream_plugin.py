@@ -8,6 +8,7 @@ from atlas.core.plugin import BasePlugin
 TOOL_STATUS = {
     "get_today_agenda": "在看今天的日程…",
     "get_open_tasks": "在看未完成的待办…",
+    "create_calendar_event": "在创建日程…",
 }
 
 

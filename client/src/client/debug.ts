@@ -167,6 +167,7 @@ export type BoardSnap = {
   events: { title: string; id: string; nodelete: string; error: string; deleteDisabled: string }[];
   agendaError: string;
   taskError: string;
+  create: { summary: string; start: string; end: string; error: string; notice: string; disabled: string };
 };
 
 export type StatusSnap = { kind: string; state: string; line: string }[];
@@ -252,6 +253,14 @@ export function installDeskDebug(api: {
         })),
         agendaError: (document.querySelector("[data-agenda-error]") as HTMLElement | null)?.innerText || "",
         taskError: (document.querySelector("[data-task-error]") as HTMLElement | null)?.innerText || "",
+        create: {
+          summary: (document.querySelector("[data-event-summary]") as HTMLInputElement | null)?.value || "",
+          start: (document.querySelector("[data-event-start]") as HTMLInputElement | null)?.value || "",
+          end: (document.querySelector("[data-event-end]") as HTMLInputElement | null)?.value || "",
+          error: (document.querySelector("[data-event-create-error]") as HTMLElement | null)?.innerText || "",
+          notice: (document.querySelector("[data-event-create-notice]") as HTMLElement | null)?.innerText || "",
+          disabled: document.querySelector("[data-event-create]")?.getAttribute("data-event-create-disabled") || "",
+        },
       };
     },
     statusSnapshot(): StatusSnap {

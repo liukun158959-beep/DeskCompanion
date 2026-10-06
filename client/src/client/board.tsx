@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, TacticalPanel } from "reend-components";
 import { StatusGrid, type StatusView } from "./status";
 
@@ -116,6 +116,28 @@ export function shouldReloadBoard(opts: { refresh: boolean; seen: boolean; debug
   return !opts.seen;
 }
 
+export function eventRange(
+  summary: string,
+  startLocal: string,
+  endLocal: string,
+): { summary: string; start: string; end: string } {
+  const title = summary.trim();
+  if (!title) throw new Error("要填写日程标题。");
+  if (title.includes("\n") || title.includes("\r")) throw new Error("标题不能换行。");
+  const start = localToOffset(startLocal, "开始时间");
+  const end = localToOffset(endLocal, "结束时间");
+  if (Date.parse(start) >= Date.parse(end)) throw new Error("开始时间必须早于结束时间。");
+  return { summary: title, start, end };
+}
+
+function localToOffset(value: string, label: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value)) {
+    throw new Error(`${label}要选日期和时间。`);
+  }
+  const withSeconds = value.length === 16 ? `${value}:00` : value;
+  return `${withSeconds}+08:00`;
+}
+
 export function BoardPane(props: {
   data: BoardPayload | null;
   nowIso: string | null;
@@ -131,6 +153,10 @@ export function BoardPane(props: {
   onDeleteEvent?: (eventId: string) => void;
   taskErrors?: Record<string, string>;
   onDeleteTask?: (guid: string) => void;
+  createError?: string;
+  createNotice?: string;
+  createNonce?: number;
+  onCreateEvent?: (summary: string, start: string, end: string) => void;
 }) {
   if (!props.data) {
     return (
@@ -161,6 +187,13 @@ export function BoardPane(props: {
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
           <Section title="日程">
+            <CreateEventBox
+              key={props.createNonce || 0}
+              disabled={!!props.deleting}
+              error={props.createError || ""}
+              notice={props.createNotice || ""}
+              onCreate={(summary, start, end) => props.onCreateEvent?.(summary, start, end)}
+            />
             {model.agendaError ? <p data-agenda-error className="text-sm text-destructive">{model.agendaError}</p> : null}
             {model.agendaEmpty ? <p data-agenda-empty className="text-sm text-muted-foreground">今天没有日程。</p> : null}
             <ol className="tl">
@@ -241,6 +274,65 @@ export function BoardPane(props: {
       {model.summary ? <p data-summary className="mt-6 text-sm leading-6 text-muted-foreground">{model.summary}</p> : null}
       <StatusGrid cards={props.statuses} onOpenMaa={props.onOpenMaa} onOpenFeishu={props.onOpenFeishu} />
     </div>
+  );
+}
+
+function CreateEventBox(props: {
+  disabled: boolean;
+  error: string;
+  notice: string;
+  onCreate: (summary: string, start: string, end: string) => void;
+}) {
+  const [summary, setSummary] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [localError, setLocalError] = useState("");
+  const shownError = localError || props.error;
+  return (
+    <form
+      className="mb-4 space-y-2"
+      data-event-create=""
+      data-event-create-disabled={props.disabled ? "1" : "0"}
+      onSubmit={(ev) => {
+        ev.preventDefault();
+        setLocalError("");
+        try {
+          const fields = eventRange(summary, start, end);
+          props.onCreate(fields.summary, fields.start, fields.end);
+        } catch (err) {
+          setLocalError(err instanceof Error ? err.message : String(err));
+        }
+      }}
+    >
+      <input
+        className="w-full border border-border bg-background px-2 py-1 text-sm"
+        data-event-summary=""
+        placeholder="日程标题"
+        value={summary}
+        onChange={(ev) => setSummary(ev.target.value)}
+      />
+      <div className="flex gap-2">
+        <input
+          className="min-w-0 flex-1 border border-border bg-background px-2 py-1 text-sm"
+          data-event-start=""
+          type="datetime-local"
+          value={start}
+          onChange={(ev) => setStart(ev.target.value)}
+        />
+        <input
+          className="min-w-0 flex-1 border border-border bg-background px-2 py-1 text-sm"
+          data-event-end=""
+          type="datetime-local"
+          value={end}
+          onChange={(ev) => setEnd(ev.target.value)}
+        />
+      </div>
+      <Button type="submit" variant="secondary" size="sm" disabled={props.disabled}>
+        创建
+      </Button>
+      {shownError ? <p data-event-create-error className="text-xs text-destructive">{shownError}</p> : null}
+      {props.notice ? <p data-event-create-notice className="text-xs text-muted-foreground">{props.notice}</p> : null}
+    </form>
   );
 }
 

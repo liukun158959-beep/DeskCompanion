@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -319,12 +320,81 @@ def delete_agenda_event(event_id: object) -> dict:
         ]
     )
     _require_lark_ok(raw)
+    snap = _replace_today_agenda(cached)
+    return {"ok": True, **snap}
+
+
+_EVENT_TIME = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})$"
+)
+
+
+def _parse_event_time(value: object, label: str) -> datetime:
+    if type(value) is not str or not _EVENT_TIME.match(value):
+        raise RuntimeError(f"{label}必须是带时区的时间，例如 2026-10-06T15:00:00+08:00。")
+    text = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise RuntimeError(f"{label}无法解析：{value}") from exc
+    if parsed.tzinfo is None:
+        raise RuntimeError(f"{label}必须带时区。")
+    return parsed
+
+
+def create_board_event(summary: object, start: object, end: object) -> dict:
+    """在主日历建一条日程。按钮或对话已经给出标题和起止，这里不再确认。"""
+    if type(summary) is not str or not summary.strip():
+        raise RuntimeError("要填写日程标题。")
+    if any(ch in summary for ch in "\n\r"):
+        raise RuntimeError("标题不能换行。")
+    start_at = _parse_event_time(start, "开始时间")
+    end_at = _parse_event_time(end, "结束时间")
+    if start_at >= end_at:
+        raise RuntimeError("开始时间必须早于结束时间。")
+    title = summary.strip()
+    raw = _run_lark(
+        [
+            "calendar",
+            "+create",
+            "--summary",
+            title,
+            "--start",
+            str(start),
+            "--end",
+            str(end),
+            "--calendar-id",
+            "primary",
+            "--as",
+            "user",
+        ]
+    )
+    _require_lark_ok(raw)
+    day = today_date()
+    on_today = start_at.astimezone(TZ).date().isoformat() == day
+    notice = "" if on_today else "已创建。今天的看板只显示今天。"
+    cached = _read_today_file()
+    snapshot = None
+    if cached is not None and cached["date"] == day:
+        snapshot = {"ok": True, **_replace_today_agenda(cached)}
+    return {
+        "ok": True,
+        "summary": title,
+        "start": str(start),
+        "end": str(end),
+        "on_today": on_today,
+        "notice": notice,
+        "snapshot": snapshot,
+    }
+
+
+def _replace_today_agenda(cached: dict) -> dict:
     agenda = _section(lambda: parse_agenda(_lark_data(["calendar", "+agenda"])))
     snap = dict(cached)
     snap["agenda"] = agenda
     snap["fetched_at"] = datetime.now(TZ).isoformat(timespec="seconds")
     _write_today_file(snap)
-    return {"ok": True, **snap}
+    return snap
 
 
 def delete_board_task(guid: object) -> dict:

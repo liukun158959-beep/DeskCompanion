@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from .envconf import require_llm_env
-from .feishu_tools import AGENDA_SPEC, TASKS_SPEC
+from .feishu_tools import AGENDA_SPEC, CREATE_EVENT_SPEC, TASKS_SPEC
 from .github_tools import RECENT_SPEC, ROADMAP_SPEC, STATUS_SPEC
 from .log_tools import ERROR_LOG_SPEC
 from .maa_tools import bind_host, option_specs
@@ -18,6 +18,7 @@ TOOL_CONTRACT = """用户问起今天安排、日程、待办、要做什么，�
 - 有多条日程或待办时再给一张表格，列用：事项、截止、状态
 - 不要鸡汤，不要把所有事写成一段话
 - 工具返回认证失败或 lark-cli 错误时，原样告诉用户如何修复，不要编造日程。
+用户要创建日程、约时间、在日历里加一条时，必须调用 create_calendar_event。标题、开始、结束都要有。开始和结束必须带时区，例如 2026-10-06T15:00:00+08:00。缺标题或时间就追问，不要编时间，也不要先问确定吗。成功后只复述工具返回的标题、开始和结束。工具失败就原样说明，不要假装已经建好。
 用户要打开明日方舟、清日常、看或改日常勾选时，必须调用对应工具，不要假装游戏已开或日常已清：
 - get_arknights_daily_options 查看勾选（名称与 MAA 一键长草一致）
 - set_arknights_daily_options 按用户说的改勾选
@@ -114,6 +115,7 @@ def build_agent(host):
     tools = Toolkit()
     tools.register(**AGENDA_SPEC)
     tools.register(**TASKS_SPEC)
+    tools.register(**CREATE_EVENT_SPEC)
     tools.register(**STATUS_SPEC)
     tools.register(**ROADMAP_SPEC)
     tools.register(**RECENT_SPEC)

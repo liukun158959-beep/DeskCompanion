@@ -1,4 +1,4 @@
-"""飞书只读工具：日程与未完成待办。失败把恢复指引写进返回字符串。"""
+"""飞书日程与待办。失败把恢复指引写进返回字符串。"""
 from __future__ import annotations
 
 import os
@@ -131,6 +131,27 @@ def get_open_tasks(_args: dict) -> str:
         return str(exc)
 
 
+def create_calendar_event(args: dict) -> str:
+    """按用户给出的标题和起止创建一条主日历日程。"""
+    from .board_data import create_board_event
+
+    if not isinstance(args, dict):
+        return "创建日程的参数必须是对象。"
+    try:
+        created = create_board_event(args.get("summary"), args.get("start"), args.get("end"))
+    except RuntimeError as exc:
+        return str(exc)
+    lines = [
+        "已创建日程。",
+        f"标题：{created['summary']}",
+        f"开始：{created['start']}",
+        f"结束：{created['end']}",
+    ]
+    if created.get("notice"):
+        lines.append(created["notice"])
+    return "\n".join(lines)
+
+
 AGENDA_SPEC = {
     "func": get_today_agenda,
     "name": "get_today_agenda",
@@ -145,4 +166,26 @@ TASKS_SPEC = {
     "description": "查询登录用户未完成的飞书待办（含今天及更早到期）。问今天待办、今日安排时必须调用。",
     "parameters": {"type": "object", "properties": {}, "required": []},
     "isReadOnly": True,
+}
+
+CREATE_EVENT_SPEC = {
+    "func": create_calendar_event,
+    "name": "create_calendar_event",
+    "description": "在登录用户的主日历创建一条日程。用户已经说出标题、开始和结束时调用。不要编时间。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "日程标题"},
+            "start": {
+                "type": "string",
+                "description": "开始时间，必须带时区，例如 2026-10-06T15:00:00+08:00",
+            },
+            "end": {
+                "type": "string",
+                "description": "结束时间，必须带时区，且晚于开始",
+            },
+        },
+        "required": ["summary", "start", "end"],
+    },
+    "isReadOnly": False,
 }

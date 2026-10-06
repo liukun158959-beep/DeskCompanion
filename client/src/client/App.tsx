@@ -86,6 +86,9 @@ export function App() {
   const rowDeletingRef = useRef(false);
   const [agendaErrors, setAgendaErrors] = useState<Record<string, string>>({});
   const [taskErrors, setTaskErrors] = useState<Record<string, string>>({});
+  const [createError, setCreateError] = useState("");
+  const [createNotice, setCreateNotice] = useState("");
+  const [createNonce, setCreateNonce] = useState(0);
   const openBoardRef = useRef<(refresh?: boolean) => void>(() => {});
   const [preview, setPreview] = useState<ChatItem[] | null>(debugRequested() ? DEBUG_FIXTURE : null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -234,6 +237,14 @@ export function App() {
         setStatus("");
         setBusy(false);
         await loadThread(info);
+        if (notes.some((line) => line.includes("在创建日程")) && boardSeen.current && boardClock === null) {
+          try {
+            const data = await rpc<BoardPayload>(info, "load_board", {});
+            setBoard(data);
+          } catch (err) {
+            setError(`日程已创建，今日页没有换上新快照。${String(err)} 恢复：在今日页点刷新。`);
+          }
+        }
         if (!notes.length && !thinking) return;
         setThread((cur) => {
           if (!cur) return cur;
@@ -306,6 +317,8 @@ export function App() {
       setBoard(data);
       setAgendaErrors({});
       setTaskErrors({});
+      setCreateError("");
+      setCreateNotice("");
     } catch (err) {
       setBoard({ ok: false, error: String(err) });
     } finally {
@@ -381,6 +394,58 @@ export function App() {
       setBoard(data);
     } catch (err) {
       setTaskErrors((cur) => ({ ...cur, [guid]: String(err) }));
+    } finally {
+      rowDeletingRef.current = false;
+      setRowDeleting(false);
+    }
+  }
+
+  async function createEvent(summary: string, start: string, end: string) {
+    if (rowDeletingRef.current) return;
+    rowDeletingRef.current = true;
+    setRowDeleting(true);
+    setCreateError("");
+    setCreateNotice("");
+    try {
+      if (boardClock !== null) {
+        const boardDay = boardClock.slice(0, 10);
+        if (start.slice(0, 10) !== boardDay) {
+          setCreateNotice("已创建。今天的看板只显示今天。");
+          setCreateNonce((n) => n + 1);
+          return;
+        }
+        const clock = (iso: string) => iso.slice(11, 16);
+        setBoard((cur) => {
+          if (!cur?.agenda) return cur;
+          return {
+            ...cur,
+            agenda: {
+              ...cur.agenda,
+              ok: true,
+              items: [
+                ...(cur.agenda.items || []),
+                { summary, start: clock(start), end: clock(end), event_id: `evt-${start}` },
+              ],
+            },
+          };
+        });
+        setCreateNonce((n) => n + 1);
+        return;
+      }
+      if (!info) {
+        setCreateError("还没有连上本地后端。恢复：重启客户端。");
+        return;
+      }
+      const data = await rpc<{ notice?: string; snapshot?: BoardPayload | null }>(info, "create_agenda", {
+        summary,
+        start,
+        end,
+      });
+      if (data.snapshot) setBoard(data.snapshot);
+      setCreateNotice(data.notice || "");
+      setCreateNonce((n) => n + 1);
+    } catch (err) {
+      setCreateError(String(err));
     } finally {
       rowDeletingRef.current = false;
       setRowDeleting(false);
@@ -841,6 +906,10 @@ export function App() {
                 onDeleteEvent={(eventId) => void deleteAgenda(eventId)}
                 taskErrors={taskErrors}
                 onDeleteTask={(guid) => void deleteTask(guid)}
+                createError={createError}
+                createNotice={createNotice}
+                createNonce={createNonce}
+                onCreateEvent={(summary, start, end) => void createEvent(summary, start, end)}
               />
             </motion.section>
           )}
