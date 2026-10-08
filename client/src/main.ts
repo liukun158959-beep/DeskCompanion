@@ -317,6 +317,25 @@ async function main(): Promise<void> {
     if (backend) void rpc(backend, "report_pet_status", { ready: false, message: petErrorText(err).replaceAll(backend.token, "[本地凭证]") }).catch(() => {});
   }
   await reportHitRegions();
+  if (backend) {
+    const info = backend;
+    let last = "";
+    let polling = false;
+    setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const progress = await rpc<{ enabled: boolean; task?: { id: string; seq: number; status: string } }>(info, "load_task_progress");
+        const key = progress.task ? `${progress.task.id}:${progress.task.seq}` : "";
+        if (progress.enabled && progress.task && key !== last && progress.task.status && !bubble.error) {
+          last = key;
+          bubble = { open: true, text: progress.task.status, error: false, until: Date.now() + BUBBLE_MS, index: -1 };
+          renderBubble();
+        }
+      } catch { /* 接口重连期间保留现有形象，不反复弹出错误。 */ }
+      finally { polling = false; }
+    }, 2000);
+  }
 }
 
 void main();

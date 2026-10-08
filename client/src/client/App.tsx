@@ -34,6 +34,7 @@ import { NoteMode, type NotebookPage, type NoteDoc, type NoteSession } from "./n
 import { RaisePane, type RaisePayload } from "./raise";
 import { FeishuPane, feishuLoggedIn, feishuWaiting, type FeishuSnap } from "./feishu";
 import { FeishuAgentPane } from "./feishu-agent";
+import { AgentMonitor } from "./agent-monitor";
 import { matchRules, parseRules, type Analysis, type MaaRule } from "./maa-rules";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
 import { Markdown, MdLink, openableHref, PlainLinks } from "./Markdown";
@@ -2787,6 +2788,7 @@ export function App() {
                 onLogout={() => void logoutFeishu()}
               />
               <FeishuAgentPane info={info} debug={boardClock !== null} />
+              <AgentMonitor info={info} debug={boardClock !== null} />
             </motion.section>
           ) : (
             <motion.section
