@@ -56,6 +56,23 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(message["result"]["ok"])
         self.assertTrue(message["result"]["result"]["ok"])
 
+    async def test_shutdown_requires_exact_authorization_and_only_signals_the_server(self):
+        shutdown = asyncio.Event()
+        async def request(auth):
+            reader, writer = await asyncio.open_connection("127.0.0.1", self.port)
+            writer.write(("GET /shutdown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n" + auth + "\r\n").encode())
+            await writer.drain()
+            result = await asyncio.wait_for(reader.read(), 5)
+            writer.close()
+            await writer.wait_closed()
+            return result
+        with patch.object(server, "SHUTDOWN", shutdown):
+            self.assertIn(b"401", await request(""))
+            self.assertIn(b"401", await request("Authorization: Bearer test-token-suffix\r\n"))
+            self.assertFalse(shutdown.is_set())
+            self.assertIn(b"200", await request("Authorization: Bearer test-token\r\n"))
+            self.assertTrue(shutdown.is_set())
+
     async def test_chat_stream_persists_metadata_and_releases_busy_state(self):
         frames = []
         async with connect(self.url, proxy=None) as ws:

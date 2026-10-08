@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import hmac
 
 from websockets.asyncio.server import serve
 
@@ -49,9 +50,20 @@ RPC_METHODS = frozenset({
 
 TOKEN = ""
 HOST: HeadlessApp | None = None
+SHUTDOWN: asyncio.Event | None = None
 
 
 def _health(connection, request):
+    if request.path == "/shutdown":
+        authorization = request.headers.get("Authorization", "")
+        if not TOKEN or not hmac.compare_digest(authorization.encode(), f"Bearer {TOKEN}".encode()):
+            return connection.respond(401, "bad token\n")
+        if SHUTDOWN is None:
+            return connection.respond(503, "shutdown unavailable\n")
+        SHUTDOWN.set()
+        response = connection.respond(200, "shutting down\n")
+        response.headers["Cache-Control"] = "no-store"
+        return response
     # 非 WS 的普通 HTTP：/health 返回 200，物品图走 /depot-icon/，其余交给 WS 握手或 404
     if request.path == "/health":
         return connection.respond(200, "ok\n")
@@ -271,18 +283,19 @@ async def _handle_notebook(ws, msg: dict) -> None:
 
 
 async def main() -> None:
-    global TOKEN, HOST
+    global TOKEN, HOST, SHUTDOWN
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--token", type=str, default="")
     args = parser.parse_args()
     TOKEN = args.token
     HOST = HeadlessApp()
+    SHUTDOWN = asyncio.Event()
     asyncio.create_task(asyncio.to_thread(HOST.feishu_agent.autostart))
     try:
         async with serve(_handler, "127.0.0.1", args.port, process_request=_health):
             print(f"local_api ready on 127.0.0.1:{args.port}", flush=True)
-            await asyncio.Future()
+            await SHUTDOWN.wait()
     finally:
         await asyncio.to_thread(HOST.feishu_agent.stop, False)
 

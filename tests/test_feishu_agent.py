@@ -152,6 +152,33 @@ class FeishuAgentTests(unittest.TestCase):
         self.assertIn("本机 CLI 无法远程停止", self.gateway.status()["error"])
         self.host.run_channel_chat.assert_not_called()
 
+    def test_quitting_during_identity_check_does_not_spawn_a_new_listener(self):
+        started, release = threading.Event(), threading.Event()
+        failures = []
+        def identity():
+            started.set()
+            release.wait(3)
+            return BINDING.copy()
+        def enable():
+            try:
+                self.gateway.enable()
+            except RuntimeError as exc:
+                failures.append(str(exc))
+        with patch("desk_companion.feishu_agent.identify", side_effect=identity), \
+             patch("desk_companion.feishu_agent._lark_cmd") as spawn:
+            opening = threading.Thread(target=enable)
+            opening.start()
+            self.assertTrue(started.wait(2))
+            closing = threading.Thread(target=self.gateway.stop, args=(False,))
+            closing.start()
+            self.assertTrue(self.gateway._closing.wait(2))
+            release.set()
+            opening.join(3)
+            closing.join(3)
+            spawn.assert_not_called()
+        self.assertTrue(failures)
+        self.assertFalse((self.root / "feishu_agent.json").exists())
+
     def test_real_agent_tool_loop_and_history_do_not_expose_desktop_context(self):
         host = HeadlessApp()
         desktop = host.state.session_id

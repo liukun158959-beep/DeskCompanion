@@ -344,8 +344,8 @@ pub fn run() {
                 if let Some(state) = app.try_state::<BackendProcess>() {
                     if let Ok(mut guard) = state.0.lock() {
                         if let Some(mut child) = guard.take() {
-                            let _ = child.kill();
-                            let _ = child.wait();
+                            let backend = app.state::<BackendInfo>();
+                            stop_backend(&mut child, &backend);
                         }
                     }
                 }
@@ -353,9 +353,59 @@ pub fn run() {
         });
 }
 
+fn stop_backend(child: &mut Child, info: &BackendInfo) {
+    // 先通知后端关闭自有 CLI 消费者，不能杀掉其他消费者共用的 bus。
+    let url = format!("http://127.0.0.1:{}/shutdown", info.port);
+    let _ = ureq::get(&url)
+        .set("Authorization", &format!("Bearer {}", info.token))
+        .timeout(Duration::from_secs(2))
+        .call();
+    for _ in 0..60 {
+        if matches!(child.try_wait(), Ok(Some(_))) { return; }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 #[cfg(test)]
 mod menu_tests {
     use super::*;
+
+    #[test]
+    fn backend_exits_after_authenticated_shutdown_without_forced_kill() {
+        use std::io::BufRead;
+        let script = r#"
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != '/shutdown' or self.headers.get('Authorization') != 'Bearer test-only':
+            self.send_response(403); self.end_headers(); return
+        self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
+    def log_message(self, *args): pass
+server = HTTPServer(('127.0.0.1', 0), Handler)
+print(server.server_port, flush=True)
+server.serve_forever()
+server.server_close()
+"#;
+        let mut command = Command::new("python");
+        command.args(["-u", "-c", script]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn().expect("本机验证需要 Python");
+        let mut port_line = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut port_line).unwrap();
+        let info = BackendInfo { port: port_line.trim().parse().unwrap(), token: "test-only".into() };
+        let started = std::time::Instant::now();
+        stop_backend(&mut child, &info);
+        assert!(child.try_wait().unwrap().unwrap().success());
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
 
     #[test]
     fn transparent_area_and_other_windows_dismiss_on_new_press() {

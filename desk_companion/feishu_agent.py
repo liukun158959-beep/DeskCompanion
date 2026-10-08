@@ -147,6 +147,7 @@ class FeishuAgent:
         self.host = host
         self._lock = threading.RLock()
         self._stop = threading.Event()
+        self._closing = threading.Event()
         self._ready = threading.Event()
         self._wake = threading.Event()
         self._process = None
@@ -179,11 +180,15 @@ class FeishuAgent:
 
     def enable(self) -> dict:
         with self._lock:
+            if self._closing.is_set():
+                raise RuntimeError("桌宠正在退出，不能启动飞书连接。")
             if self._supervisor and self._supervisor.is_alive():
                 return self.status()
             if self._worker and self._worker.is_alive():
                 raise RuntimeError("上次 Agent 仍在结束当前任务，请稍后再接入。")
             identity = identify()
+            if self._closing.is_set():
+                raise RuntimeError("桌宠正在退出，不能启动飞书连接。")
             previous = self._config().get("binding") or {}
             if previous and any(previous.get(key) != identity[key] for key in ("app_id", "owner_id", "profile")):
                 raise RuntimeError("已绑定的应用或用户与当前 CLI 不同。请检查 CLI profile；不要将个人工具连接到另一身份。")
@@ -219,10 +224,12 @@ class FeishuAgent:
         self._worker.start()
 
     def stop(self, disable=True) -> dict:
+        if not disable:
+            self._closing.set()
+        self._stop.set()
+        self._ready.clear()
+        self._wake.set()
         with self._lock:
-            self._stop.set()
-            self._ready.clear()
-            self._wake.set()
             if disable:
                 self._binding = self._binding or self._config().get("binding", {})
                 self._save(False)
@@ -248,7 +255,7 @@ class FeishuAgent:
     def _consume(self):
         delay = 2
         try:
-            while not self._stop.is_set():
+            while not self._stop.is_set() and not self._closing.is_set():
                 self._ready.clear()
                 with self._lock:
                     self._state = "connecting"
@@ -257,7 +264,7 @@ class FeishuAgent:
                 env["PATH"] = str(Path(command[0]).parent) + os.pathsep + env.get("PATH", "")
                 env["LARKSUITE_CLI_NO_UPDATE_NOTIFIER"] = env["LARKSUITE_CLI_NO_SKILLS_NOTIFIER"] = "1"
                 with self._lock:
-                    if self._stop.is_set():
+                    if self._stop.is_set() or self._closing.is_set():
                         return
                     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                                text=True, encoding="utf-8", errors="replace", cwd=str(data_root()), env=env,
