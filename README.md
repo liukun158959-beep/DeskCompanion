@@ -6,7 +6,7 @@ Windows 上常驻的个人助手。桌宠是入口，Atlas 是脑子。作者本
 
 ## 下载与首次使用
 
-到 [GitHub Releases](https://github.com/liukun158959-beep/DeskCompanion/releases) 下载 `DeskCompanion-0.2.0-windows-x64.zip`，完整解压后双击 `DeskCompanion.exe`。无需自行安装 Python、Atlas、Node 或 Rust；需要 Windows 10/11 x64 和 WebView2 Runtime。首次使用按引导填写模型信息。完整步骤、可选功能、备份与升级见 [使用说明](docs/GETTING_STARTED.md)。
+到 [GitHub Releases](https://github.com/liukun158959-beep/DeskCompanion/releases) 下载 `DeskCompanion-0.2.1-windows-x64.zip`，完整解压后双击 `DeskCompanion.exe`。无需自行安装 Python、Atlas、Node 或 Rust；需要 Windows 10/11 x64 和 WebView2 Runtime。首次使用按引导填写模型信息。完整步骤、可选功能、备份与升级见 [使用说明](docs/GETTING_STARTED.md)。
 
 Live2D Core 和凯尔希素材不随公开包分发；未配置形象时桌宠窗口显示入口卡片，对话、记忆和笔记仍可使用。知识库检索运行库与权重、飞书 CLI、GitHub CLI、MAA 需按需另外安装。
 

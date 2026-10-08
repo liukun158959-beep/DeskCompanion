@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.0"
+VERSION = json.loads((ROOT / "client/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))["version"]
 PRIVATE_NAMES = {".env", "user_state.json", "models.json", "mcp.json", "maa.json", "onboarding.json",
                  "automation_jobs.json", "arknights_account.json", "raise_roster.json"}
 

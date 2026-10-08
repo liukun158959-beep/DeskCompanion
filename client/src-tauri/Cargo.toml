@@ -1,6 +1,6 @@
 [package]
 name = "desk-companion-client"
-version = "0.2.0"
+version = "0.2.1"
 description = "DeskCompanion Windows desktop client"
 edition = "2021"
 
