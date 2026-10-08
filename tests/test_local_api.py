@@ -75,6 +75,15 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("App Secret 无效", message["result"]["result"]["error"])
         self.assertNotIn("test-only-secret", raw)
 
+    async def test_manual_update_check_rpc_is_available_while_chat_lock_is_held(self):
+        with patch("desk_companion.release_info.check_updates", return_value={"ok": True, "latest_version": "0.3.0"}):
+            with self.host.turn_lock:
+                async with connect(self.url, proxy=None) as ws:
+                    await ws.send(json.dumps({"type": "rpc", "id": "update", "method": "check_updates", "args": {}}))
+                    message = json.loads(await asyncio.wait_for(ws.recv(), 5))
+            self.assertTrue(message["result"]["ok"])
+            self.assertEqual(message["result"]["result"]["latest_version"], "0.3.0")
+
     async def test_shutdown_requires_exact_authorization_and_only_signals_the_server(self):
         shutdown = asyncio.Event()
         async def request(auth):

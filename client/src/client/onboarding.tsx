@@ -9,7 +9,7 @@ export type SetupStatus = {
 
 export function SetupGuide(props: {
   info: BackendInfo; status: SetupStatus; models: ModelList;
-  onModels: (models: ModelList) => void; onClose: () => void;
+  onModels: (models: ModelList) => void; onClose: (completed?: boolean) => void;
   onNavigate: (pane: "settings" | "board" | "maa" | "feishu", sub?: string) => void;
 }) {
   const active = props.models.items.find((item) => item.id === props.models.active);
@@ -45,7 +45,7 @@ export function SetupGuide(props: {
     try {
       const result = await rpc<{ ok: boolean }>(props.info, "complete_onboarding");
       if (!result.ok) throw new Error("引导状态保存失败，请重试。");
-      props.onClose();
+      props.onClose(true);
       if (pane) props.onNavigate(pane, sub);
     } catch (err) { setError(String(err)); setBusy(false); }
   }
@@ -63,7 +63,7 @@ export function SetupGuide(props: {
         }}>
         <header className="flex items-start justify-between border-b border-border px-7 py-5">
           <div><p className="mb-1 text-xs text-primary">首次使用 · {step + 1} / 3</p><h1 id="setup-title" className="text-xl font-semibold">{["欢迎使用 DeskCompanion", "连接你的模型", "按需启用其他功能"][step]}</h1></div>
-          <button ref={closeRef} autoFocus type="button" className={button} disabled={busy} onClick={props.onClose}>稍后设置</button>
+          <button ref={closeRef} autoFocus type="button" className={button} disabled={busy} onClick={() => props.onClose()}>稍后设置</button>
         </header>
         <div className="overflow-y-auto px-7 py-6 text-sm leading-6">
           {step === 0 ? <div className="space-y-4">

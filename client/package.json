@@ -1,12 +1,12 @@
 {
   "name": "desk-companion-client",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test tests/startup.test.cjs tests/onboarding.test.cjs tests/pet-assets.test.cjs tests/pet-menu.test.cjs tests/feishu-agent.test.cjs tests/agent-monitor.test.cjs tests/automation.test.cjs",
+    "test": "node --test tests/startup.test.cjs tests/onboarding.test.cjs tests/pet-assets.test.cjs tests/pet-menu.test.cjs tests/feishu-agent.test.cjs tests/agent-monitor.test.cjs tests/automation.test.cjs tests/release.test.cjs",
     "tauri": "tauri"
   },
   "dependencies": {

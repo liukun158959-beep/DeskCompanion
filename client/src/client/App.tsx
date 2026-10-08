@@ -42,6 +42,7 @@ import { Markdown, MdLink, openableHref, PlainLinks } from "./Markdown";
 import { DEFAULT_SAMPLING, samplingFromInputs, EFFORTS, type Sampling } from "./sampling";
 import { startupFailed, startupReady, startupStatus } from "./startup";
 import { SetupGuide, type SetupStatus } from "./onboarding";
+import { ReleaseIntro, ReleaseSettings, useReleaseIntro } from "./release";
 import {
   backendInfo,
   rpc,
@@ -103,6 +104,7 @@ export function App() {
   const [bgError, setBgError] = useState(storedBg.error);
   const [cropSrc, setCropSrc] = useState("");
   const [cropError, setCropError] = useState("");
+  const releaseIntro = useReleaseIntro(!!setupStatus && !setupStatus.show && !showGuide && !cropSrc && !debugKind);
   const [modelItems, setModelItems] = useState<ModelEntry[]>(() => (debugKind ? MODELS_FIXTURE.items : []));
   const [activeModelId, setActiveModelId] = useState(() => (debugKind ? MODELS_FIXTURE.active : ""));
   const [editingModelId, setEditingModelId] = useState(() => (debugKind ? MODELS_FIXTURE.active : ""));
@@ -2246,7 +2248,10 @@ export function App() {
     <div className="relative flex h-full overflow-hidden bg-background text-foreground" data-pane={pane}>
       {showGuide && info && setupStatus ? <SetupGuide
         info={info} status={setupStatus} models={{ ok: true, active: activeModelId, items: modelItems }}
-        onModels={(models) => rememberModels(models)} onClose={() => setShowGuide(false)}
+        onModels={(models) => rememberModels(models)} onClose={(completed) => {
+          setShowGuide(false);
+          if (completed) setSetupStatus(current => current ? { ...current, show: false } : current);
+        }}
         onNavigate={(nextPane, sub) => {
           if (sub === "knowledge") void openKnowledge();
           else if (nextPane === "maa") void openMaa();
@@ -2255,6 +2260,8 @@ export function App() {
           else setPane(nextPane);
         }}
       /> : null}
+      {releaseIntro.open && !showGuide && !cropSrc ? <ReleaseIntro daily={releaseIntro.daily}
+        onDaily={releaseIntro.setDaily} onClose={releaseIntro.close} error={releaseIntro.preferenceError} /> : null}
       <div
         className="desk-bg"
         data-bg-motion
@@ -2746,6 +2753,7 @@ export function App() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
             >
+              <ReleaseSettings info={info} onShowIntro={releaseIntro.show} />
               <SettingsPane
                 onOpenGuide={() => {
                   if (!info) return;

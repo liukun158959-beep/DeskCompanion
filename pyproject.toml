@@ -1,6 +1,6 @@
 [project]
 name = "desk-companion"
-version = "0.2.0"
+version = "0.2.2"
 description = "Windows 桌面个人助手：桌宠入口 + Atlas 脑子"
 requires-python = ">=3.11"
 dependencies = [

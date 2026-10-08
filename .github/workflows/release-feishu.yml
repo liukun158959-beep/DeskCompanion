@@ -1,0 +1,52 @@
+name: Release to Feishu
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已正式发布的版本，例如 v0.2.2（自动核实发送状态后补发）'
+        required: true
+        type: string
+      reconcile:
+        description: 'auto=自动核实；其他选项仅在人工查群确认 pending 消息已发/未发后选择'
+        type: choice
+        default: auto
+        options: [auto, confirmed_sent, confirmed_absent]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-feishu-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    if: github.event_name == 'workflow_dispatch' || (github.event.release.draft == false && github.event.release.prerelease == false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      RELEASE_RECONCILE: ${{ inputs.reconcile || 'auto' }}
+    steps:
+      - name: Validate version tag
+        run: python3 -c 'import os,re; assert re.fullmatch(r"v\d+\.\d+\.\d+",os.environ["RELEASE_TAG"]), "Invalid release tag"'
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Send or reconcile release card
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_RELEASE_CHAT_ID: ${{ secrets.FEISHU_RELEASE_CHAT_ID }}
+        run: python scripts/notify_release.py
+      - name: Explain retry
+        if: failure()
+        run: echo '发布版本保留。核实群消息后，可从此工作流 Run workflow 输入同一个正式 tag 补跑；脚本会使用发布回执去重。' >> "$GITHUB_STEP_SUMMARY"

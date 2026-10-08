@@ -12,6 +12,10 @@ class Bridge:
         from .onboarding import status
         return status()
 
+    def check_updates(self) -> dict:
+        from .release_info import check_updates
+        return check_updates()
+
     def complete_onboarding(self) -> dict:
         from .onboarding import complete
         return complete()
