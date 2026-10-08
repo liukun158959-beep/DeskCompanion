@@ -230,11 +230,14 @@ def parse_agenda(data, *, with_date: bool = False) -> list[dict]:
         start = _event_time(item, "start", with_date=with_date)
         if not start:
             raise RuntimeError(f"日程「{summary}」缺少开始时间，字段: {list(item.keys())}")
+        end = _event_time(item, "end", with_date=with_date)
+        if not with_date:
+            start, end = _span_labels(item, start, end)
         out.append(
             {
                 "summary": str(summary),
                 "start": start,
-                "end": _event_time(item, "end", with_date=with_date),
+                "end": end,
                 "event_id": _event_id(item, str(summary)),
             }
         )
@@ -456,6 +459,45 @@ def _event_time(item: dict, which: str, *, with_date: bool = False) -> str:
     return ""
 
 
+def _span_labels(item: dict, start: str, end: str) -> tuple[str, str]:
+    """起止不在东八区同一天时，两边都带上月日，避免结束只剩钟点。"""
+    start_at = _event_point(item, "start")
+    end_at = _event_point(item, "end")
+    if start_at is None or end_at is None or start_at.date() == end_at.date():
+        return start, end
+    return _month_day_clock(start_at), _month_day_clock(end_at)
+
+
+def _event_point(item: dict, which: str) -> datetime | None:
+    for key in (which, f"{which}_time"):
+        val = item.get(key)
+        if val is None:
+            continue
+        if isinstance(val, str) and val.strip():
+            return _parse_clock(val)
+        if isinstance(val, dict):
+            if val.get("date"):
+                return None
+            if val.get("timestamp") not in (None, ""):
+                return datetime.fromtimestamp(int(val["timestamp"]), TZ)
+            raw = val.get("time") or val.get("datetime")
+            if raw:
+                return _parse_clock(str(raw))
+    return None
+
+
+def _parse_clock(raw: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(raw.strip().replace("Z", "+00:00")).astimezone(TZ)
+    except ValueError:
+        return None
+
+
+def _month_day_clock(moment: datetime) -> str:
+    local = moment.astimezone(TZ)
+    return f"{local.month}月{local.day}日 {local.strftime('%H:%M')}"
+
+
 def _short_time(raw: str, *, with_date: bool = False) -> str:
     text = raw.strip()
     try:
@@ -558,21 +600,44 @@ def _task_overdue(raw: str, now: datetime) -> bool:
         return False
 
 
+_DAY_CLOCK = re.compile(r"^(\d{1,2})月(\d{1,2})日 (\d{2}):(\d{2})$")
+
+
+def _event_start_at(start: str, now: datetime) -> datetime | None:
+    text = start.strip()
+    if "全天" in text:
+        return None
+    hit = _DAY_CLOCK.fullmatch(text)
+    if hit:
+        month, day, hour, minute = (int(part) for part in hit.groups())
+        year = now.year
+        if month == 12 and now.month == 1:
+            year -= 1
+        elif month == 1 and now.month == 12:
+            year += 1
+        try:
+            return now.replace(
+                year=year, month=month, day=day, hour=hour, minute=minute, second=0, microsecond=0
+            )
+        except ValueError:
+            return None
+    if len(text) < 5 or text[2] != ":":
+        return None
+    try:
+        hour = int(text[:2])
+        minute = int(text[3:5])
+    except ValueError:
+        return None
+    return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
 def _next_event(events: list[dict], now: datetime) -> dict | None:
     best = None
     best_delta = None
     for item in events:
-        start = str(item.get("start") or "")
-        if "全天" in start:
+        event_at = _event_start_at(str(item.get("start") or ""), now)
+        if event_at is None:
             continue
-        if len(start) < 5 or start[2] != ":":
-            continue
-        try:
-            hour = int(start[:2])
-            minute = int(start[3:5])
-        except ValueError:
-            continue
-        event_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         delta = (event_at - now).total_seconds()
         if delta < -60:
             continue

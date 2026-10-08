@@ -117,7 +117,7 @@ export function DateTimeField(props: {
         disabled={props.disabled}
         data-event-time={props.marker}
         data-value={props.value}
-        className="min-w-0 flex-1 border border-border bg-background px-2 py-1 text-left text-sm text-foreground disabled:opacity-50"
+        className="min-w-0 flex-1 rounded-[10px] border border-border bg-background px-2 py-1 text-left text-sm text-foreground disabled:opacity-50"
         onClick={() => (props.open ? props.onClose() : props.onOpen())}
       >
         {text}
@@ -131,11 +131,11 @@ export function DateTimeField(props: {
               style={{ top: box.top, left: box.left }}
             >
               <div className="mb-2 flex items-center justify-between">
-                <button type="button" className="px-2 text-primary" onClick={() => setView((cur) => shiftMonth(cur.y, cur.m, -1))}>
+                <button type="button" className="desk-btn" onClick={() => setView((cur) => shiftMonth(cur.y, cur.m, -1))}>
                   上个月
                 </button>
                 <div data-datetime-month="">{`${view.y}年${view.m}月`}</div>
-                <button type="button" className="px-2 text-primary" onClick={() => setView((cur) => shiftMonth(cur.y, cur.m, 1))}>
+                <button type="button" className="desk-btn" onClick={() => setView((cur) => shiftMonth(cur.y, cur.m, 1))}>
                   下个月
                 </button>
               </div>
@@ -154,10 +154,10 @@ export function DateTimeField(props: {
                       type="button"
                       data-datetime-day={`${cell.y}-${pad(cell.m)}-${pad(cell.d)}`}
                       className={[
-                        "h-7 text-xs",
+                        "h-7 rounded-[10px] text-xs",
                         cell.outside ? "text-muted-foreground/50" : "",
-                        selected ? "bg-primary/15 text-primary" : "",
-                        isToday && !selected ? "border border-primary" : "",
+                        selected ? "bg-primary text-primary-foreground" : "",
+                        isToday && !selected ? "border border-primary text-primary" : "",
                       ].join(" ")}
                       onClick={() => write(cell, clock)}
                     >
@@ -173,7 +173,7 @@ export function DateTimeField(props: {
                     key={hour}
                     type="button"
                     data-datetime-hour={hour}
-                    className={`h-7 text-xs ${clock.h === hour ? "bg-primary/15 text-primary" : ""}`}
+                    className={`h-7 rounded-[10px] text-xs ${clock.h === hour ? "bg-primary text-primary-foreground" : ""}`}
                     onClick={() => write(null, { h: hour, min: clock.min })}
                   >
                     {pad(hour)}
@@ -187,7 +187,7 @@ export function DateTimeField(props: {
                     key={minute}
                     type="button"
                     data-datetime-minute={minute}
-                    className={`h-7 text-xs ${clock.min === minute ? "bg-primary/15 text-primary" : ""}`}
+                    className={`h-7 rounded-[10px] text-xs ${clock.min === minute ? "bg-primary text-primary-foreground" : ""}`}
                     onClick={() => write(null, { h: clock.h, min: minute })}
                   >
                     {pad(minute)}

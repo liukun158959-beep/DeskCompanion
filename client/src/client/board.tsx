@@ -203,7 +203,7 @@ export function BoardPane(props: {
                   <div>
                     <div data-time className="text-xs text-muted-foreground">{event.time}</div>
                     <div data-title>{event.title}</div>
-                    {event.end ? <div className="text-xs text-muted-foreground">至 {event.end}</div> : null}
+                    {event.end ? <div data-event-end className="text-xs text-muted-foreground">至 {event.end}</div> : null}
                     {event.eventId ? null : (
                       <p data-event-nodelete className="text-xs text-muted-foreground">没有日程 ID，不能删除。</p>
                     )}
@@ -217,6 +217,7 @@ export function BoardPane(props: {
                         type="button"
                         variant="ghost"
                         size="sm"
+                        className="desk-btn-danger"
                         disabled={props.deleting}
                         onClick={() => props.onDeleteEvent?.(event.eventId)}
                       >
@@ -259,6 +260,7 @@ export function BoardPane(props: {
                         type="button"
                         variant="ghost"
                         size="sm"
+                        className="desk-btn-danger"
                         disabled={props.deleting}
                         onClick={() => props.onDeleteTask?.(task.guid)}
                       >

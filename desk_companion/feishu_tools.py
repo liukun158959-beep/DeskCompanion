@@ -188,4 +188,5 @@ CREATE_EVENT_SPEC = {
         "required": ["summary", "start", "end"],
     },
     "isReadOnly": False,
+    "retry_max": 0,
 }
