@@ -47,3 +47,5 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 websockets==16.1.1
 wheel==0.48.0
+yt-dlp==2026.8.19
+yt-dlp-ejs==0.8.0

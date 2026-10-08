@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { rpc, type BackendInfo, type ChatItem } from "./api";
 import { Markdown } from "./Markdown";
+import { TaskVideos, VideoSettings } from "./video";
 
 type Settings = { parallel: number; call_timeout: number; task_timeout: number; pet_progress: boolean };
 type Event = { seq: number; kind: string; ts: number; data: string | { tool?: string; status?: string; duration_ms?: number } };
@@ -75,6 +76,7 @@ export function AgentMonitor({ info, debug = false }: { info: BackendInfo | null
       </div>
       <p className="mt-2 text-xs text-white/40">新设置应用于之后的任务。共享写入工具会排队，查询可并行。</p>
     </details>
+    <VideoSettings info={info} debug={debug} />
     <label className="mt-4 block text-sm">查看范围 <select className="ml-2 rounded bg-[#202329] p-2" value={channel}
       onChange={e => { setChannel(e.target.value); select(""); setDetail(null); }}><option value="feishu">飞书聊天</option><option value="">全部任务</option><option value="desktop">桌面对话</option></select></label>
     <div className="mt-4 grid gap-5 lg:grid-cols-[240px_1fr]">
@@ -92,6 +94,7 @@ export function AgentMonitor({ info, debug = false }: { info: BackendInfo | null
           <button className="rounded bg-red-400/10 px-3 py-2 text-sm" disabled={busy || !active(detail)} onClick={() => void run("cancel_agent_task", { task_id: detail.id })}>停止任务</button></div>
         {detail.error && <p role="alert" className="rounded bg-red-400/10 p-3 text-sm">{detail.error}</p>}
         <div className="rounded-lg bg-white/5 p-4"><p className="mb-2 text-xs text-white/40">当前答案{active(detail) ? " · 正在更新" : ""}</p><Markdown text={detail.answer || "尚未生成正文。"} /></div>
+        {!debug && <TaskVideos info={info} taskId={detail.id} state={detail.state} />}
         <details open><summary className="cursor-pointer text-sm">任务时间线</summary><ol className="mt-2 space-y-2 text-xs text-white/60">
           {(detail.events || []).filter(e => !["token", "think", "done"].includes(e.kind)).map(e => <li key={e.seq}>
             {new Date(e.ts * 1000).toLocaleTimeString()} · {typeof e.data === "string" ? e.data : e.data.tool ? `${e.kind === "tool_start" ? "调用" : "返回"} ${e.data.tool} ${e.data.status || ""} ${e.data.duration_ms !== undefined ? `${e.data.duration_ms}ms` : ""}` : e.kind === "llm_start" ? "开始调用模型" : "模型返回"}

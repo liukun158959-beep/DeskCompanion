@@ -10,3 +10,5 @@ pywin32>=306
 pywebview>=5,<7
 pystray>=0.19,<1
 huggingface_hub>=0.23,<2
+yt-dlp==2026.8.19
+yt-dlp-ejs==0.8.0

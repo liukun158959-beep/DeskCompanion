@@ -14,6 +14,7 @@ from .facts import FORGET_SPEC, REMEMBER_SPEC, facts_prompt
 from .web_search import WEB_SEARCH_SPEC
 from .skill_tools import LIST_SKILLS_SPEC, READ_SKILL_SPEC
 from .state import UserState
+from .video_tools import VIDEO_CONTRACT, specs as video_specs
 
 TZ = timezone(timedelta(hours=8))
 EMPTY_REPLY = "模型没有给出回复。恢复：再说一次；创建日程也可以用看板的新建。"
@@ -82,7 +83,7 @@ def build_system_prompt(persona: str) -> str:
     text = (persona or "").strip()
     if not text:
         raise RuntimeError("系统提示词为空。打开主窗「设置」填写。")
-    return text + "\n\n" + facts_prompt() + "\n\n" + TOOL_CONTRACT
+    return text + "\n\n" + facts_prompt() + "\n\n" + TOOL_CONTRACT + "\n\n" + VIDEO_CONTRACT
 
 
 def _replace_system(agent, prompt: str) -> None:
@@ -180,6 +181,9 @@ def build_agent(host):
         return WEB_SEARCH_SPEC["func"](
             args, on_status=lambda text: host.ui(lambda: host.on_stream_status(text)))
     tools.register(**{**WEB_SEARCH_SPEC, "func": search})
+    for spec in video_specs(lambda: host.state.session_id,
+                            lambda text: host.ui(lambda: host.on_stream_status(text))):
+        tools.register(**spec)
     agent = Agent(
         llm=LLM(
             api_key=cfg["ATLAS_API_KEY"],

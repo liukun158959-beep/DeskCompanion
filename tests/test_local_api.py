@@ -84,6 +84,22 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(message["result"]["ok"])
             self.assertEqual(message["result"]["result"]["latest_version"], "0.3.0")
 
+    async def test_video_settings_rpc_does_not_block_on_desktop_turn_and_rejects_bad_values(self):
+        with self.host.turn_lock:
+            async with connect(self.url, proxy=None) as ws:
+                await ws.send(json.dumps({"type": "rpc", "id": "video", "method": "save_video_settings",
+                                         "args": {"proxy": "http://127.0.0.1:7890", "cookie_file": ""}}))
+                saved = json.loads(await asyncio.wait_for(ws.recv(), 5))
+                self.assertTrue(saved["result"]["ok"])
+                await ws.send(json.dumps({"type": "rpc", "id": "video", "method": "load_video_settings"}))
+                loaded = json.loads(await asyncio.wait_for(ws.recv(), 5))
+                self.assertEqual(loaded["result"]["result"]["settings"]["proxy"], "http://127.0.0.1:7890")
+                await ws.send(json.dumps({"type": "rpc", "id": "video", "method": "save_video_settings",
+                                         "args": {"proxy": "http://user:secret@proxy:80", "cookie_file": ""}}))
+                invalid = await asyncio.wait_for(ws.recv(), 5)
+                self.assertFalse(json.loads(invalid)["result"]["ok"])
+                self.assertNotIn("secret@proxy", invalid)
+
     async def test_shutdown_requires_exact_authorization_and_only_signals_the_server(self):
         shutdown = asyncio.Event()
         async def request(auth):

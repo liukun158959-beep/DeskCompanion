@@ -2683,7 +2683,7 @@ export function App() {
                 <Input
                   value={draft}
                   onChange={(ev) => setDraft(ev.target.value)}
-                  placeholder="问今天干什么，或输入 / 选技能、工具、文档"
+                  placeholder="发送视频链接总结，或输入 / 选技能、工具、文档"
                   className="flex-1"
                 />
                 <Button type="submit" variant="primary" disabled={busy || noteBusy}>

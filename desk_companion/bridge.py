@@ -45,6 +45,32 @@ class Bridge:
     def cancel_agent_task(self, task_id: str) -> dict:
         return self._host.tasks.cancel(task_id)
 
+    def load_video_settings(self) -> dict:
+        from .video import load_settings
+        return {"ok": True, "settings": load_settings()}
+
+    def save_video_settings(self, proxy: str = "", cookie_file: str = "") -> dict:
+        from .video import save_settings
+        return save_settings(proxy, cookie_file)
+
+    def list_task_videos(self, task_id: str) -> dict:
+        import hashlib
+        from .video import sources, get_source
+        task = self._host.tasks.get(task_id, False)
+        items = sources(task["session"])
+        key = hashlib.sha256(task["answer"].strip().encode()).hexdigest()
+        for item in items:
+            saved = get_source(task["session"], item["source_id"]).get("exports", {}).get(key, {})
+            item.update(export_state=saved.get("state", ""), document_url=saved.get("url", ""))
+        return {"ok": True, "items": items}
+
+    def export_task_video(self, task_id: str, source_id: str, confirmed_absent: bool = False) -> dict:
+        from .video import export_summary
+        task = self._host.tasks.get(task_id, False)
+        if task["state"] != "succeeded" or not task["answer"].strip():
+            raise ValueError("请等待总结完成再保存到飞书。")
+        return export_summary(task["session"], source_id, task["answer"], confirmed_absent=confirmed_absent)
+
     def continue_agent_task(self, task_id: str, text: str, send_back: bool = False) -> dict:
         if type(send_back) is not bool:
             raise ValueError("发送回飞书须为开关。")

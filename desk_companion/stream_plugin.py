@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from atlas.core.plugin import BasePlugin
 
 TOOL_STATUS = {
+    "read_video": "正在读取视频信息与字幕。",
+    "read_video_transcript": "正在核对视频字幕原文。",
+    "save_video_summary": "正在将视频总结保存到飞书文档。",
     "get_today_agenda": "在看今天的日程…",
     "get_open_tasks": "在看未完成的待办…",
     "create_calendar_event": "在创建日程…",

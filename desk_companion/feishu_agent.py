@@ -18,6 +18,7 @@ from .paths import data_root
 EVENT_KEY = "im.message.receive_v1"
 MENU_EVENT = "application.bot.menu_v6"
 HELP = ("我是知行 Agent，使用本机配置的模型、技能和工具。\n"
+        "发送 Bilibili / YouTube 视频链接可读取字幕并总结；可追问或要求保存到飞书文档。没有字幕会明确说明。\n"
         "直接发送问题即可。\n/help 帮助\n/new 新对话（保留旧历史）\n/status 接入状态\n/memory 当前记忆（无需模型）\n"
         "/skills 技能列表\n/skill 技能名 问题\n/kb 问题：使用知识库\n"
         "/mcps MCP 工具列表\n/mcp 服务器名/工具名 问题\n"

@@ -14,6 +14,8 @@ CLI_CHIPS = (
     ("github_recent", "GitHub 近况"),
     ("github_roadmap", "GitHub 路线图"),
     ("web_search", "联网搜索"),
+    ("read_video", "视频信息与字幕"),
+    ("read_video_transcript", "视频字幕原文"),
 )
 MAA_CHIPS = (
     ("open_game", "打开游戏"),
