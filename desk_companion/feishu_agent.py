@@ -213,10 +213,17 @@ class FeishuAgent:
             try:
                 # 旧版 CLI 的无名 profile 需先获得相同的名字；选择器及默认身份保持不变。
                 _run_lark(["profile", "rename", profile, profile])
-                _run_lark(["config", "init", "--name", profile, "--app-id", row["appId"],
-                           "--brand", row["brand"], "--app-secret-stdin"], stdin=app_secret.strip() + "\n")
-            except Exception:
+                # init 的 Agent 环境保护也拦截现有应用的密钥更新。这里仅更新刚查询到的
+                # 同名、同 App ID profile，不创建应用、不切换默认身份、不移除环境变量。
+                command = ["--profile", profile, "config", "init", "--name", profile, "--app-id", row["appId"],
+                           "--brand", row["brand"], "--app-secret-stdin"]
+                if os.environ.get("HERMES_HOME") or os.environ.get("OPENCLAW_HOME"):
+                    command.append("--force-init")
+                _run_lark(command, stdin=app_secret.strip() + "\n")
+            except Exception as exc:
                 # 不向 RPC、日志或界面转发可能含密钥的子进程输出。
+                if "invalid_client" in str(exc) or "client secret is invalid" in str(exc).lower():
+                    raise RuntimeError("密钥已写入 CLI，但飞书校验未通过，请确认密钥属于所选应用且是最新值。") from None
                 raise RuntimeError("更新应用密钥失败，请检查 CLI 配置；密钥不会显示在日志中。") from None
             return {"ok": True, "message": "密钥已交由飞书 CLI 保存。请检查连接，再重新接入。"}
 

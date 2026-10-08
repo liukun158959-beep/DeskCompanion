@@ -277,6 +277,33 @@ class FeishuAgentTests(unittest.TestCase):
             self.assertNotIn("test-only-secret", str(failure.exception))
         self.assertFalse((self.root / "feishu_agent.json").exists())
 
+    def test_hermes_environment_allows_only_existing_profile_secret_update(self):
+        profiles = {"profiles": [{"name": "test-profile", "appId": "test-app", "brand": "feishu"}]}
+        with patch.dict(os.environ, {"HERMES_HOME": "test-hermes-home"}), \
+             patch.object(self.gateway, "profiles", return_value=profiles), \
+             patch("desk_companion.feishu_agent._run_lark", return_value="{}") as cli:
+            self.gateway.update_credentials("test-profile", "test-only-secret")
+            command = cli.call_args.args[0]
+            self.assertIn("--force-init", command)
+            self.assertEqual(command[:2], ["--profile", "test-profile"])
+            self.assertEqual(command[command.index("--name") + 1], "test-profile")
+            self.assertEqual(command[command.index("--app-id") + 1], "test-app")
+            self.assertNotIn("--new", command)
+            self.assertNotIn("--use", command)
+            self.assertEqual(os.environ["HERMES_HOME"], "test-hermes-home")
+            cli.reset_mock()
+            with self.assertRaisesRegex(RuntimeError, "不存在"):
+                self.gateway.update_credentials("unknown", "test-only-secret")
+            cli.assert_not_called()
+
+    def test_invalid_secret_after_cli_save_has_actionable_redacted_error(self):
+        profiles = {"profiles": [{"name": "test-profile", "appId": "test-app", "brand": "feishu"}]}
+        with patch.object(self.gateway, "profiles", return_value=profiles), \
+             patch("desk_companion.feishu_agent._run_lark", side_effect=["", RuntimeError("invalid_client test-only-secret")]):
+            with self.assertRaisesRegex(RuntimeError, "飞书校验未通过") as failure:
+                self.gateway.update_credentials("test-profile", "test-only-secret")
+            self.assertNotIn("test-only-secret", str(failure.exception))
+
     def test_connection_check_distinguishes_remote_occupancy_and_invalid_credentials(self):
         for count, running in ((0, False), (1, False), (1, True)):
             replies = [json.dumps({"ok": True, "data": {"online_instance_cnt": count}}),
