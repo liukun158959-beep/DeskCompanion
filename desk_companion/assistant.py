@@ -73,6 +73,8 @@ def spoken_answer(text: str) -> str:
     spoken = (text or "").strip()
     if not spoken:
         raise RuntimeError(EMPTY_REPLY)
+    if spoken.startswith("Agent 终止："):
+        raise RuntimeError("Agent 达到步骤或时间上限，请查看任务进度后继续。")
     return spoken
 
 

@@ -26,6 +26,45 @@ class Bridge:
     def load_feishu_agent(self) -> dict:
         return self._host.feishu_agent.status()
 
+    def list_agent_tasks(self, channel: str = "", session: str = "") -> dict:
+        return self._host.tasks.list(channel, session)
+
+    def get_agent_task(self, task_id: str) -> dict:
+        from .memory import list_chat
+        task = self._host.tasks.get(task_id)
+        self._host._focused_task = task_id
+        return {"ok": True, "task": task, "history": list_chat(task["session"])}
+
+    def cancel_agent_task(self, task_id: str) -> dict:
+        return self._host.tasks.cancel(task_id)
+
+    def continue_agent_task(self, task_id: str, text: str, send_back: bool = False) -> dict:
+        if type(send_back) is not bool:
+            raise ValueError("发送回飞书须为开关。")
+        if send_back:
+            raise ValueError("发送回飞书尚未就绪，请先在本地续聊。")
+        found = self._host.tasks.resume(task_id, text, send_back=send_back)
+        self._host._focused_task = found
+        return {"ok": True, "task_id": found}
+
+    def save_agent_task_settings(self, parallel: int, call_timeout: int, task_timeout: int, pet_progress: bool) -> dict:
+        return self._host.tasks.configure(parallel, call_timeout, task_timeout, pet_progress)
+
+    def load_task_progress(self) -> dict:
+        tasks = self._host.tasks
+        if not tasks.settings["pet_progress"]:
+            return {"ok": True, "enabled": False}
+        focus = getattr(self._host, "_focused_task", "")
+        candidates = tasks.list()["items"]
+        selected = next((t for t in candidates if t["id"] == focus and t["state"] in {"running", "queued", "cancelling"}), None)
+        selected = selected or next((t for t in candidates if t["state"] == "running"), None)
+        if not selected:
+            return {"ok": True, "enabled": True, "task": None}
+        task = tasks.get(selected["id"])
+        status = next((e for e in reversed(task["events"]) if e["kind"] == "status"), None)
+        return {"ok": True, "enabled": True, "task": {"id": task["id"], "status": status["data"] if status else "",
+                                                        "seq": status["seq"] if status else 0}}
+
     def start_feishu_agent(self) -> dict:
         return self._host.feishu_agent.enable()
 

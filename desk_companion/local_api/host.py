@@ -29,6 +29,15 @@ class HeadlessApp(App):
         # 当前 WS 流式回调，send_* 期间由 server 设置；None 表示无活跃流
         self._delta_sink: Callable[[str], None] | None = None
         self._status_sink: Callable[[str], None] | None = None
+        self._tasks = None
+
+    @property
+    def tasks(self):
+        with self.turn_lock:
+            if self._tasks is None:
+                from ..tasks import TaskManager
+                self._tasks = TaskManager(self)
+            return self._tasks
 
     def ui(self, fn) -> None:
         # 无头：没有窗口队列，直接同步执行
@@ -44,19 +53,11 @@ class HeadlessApp(App):
 
     def run_channel_chat(self, text: str, session_id: str, chips: dict, knowledge: bool = False) -> str:
         """飞书有独立历史，桌面选中的线程在本轮结束后恢复。"""
-        from ..sampling import parse_sampling
-        with self.turn_lock:
-            previous = self.state.session_id
-            self.state.session_id = session_id
-            try:
-                return self.run_chat(text, chips, lambda _: None, lambda _: None,
-                                     parse_sampling({"reasoning_effort": "low", "temperature": .5, "top_p": 1}),
-                                     lambda _: None, knowledge=knowledge)
-            finally:
-                self.state.session_id = previous
-                self.state.save()
-                if self.agent is not None:
-                    self.agent.memory.clear()
+        task_id = self.tasks.submit(text, session_id, "feishu", chips=chips, knowledge=knowledge)
+        task = self.tasks.wait(task_id)
+        if task["state"] != "succeeded":
+            return task["error"] + ("\n\n" + task["answer"] if task["answer"] else "")
+        return task["answer"]
 
     def run_chat(
         self,

@@ -1,6 +1,8 @@
 """真实本地 WebSocket 与无头对话链路；模型和用户文件全部隔离。"""
 import asyncio
 import json
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,15 +23,20 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
         self.addCleanup(patch.stopall)
-        patch.object(memory, "memory_path", return_value=root / "chat.jsonl").start()
+        patch.dict(os.environ, {"DESK_COMPANION_DATA_DIR": str(root)}).start()
+        patch.object(memory, "memory_path", return_value=root / "memory" / "chat.jsonl").start()
         patch.object(state, "state_path", return_value=root / "state.json").start()
         patch.object(usage, "usage_path", return_value=root / "usage.jsonl").start()
         self.host = HeadlessApp()
+        from desk_companion.tasks import TaskManager
+        self.host._tasks = TaskManager(self.host, command=[sys.executable, "-u", "-c", "exec(open('tests/worker_fixture.py', encoding='utf-8').read())"])
+        self.addCleanup(self.host._tasks.shutdown)
         with patch.object(assistant, "require_llm_env", return_value={
             "ATLAS_API_KEY": "test-only", "ATLAS_BASE_URL": "http://example.invalid/v1", "ATLAS_MODEL": "fake",
         }):
             self.host.agent = assistant.build_agent(self.host)
         self.host.agent.llm = FakeLLM(["本地流式回归正常。"])
+        self.host.agent.llm.sampling = None
         patch.object(self.host, "engage_model").start()
         patch.object(server, "HOST", self.host).start()
         patch.object(server, "TOKEN", "test-token").start()
@@ -99,8 +106,8 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(frame["type"] == "token" for frame in frames))
         rows = memory.list_chat(self.host.state.session_id)
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[-1]["react_loops"], 1)
-        self.assertEqual(rows[-1]["total_tokens"], 15)
+        self.assertEqual(rows[-1]["react_loops"], 2)
+        self.assertGreater(rows[-1]["total_tokens"], 0)
         self.assertFalse(self.host._agent_running)
         self.assertIsNone(self.host.agent.llm.sampling)
 

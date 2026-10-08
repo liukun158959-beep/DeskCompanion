@@ -10,7 +10,8 @@ from pathlib import Path
 
 from .memory import TZ
 
-_LOCK = threading.Lock()
+from .resource_lock import ResourceLock
+_LOCK = ResourceLock("usage")
 
 
 def usage_path() -> Path:

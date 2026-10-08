@@ -23,6 +23,7 @@ from .host import HeadlessApp
 # open_url/ask_today/ask_logs/close_board/send_chat）与流式（send_board_chat）不在此。
 RPC_METHODS = frozenset({
     "load_onboarding", "complete_onboarding", "report_pet_status",
+    "list_agent_tasks", "get_agent_task", "cancel_agent_task", "continue_agent_task", "save_agent_task_settings", "load_task_progress",
     "load_board", "delete_agenda", "delete_task", "create_agenda", "load_log_errors", "load_skills",
     "load_persona", "save_persona",
     "load_model", "save_model", "test_model",
@@ -153,7 +154,8 @@ def _dispatch(method: str, args: dict) -> dict:
     if fn is None:
         return {"ok": False, "error": f"Bridge 无此方法：{method}"}
     try:
-        if method in {"load_feishu_agent", "start_feishu_agent", "stop_feishu_agent",
+        if method in {"list_agent_tasks", "get_agent_task", "cancel_agent_task", "continue_agent_task", "save_agent_task_settings", "load_task_progress",
+                      "load_feishu_agent", "start_feishu_agent", "stop_feishu_agent",
                       "list_feishu_agent_profiles", "save_feishu_agent_settings",
                       "update_feishu_agent_credentials", "check_feishu_agent_connection"}:
             result = fn(**args) if args else fn()
@@ -221,19 +223,16 @@ async def _handle_chat(ws, msg: dict) -> None:
                     ("knowledge", json.dumps(payload, ensure_ascii=False)),
                 )
 
-            with HOST.turn_lock:
-                answer = HOST.run_chat(
-                    str(msg.get("text", "")),
-                    msg.get("chips"),
-                    delta_sink,
-                    status_sink,
-                    sampling,
-                    think_sink,
-                    str(msg.get("model_id") or ""),
-                    bool(msg.get("knowledge")),
-                    knowledge_sink,
-                )
-            loop.call_soon_threadsafe(queue.put_nowait, ("done", answer))
+            def callback(kind, data):
+                if kind in {"token", "status", "think", "knowledge", "done", "error"}:
+                    if kind == "knowledge":
+                        data = json.dumps(data, ensure_ascii=False)
+                    loop.call_soon_threadsafe(queue.put_nowait, (kind, data))
+            task_id = HOST.tasks.submit(str(msg.get("text", "")), HOST.state.session_id,
+                                        chips=msg.get("chips"), sampling=sampling,
+                                        model_id=str(msg.get("model_id") or ""), knowledge=bool(msg.get("knowledge")),
+                                        callback=callback)
+            loop.call_soon_threadsafe(queue.put_nowait, ("task", task_id))
         except Exception as exc:
             loop.call_soon_threadsafe(queue.put_nowait, ("error", f"{type(exc).__name__}: {exc}"))
 
@@ -301,6 +300,8 @@ async def main() -> None:
             print(f"local_api ready on 127.0.0.1:{args.port}", flush=True)
             await SHUTDOWN.wait()
     finally:
+        if HOST._tasks is not None:
+            HOST._tasks.shutdown()
         await asyncio.to_thread(HOST.feishu_agent.stop, False)
 
 

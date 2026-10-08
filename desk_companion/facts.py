@@ -22,7 +22,8 @@ BROKEN = (
     "恢复：删掉或修好 desk-companion/memory/facts.json。"
 )
 
-_LOCK = threading.Lock()
+from .resource_lock import ResourceLock
+_LOCK = ResourceLock("facts")
 _TURN_USER: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "desk_fact_user", default=None
 )

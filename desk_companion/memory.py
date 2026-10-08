@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 TZ = timezone(timedelta(hours=8))
-_LOCK = threading.Lock()
+from .resource_lock import ResourceLock
+_LOCK = ResourceLock("chat-history")
 
 
 def memory_path() -> Path:

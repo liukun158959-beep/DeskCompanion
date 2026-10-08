@@ -180,33 +180,24 @@ class FeishuAgentTests(unittest.TestCase):
         self.assertFalse((self.root / "feishu_agent.json").exists())
 
     def test_real_agent_tool_loop_and_history_do_not_expose_desktop_context(self):
+        from desk_companion.tasks import TaskManager
         host = HeadlessApp()
         desktop = host.state.session_id
         memory.append_chat("user", "仅在桌面保存的内容", desktop)
-        with patch.object(assistant, "require_llm_env", return_value={"ATLAS_API_KEY": "test-only",
-                "ATLAS_BASE_URL": "http://example.invalid/v1", "ATLAS_MODEL": "fake"}):
-            host.agent = assistant.build_agent(host)
-        tool = Mock(return_value="离线工具结果")
-        host.agent.tools.register(name="channel_lookup", description="离线查询", parameters={"type": "object", "properties": {}}, func=tool, isReadOnly=True)
-        seen = []
-        def tool_turn(messages, tools):
-            seen.append(json.dumps(messages, ensure_ascii=False))
-            return {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1", "type": "function",
-                     "function": {"name": "channel_lookup", "arguments": "{}"}}]}
-        host.agent.llm = FakeLLM([tool_turn, "工具查询已完成。"])
-        self.gateway.host = host
-        with patch.object(host, "engage_model"), patch("desk_companion.feishu_agent._run_lark", return_value='{"ok":true,"data":{}}'):
-            self.gateway.process_message(self.queue())
-        tool.assert_called_once()
-        self.assertNotIn("仅在桌面保存的内容", seen[0])
+        host._tasks = TaskManager(host, command=[sys.executable, "-u", "-c", "exec(open('tests/worker_fixture.py', encoding='utf-8').read())"])
+        self.addCleanup(host._tasks.shutdown)
+        remote = "feishu-isolated-test"
+        answer = host.run_channel_chat("离线查询", remote, {})
+        self.assertEqual(answer, "本地流式回归正常。")
+        self.assertTrue((self.root / "tool_called").exists())
+        self.assertNotIn("仅在桌面保存的内容", (self.root / "seen.json").read_text("utf-8"))
         self.assertEqual(host.state.session_id, desktop)
         self.assertEqual(json.loads((self.root / "user_state.json").read_text(encoding="utf-8"))["session_id"], desktop)
-        remote = self.gateway._inbox.session("test-app", "oc_private", "ou_owner")
         self.assertEqual(memory.list_chat(remote)[-1]["react_loops"], 2)
         self.assertEqual(len(memory.list_chat(desktop)), 1)
         self.assertFalse(host._agent_running)
 
-    def test_rpc_waits_until_remote_turn_restores_desktop_session(self):
+    def test_remote_wait_does_not_block_desktop_read_rpc(self):
         host = HeadlessApp()
         desktop = host.state.session_id
         started, release, read_done = threading.Event(), threading.Event(), threading.Event()
@@ -214,18 +205,20 @@ class FeishuAgentTests(unittest.TestCase):
         def run(*_args, **_kwargs):
             started.set()
             self.assertTrue(release.wait(3))
-            return "远程回答"
+            return {"state": "succeeded", "answer": "远程回答"}
         def read():
             result.update(server._dispatch("load_chat_log", {}))
             read_done.set()
-        with patch.object(host, "run_chat", side_effect=run), patch.object(server, "HOST", host):
+        host._tasks = Mock()
+        host._tasks.wait.side_effect = run
+        with patch.object(server, "HOST", host):
             remote = threading.Thread(target=host.run_channel_chat, args=("远程问题", "feishu-test", {}))
             remote.start()
             self.assertTrue(started.wait(2))
             reader = threading.Thread(target=read)
             reader.start()
             try:
-                self.assertFalse(read_done.wait(.1))
+                self.assertTrue(read_done.wait(.5))
             finally:
                 release.set()
                 remote.join(3)
