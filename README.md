@@ -18,6 +18,8 @@ pnpm tauri dev
 
 主窗启动时显示动画和当前准备阶段，助手连接、会话读取完成后切入主界面。失败会显示原因和「重新加载」；后端未能启动时按提示检查终端并重启客户端。
 
+没有模型配置时自动打开首次引导，按「了解功能 → 连接模型 → 可选功能」准备。API 地址填服务商的 Base URL（通常含 `/v1`），模型名填控制台的准确模型 ID，API Key 填独立密码框。支持 OpenAI Chat Completions 兼容接口；模型调用工具还需支持 tool calling。保存后点「测试连通」，测试会发一条简短请求并可能计费。已有配置不会强制重新引导；「设置 → 打开使用引导」可随时重新查看配置、数据目录和其他能力的入口。
+
 Live2D Cubism Core 和形象包不在本仓库。当前客户端的 Core 放到 `client/public/Core/live2dcubismcore.js`，凯尔希形象放到 `client/public/skins/kaltsit/`（包含 `kaltsit.model3.json` 及其引用的素材）。没有这些文件启动会失败并给出路径，不要靠默认形象凑合。
 
 旧入口仍保留：在 `pet-ui` 执行 `npm install`、`npm run build`，回到项目根目录执行 `python -m desk_companion`。旧入口使用 `pet-ui/public/Core/` 和 `skins/`，依然需要 Electron、pywebview 和托盘依赖。

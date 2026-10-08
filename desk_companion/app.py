@@ -702,7 +702,8 @@ class App(BoardWorkbench):
                     api_key = parse_env_file().get("ATLAS_API_KEY") or ""
             if not api_key or not base_url or not model:
                 raise RuntimeError("测试前先填 API 地址、模型名和 Key。")
-            client = OpenAI(api_key=api_key, base_url=base_url)
+            from .model_validation import validate_base_url
+            client = OpenAI(api_key=api_key, base_url=validate_base_url(base_url), timeout=20, max_retries=0)
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "ping"}],

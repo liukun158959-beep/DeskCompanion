@@ -187,6 +187,7 @@ export function SettingsPane(props: {
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onSavePersona: (persona: string) => void;
+  onOpenGuide: () => void;
 }) {
   const [baseUrl, setBaseUrl] = useState(props.model?.base_url || "");
   const [modelName, setModelName] = useState(props.model?.model || "");
@@ -209,6 +210,10 @@ export function SettingsPane(props: {
 
   return (
     <div data-settings className="mx-auto flex max-w-xl flex-col gap-8">
+      <section className="rounded-lg border border-border p-4 text-sm">
+        <p className="mb-3 text-muted-foreground">首次使用或不确定配置位置时，可以重新打开引导，查看模型、账号和可选功能的准备步骤。</p>
+        <button type="button" className="desk-btn desk-btn-lg" onClick={props.onOpenGuide}>打开使用引导</button>
+      </section>
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-primary">模型</h2>
         <div className="flex flex-col gap-1">
@@ -235,22 +240,26 @@ export function SettingsPane(props: {
           <span className="text-muted-foreground">API 地址</span>
           <input
             data-model-base
+            placeholder="https://api.example.com/v1"
             value={baseUrl}
             onChange={(ev) => setBaseUrl(ev.target.value)}
             className="border border-border bg-background px-3 py-2"
             autoComplete="off"
           />
         </label>
+        <p className="text-xs text-muted-foreground">使用服务商提供的 Base URL，通常包含 /v1。不要填写聊天网页地址或 /chat/completions。</p>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">模型名</span>
           <input
             data-model-name
+            placeholder="控制台中的准确模型 ID"
             value={modelName}
             onChange={(ev) => setModelName(ev.target.value)}
             className="border border-border bg-background px-3 py-2"
             autoComplete="off"
           />
         </label>
+        <p className="text-xs text-muted-foreground">照抄服务商控制台的模型 ID；调用工具还需模型支持 tool calling。</p>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">API Key</span>
           <input
@@ -296,6 +305,7 @@ export function SettingsPane(props: {
             data-model-delete
             disabled={props.busy || !props.editingId}
             className="desk-btn desk-btn-lg desk-btn-danger"
+            onClick={() => props.onDelete(props.editingId)}
           >
             删除这条
           </button>
@@ -309,6 +319,7 @@ export function SettingsPane(props: {
             测试连通
           </button>
         </div>
+        <p className="text-xs text-muted-foreground">测试连通会向你填写的服务商发送一条简短请求，可能产生 API 费用。Key 保存在本机配置文件中。</p>
         {props.notice ? (
           <p data-settings-notice className="text-sm text-primary">
             {props.notice}

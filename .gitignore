@@ -13,6 +13,7 @@ skins/**
 !skins/.gitkeep
 user_state.json
 models.json
+onboarding.json
 mcp.json
 maa.json
 automation_jobs.json

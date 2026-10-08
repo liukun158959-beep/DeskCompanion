@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from .envconf import LLM_KEYS, parse_env_file, write_llm_env
+from .model_validation import validate_base_url
 
 NAME = "models.json"
 
@@ -87,6 +88,7 @@ def upsert_entry(payload: dict) -> dict:
         raise RuntimeError("API 地址不能为空。")
     if not model:
         raise RuntimeError("模型名不能为空。")
+    base_url = validate_base_url(base_url)
     cat = load_catalog()
     if entry_id:
         current = _find(cat, entry_id)

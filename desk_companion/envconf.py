@@ -74,6 +74,7 @@ def has_skland_token() -> bool:
 
 
 def write_llm_env(*, api_key: str, base_url: str, model: str) -> None:
+    from .model_validation import validate_base_url
     api_key = (api_key or "").strip()
     base_url = (base_url or "").strip()
     model = (model or "").strip()
@@ -88,6 +89,7 @@ def write_llm_env(*, api_key: str, base_url: str, model: str) -> None:
     ):
         raise RuntimeError("配置不能包含换行。")
     existing = parse_env_file()
+    base_url = validate_base_url(base_url)
     lines = [
         f"ATLAS_API_KEY={api_key}",
         f"ATLAS_BASE_URL={base_url}",

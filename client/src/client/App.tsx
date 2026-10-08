@@ -38,6 +38,7 @@ import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type Sta
 import { Markdown, MdLink, openableHref, PlainLinks } from "./Markdown";
 import { DEFAULT_SAMPLING, samplingFromInputs, EFFORTS, type Sampling } from "./sampling";
 import { startupFailed, startupReady, startupStatus } from "./startup";
+import { SetupGuide, type SetupStatus } from "./onboarding";
 import {
   backendInfo,
   rpc,
@@ -91,6 +92,8 @@ type Thread = {
 };
 
 export function App() {
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
   const [dark, setDark] = useState(true);
   const [storedBg] = useState(() => readStoredBackground());
   const [bgUrl, setBgUrl] = useState(storedBg.url);
@@ -488,6 +491,9 @@ export function App() {
         if (!models.ok) throw new Error(models.error || "模型列表读取失败。");
         setModelItems(models.items);
         setActiveModelId(models.active);
+        const setup = await rpc<SetupStatus>(backend, "load_onboarding");
+        setSetupStatus(setup);
+        setShowGuide(setup.show);
         startupReady();
       })
       .catch((err: unknown) => {
@@ -2233,6 +2239,17 @@ export function App() {
 
   return (
     <div className="relative flex h-full overflow-hidden bg-background text-foreground" data-pane={pane}>
+      {showGuide && info && setupStatus ? <SetupGuide
+        info={info} status={setupStatus} models={{ ok: true, active: activeModelId, items: modelItems }}
+        onModels={(models) => rememberModels(models)} onClose={() => setShowGuide(false)}
+        onNavigate={(nextPane, sub) => {
+          if (sub === "knowledge") void openKnowledge();
+          else if (nextPane === "maa") void openMaa();
+          else if (nextPane === "feishu") void openFeishu();
+          else if (nextPane === "board") void openBoard();
+          else setPane(nextPane);
+        }}
+      /> : null}
       <div
         className="desk-bg"
         data-bg-motion
@@ -2723,6 +2740,12 @@ export function App() {
               transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
             >
               <SettingsPane
+                onOpenGuide={() => {
+                  if (!info) return;
+                  void rpc<SetupStatus>(info, "load_onboarding").then((setup) => {
+                    setSetupStatus(setup); setShowGuide(true);
+                  }).catch((err) => setSettingsError(String(err)));
+                }}
                 model={modelForm}
                 models={modelItems}
                 editingId={editingModelId}

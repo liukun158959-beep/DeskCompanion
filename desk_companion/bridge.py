@@ -8,6 +8,14 @@ class Bridge:
     def __init__(self, host) -> None:
         self._host = host
 
+    def load_onboarding(self) -> dict:
+        from .onboarding import status
+        return status()
+
+    def complete_onboarding(self) -> dict:
+        from .onboarding import complete
+        return complete()
+
     def send_chat(self, text: str) -> None:
         self._host.ui(lambda: self._host.send_chat(text))
 
