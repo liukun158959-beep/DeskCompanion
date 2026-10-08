@@ -25,6 +25,8 @@
         position: absolute;
         z-index: 3;
         color: #f4f1ea;
+        user-select: text;
+        -webkit-user-select: text;
       }
       #bubble {
         max-width: 220px;
@@ -35,6 +37,8 @@
         font-size: 14px;
         line-height: 1.5;
         pointer-events: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
       #bubble.hidden, #menu.hidden { display: none; }
       #bubble[data-kind="error"] { border-color: #ff6b6b; color: #ffb4b4; }
@@ -54,9 +58,13 @@
         text-align: left;
         padding: 8px 12px;
         cursor: pointer;
+        user-select: text;
+        -webkit-user-select: text;
       }
       #menu button:last-child { border-bottom: 0; }
       #menu button:hover { background: rgba(255, 212, 41, 0.16); color: #ffd429; }
+      #menu button:disabled { color: #888; cursor: default; }
+      [data-menu-hint] { padding: 8px 12px; font-size: 11px; max-width: 200px; color: #aaa; }
     </style>
   </head>
   <body>
@@ -67,6 +75,8 @@
       <button type="button" data-action="hide">隐藏</button>
       <button type="button" data-action="main">打开主窗口</button>
       <button type="button" data-action="quit">退出</button>
+      <button type="button" data-action="copy" disabled>复制选中文字</button>
+      <div data-menu-hint>可拖选文字，按 Ctrl+C 复制</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

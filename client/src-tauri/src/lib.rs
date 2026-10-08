@@ -26,6 +26,21 @@ struct BackendProcess(Mutex<Option<Child>>);
 struct BackendFailure(Mutex<Option<String>>);
 struct HitRegions(std::sync::Arc<Mutex<Vec<Rect>>>);
 struct DragLock(std::sync::Arc<AtomicBool>);
+struct MenuRegion(std::sync::Arc<Mutex<Option<Rect>>>);
+
+#[tauri::command]
+fn set_pet_menu_region(app: tauri::AppHandle, menu: tauri::State<MenuRegion>, rect: Option<Rect>) -> Result<(), String> {
+    let should_focus = {
+        let mut current = menu.0.lock().map_err(|err| err.to_string())?;
+        let should_focus = current.is_none() && rect.is_some();
+        *current = rect;
+        should_focus
+    };
+    if should_focus {
+        if let Some(window) = app.get_webview_window("pet") { window.set_focus().map_err(|err| err.to_string())?; }
+    }
+    Ok(())
+}
 
 #[tauri::command]
 fn set_hit_regions(regions: tauri::State<HitRegions>, rects: Vec<Rect>) {
@@ -210,9 +225,11 @@ fn start_cursor_poll(
     window: tauri::WebviewWindow,
     regions: std::sync::Arc<Mutex<Vec<Rect>>>,
     drag_lock: std::sync::Arc<AtomicBool>,
+    menu_region: std::sync::Arc<Mutex<Option<Rect>>>,
 ) {
     std::thread::spawn(move || {
         let mut last_ignore: Option<bool> = None;
+        let mut last_buttons = mouse_buttons();
         loop {
             std::thread::sleep(Duration::from_millis(30));
             let scale = window.scale_factor().unwrap_or(1.0);
@@ -227,6 +244,18 @@ fn start_cursor_poll(
             // 全局物理坐标 -> 窗口相对逻辑坐标
             let rx = (cursor.x - origin.x as f64) / scale;
             let ry = (cursor.y - origin.y as f64) / scale;
+            let buttons = mouse_buttons();
+            if last_buttons.0 && !buttons.0 && drag_lock.swap(false, Ordering::Relaxed) {
+                let _ = window.emit("pet-pointer-released", ());
+            }
+            let dismiss = menu_region.lock().map(|menu| {
+                pressed_outside_menu(menu.as_ref(), (rx, ry), last_buttons, buttons, drag_lock.load(Ordering::Relaxed))
+            }).unwrap_or(false);
+            last_buttons = buttons;
+            if dismiss {
+                if let Ok(mut menu) = menu_region.lock() { *menu = None; }
+                let _ = window.emit("dismiss-pet-menu", ());
+            }
             let inside = regions
                 .lock()
                 .map(|rs| rs.iter().any(|r| rx >= r.x && rx <= r.x + r.w && ry >= r.y && ry <= r.y + r.h))
@@ -240,6 +269,23 @@ fn start_cursor_poll(
     });
 }
 
+fn pressed_outside_menu(menu: Option<&Rect>, point: (f64, f64), before: (bool, bool), now: (bool, bool), selecting: bool) -> bool {
+    let new_press = (now.0 && !before.0) || (now.1 && !before.1);
+    let Some(rect) = menu else { return false; };
+    new_press && !selecting && !(point.0 >= rect.x && point.0 <= rect.x + rect.w && point.1 >= rect.y && point.1 <= rect.y + rect.h)
+}
+
+#[cfg(windows)]
+#[link(name = "user32")]
+extern "system" { fn GetAsyncKeyState(key: i32) -> i16; }
+
+fn mouse_buttons() -> (bool, bool) {
+    #[cfg(windows)]
+    { unsafe { return (GetAsyncKeyState(1) < 0, GetAsyncKeyState(2) < 0); } }
+    #[cfg(not(windows))]
+    { (false, false) }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let port = pick_free_port();
@@ -249,6 +295,8 @@ pub fn run() {
     let regions_for_state = regions.clone();
     let drag_lock_for_state = std::sync::Arc::new(AtomicBool::new(false));
     let drag_lock_for_poll = drag_lock_for_state.clone();
+    let menu_region = std::sync::Arc::new(Mutex::new(None));
+    let menu_region_for_poll = menu_region.clone();
 
     tauri::Builder::default()
         .manage(BackendInfo { port, token })
@@ -256,6 +304,7 @@ pub fn run() {
         .manage(BackendFailure(Mutex::new(None)))
         .manage(HitRegions(regions_for_state))
         .manage(DragLock(drag_lock_for_state))
+        .manage(MenuRegion(menu_region.clone()))
         .setup(move |app| {
             let backend = app.state::<BackendInfo>();
             match start_backend(app.handle(), backend.port, &backend.token) {
@@ -264,12 +313,21 @@ pub fn run() {
             }
             if let Some(win) = app.get_webview_window("pet") {
                 let _ = win.set_always_on_top(true);
-                start_cursor_poll(win, regions.clone(), drag_lock_for_poll.clone());
+                let focus_window = win.clone();
+                let focus_menu = menu_region.clone();
+                win.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Focused(false)) {
+                        let was_open = focus_menu.lock().map(|mut rect| rect.take().is_some()).unwrap_or(false);
+                        if was_open { let _ = focus_window.emit("dismiss-pet-menu", ()); }
+                    }
+                });
+                start_cursor_poll(win, regions.clone(), drag_lock_for_poll.clone(), menu_region_for_poll.clone());
             }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             set_hit_regions,
+            set_pet_menu_region,
             backend_info,
             set_pet_visible,
             set_drag_lock,
@@ -293,6 +351,27 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod menu_tests {
+    use super::*;
+
+    #[test]
+    fn transparent_area_and_other_windows_dismiss_on_new_press() {
+        let menu = Rect { x: 20.0, y: 20.0, w: 100.0, h: 100.0 };
+        assert!(pressed_outside_menu(Some(&menu), (0.0, 0.0), (false, false), (true, false), false));
+        assert!(pressed_outside_menu(Some(&menu), (-200.0, 800.0), (false, false), (false, true), false));
+        assert!(!pressed_outside_menu(Some(&menu), (30.0, 30.0), (false, false), (true, false), false));
+    }
+
+    #[test]
+    fn selection_drag_and_held_buttons_keep_menu_open() {
+        let menu = Rect { x: 20.0, y: 20.0, w: 100.0, h: 100.0 };
+        assert!(!pressed_outside_menu(Some(&menu), (-5.0, -5.0), (false, false), (true, false), true));
+        assert!(!pressed_outside_menu(Some(&menu), (-5.0, -5.0), (true, false), (true, false), false));
+        assert!(!pressed_outside_menu(None, (0.0, 0.0), (false, false), (true, false), false));
+    }
 }
 
 fn start_backend(app: &tauri::AppHandle, port: u16, token: &str) -> Result<Child, String> {

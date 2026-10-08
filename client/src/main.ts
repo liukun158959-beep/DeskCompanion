@@ -20,6 +20,7 @@ import { currentMotion, modelBounds, playMotion, startPet } from "./pet-render";
 import { backendInfo, rpc, type BackendInfo } from "./client/api";
 import type { SetupStatus } from "./client/onboarding";
 import { loadCubismCore, petErrorText } from "./pet-assets";
+import { installPetMenu, syncPetMenuRegion } from "./pet-menu";
 
 let petAvailable = false;
 const setupCard = document.createElement("button");
@@ -36,6 +37,7 @@ const menuEl = document.getElementById("menu") as HTMLDivElement;
 let gesture: Gesture = IDLE;
 let bubble: Bubble = emptyBubble();
 let gliding = false;
+let menuControls: ReturnType<typeof installPetMenu> | null = null;
 
 function placeBubble(): void {
   const height = bubbleEl.offsetHeight;
@@ -58,12 +60,15 @@ function renderBubble(): void {
   bubbleEl.dataset.kind = bubble.error ? "error" : "line";
   bubbleEl.textContent = bubble.text;
   if (bubble.open) placeBubble();
+  menuControls?.refresh();
   void reportHitRegions();
 }
 
 function renderMenu(open: boolean, x = 0, y = 0): void {
   menuEl.classList.toggle("hidden", !open);
+  menuControls?.refresh();
   if (!open) {
+    void syncPetMenuRegion(menuEl).catch((err) => showError(String(err)));
     void reportHitRegions();
     return;
   }
@@ -73,6 +78,7 @@ function renderMenu(open: boolean, x = 0, y = 0): void {
   const top = Math.max(8, Math.min(y, window.innerHeight - height - 8));
   menuEl.style.left = `${left}px`;
   menuEl.style.top = `${top}px`;
+  void syncPetMenuRegion(menuEl).catch((err) => showError(String(err)));
   void reportHitRegions();
 }
 
@@ -271,14 +277,14 @@ async function main(): Promise<void> {
   window.addEventListener("pointercancel", onPointerUp);
   window.addEventListener("contextmenu", (event) => {
     event.preventDefault();
+    if ((event.target as Element | null)?.closest("#menu")) return;
     if (gesture.kind === "down") return;
     openMenu(event.clientX, event.clientY);
   });
-  menuEl.addEventListener("click", (event) => {
-    const button = (event.target as HTMLElement).closest("button");
-    const action = button?.dataset.action;
-    if (!action) return;
-    runMenu(action);
+  menuControls = installPetMenu({
+    menu: menuEl, bubble: bubbleEl, close: () => renderMenu(false), run: runMenu,
+    lockSelection: (locked) => { if (locked) beginDragLock(); else endDragLock(); },
+    errorText: () => bubble.open && bubble.error ? bubble.text : "",
   });
   setInterval(() => expire(Date.now()), 200);
   setInterval(() => void reportHitRegions(), 500);
