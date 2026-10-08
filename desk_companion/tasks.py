@@ -77,7 +77,7 @@ class TaskManager:
                 db.commit()
             if callback:
                 self.listeners[task_id] = callback
-            self.event(task_id, "status", "博士，任务已登记，正在等待执行。")
+            self.event(task_id, "status", "任务已登记，正在等待执行。")
             self.cv.notify_all()
         return task_id
 
@@ -150,7 +150,7 @@ class TaskManager:
                 running["cancel"].set()
                 self.update(task_id, state="cancelling")
             else:
-                self.finish(task_id, "cancelled", "博士，已从队列移除。")
+                self.finish(task_id, "cancelled", "已从队列移除。")
             self.cv.notify_all()
         return {"ok": True, "task": self.get(task_id)}
 
@@ -191,7 +191,7 @@ class TaskManager:
         ended = threading.Event()
         outcome = {}
         try:
-            self.event(task_id, "status", "博士，正在整理上下文，准备调用模型。")
+            self.event(task_id, "status", "正在整理上下文，准备调用模型。")
             process = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                        text=True, encoding="utf-8", errors="replace", cwd=str(Path(__file__).resolve().parents[1]),
                                        env={**os.environ, "PYTHONIOENCODING": "utf-8"}, creationflags=0x08000000 if os.name == "nt" else 0)
@@ -243,13 +243,13 @@ class TaskManager:
                     reason = "timed_out"
                     break
                 if time.monotonic() >= waiting_note:
-                    self.event(task_id, "status", "博士，当前调用还未返回。我会保留进度，到时限后停止等待。")
+                    self.event(task_id, "status", "当前调用还未返回。我会保留进度，到时限后停止等待。")
                     waiting_note = float("inf")
             if reason:
                 control["cancel"].set()
                 tree.close()
                 reader.join(2)
-                message = "博士，任务已停止。" if reason == "cancelled" else "博士，调用达到时限，已停止等待。"
+                message = "任务已停止。" if reason == "cancelled" else "调用达到时限，已停止等待。"
                 self.finish(task_id, reason, message + "已保留部分答案和工具记录；继续前请确认已执行的操作。")
                 self._save_partial(row, reason)
             elif "answer" in outcome:

@@ -56,7 +56,7 @@ def main():
                 started = time.monotonic()
                 count += 1
                 emit("llm_start", {"turn": count, "model": host.agent.llm.model})
-                emit("status", "博士，正在分析问题。" if count == 1 else "博士，正在核对已有资料并整理回答。")
+                emit("status", "正在分析问题。" if count == 1 else "正在核对已有资料并整理回答。")
                 try:
                     return original_chat(*args, **kwargs)
                 finally:
