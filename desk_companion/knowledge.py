@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import os
 import shutil
@@ -28,6 +30,8 @@ PIP_HINT = (
     "在 PowerShell 里先执行 python -m pip install torch --index-url https://mirrors.aliyun.com/pytorch-wheels/cpu ，"
     "再执行 python -m pip install sentence-transformers -i https://pypi.tuna.tsinghua.edu.cn/simple 。装完重启客户端。"
 )
+if os.environ.get("DESK_COMPANION_DATA_DIR"):
+    PIP_HINT = "便携版请运行发布目录内的「安装知识库扩展.cmd」，安装完重启客户端；源码版可在当前 Python 环境安装 sentence-transformers。"
 EMBED_MODELS = (
     {"repo": "BAAI/bge-small-zh-v1.5", "blurb": "中文，体积小，适合先跑通。"},
     {"repo": "BAAI/bge-base-zh-v1.5", "blurb": "中文，比 small 更大，CPU 上更慢。"},
@@ -71,7 +75,7 @@ _NOTE_ASK = (
 
 
 def model_root() -> Path:
-    return Path(__file__).resolve().parents[1] / "models"
+    return data_root() / "models"
 
 
 def _settings_path() -> Path:

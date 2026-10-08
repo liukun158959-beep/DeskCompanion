@@ -1,6 +1,8 @@
 """本机定时作业：封闭三动作，进程内触发。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import threading
 import time
@@ -44,7 +46,7 @@ _STORE_LOCK = threading.Lock()
 
 
 def jobs_path() -> Path:
-    return Path(__file__).resolve().parents[1] / CONFIG_NAME
+    return data_root() / CONFIG_NAME
 
 
 def load_store() -> dict:

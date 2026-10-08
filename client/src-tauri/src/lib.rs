@@ -1,7 +1,7 @@
 // 宠物窗 Rust 壳：托管 Python 后端 + 全局鼠标轮询做点击穿透。
 // 穿透关键：ignore_cursor_events 会让整窗收不到 mousemove，前端无法自判，
 // 必须由 Rust 后台线程轮询全局鼠标坐标，落在角色/面板区域外才穿透。
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -23,6 +23,7 @@ struct Rect {
 }
 
 struct BackendProcess(Mutex<Option<Child>>);
+struct BackendFailure(Mutex<Option<String>>);
 struct HitRegions(std::sync::Arc<Mutex<Vec<Rect>>>);
 struct DragLock(std::sync::Arc<AtomicBool>);
 
@@ -34,7 +35,10 @@ fn set_hit_regions(regions: tauri::State<HitRegions>, rects: Vec<Rect>) {
 }
 
 #[tauri::command]
-async fn backend_info(info: tauri::State<'_, BackendInfo>) -> Result<BackendInfo, String> {
+async fn backend_info(info: tauri::State<'_, BackendInfo>, failure: tauri::State<'_, BackendFailure>) -> Result<BackendInfo, String> {
+    if let Some(error) = failure.0.lock().map_err(|err| err.to_string())?.clone() {
+        return Err(error);
+    }
     let backend = info.inner().clone();
     let port = backend.port;
     // 窗口先打开并显示启动页，健康检查在后台等待，不阻塞 UI 线程。
@@ -42,7 +46,7 @@ async fn backend_info(info: tauri::State<'_, BackendInfo>) -> Result<BackendInfo
         .await
         .map_err(|err| format!("助手启动检查失败：{err}。请查看启动终端。"))?;
     if !healthy {
-        return Err("本地助手未能启动。请查看启动终端，确认 Python 与 Atlas 已安装，再重新启动客户端。".into());
+        return Err("本地助手未能启动。请查看用户数据目录中的 backend.log，再重新启动客户端。开发版请确认 Python 与 Atlas 已安装。".into());
     }
     Ok(backend)
 }
@@ -240,17 +244,6 @@ fn start_cursor_poll(
 pub fn run() {
     let port = pick_free_port();
     let token = gen_token();
-    let server_dir = format!("{}/..", env!("CARGO_MANIFEST_DIR"));
-
-    // 拉起真实后端：desk_companion.local_api.server（不再是 spike 回显）
-    let child = Command::new("python")
-        .args(["-m", "desk_companion.local_api.server", "--port"])
-        .arg(port.to_string())
-        .arg("--token")
-        .arg(&token)
-        .current_dir(format!("{server_dir}/.."))
-        .spawn()
-        .expect("启动 Python 后端失败。恢复：确认 python 在 PATH 且已 pip install -e 本项目");
 
     let regions = std::sync::Arc::new(Mutex::new(Vec::<Rect>::new()));
     let regions_for_state = regions.clone();
@@ -259,10 +252,16 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(BackendInfo { port, token })
-        .manage(BackendProcess(Mutex::new(Some(child))))
+        .manage(BackendProcess(Mutex::new(None)))
+        .manage(BackendFailure(Mutex::new(None)))
         .manage(HitRegions(regions_for_state))
         .manage(DragLock(drag_lock_for_state))
         .setup(move |app| {
+            let backend = app.state::<BackendInfo>();
+            match start_backend(app.handle(), backend.port, &backend.token) {
+                Ok(child) => *app.state::<BackendProcess>().0.lock().unwrap() = Some(child),
+                Err(error) => *app.state::<BackendFailure>().0.lock().unwrap() = Some(error),
+            }
             if let Some(win) = app.get_webview_window("pet") {
                 let _ = win.set_always_on_top(true);
                 start_cursor_poll(win, regions.clone(), drag_lock_for_poll.clone());
@@ -288,9 +287,56 @@ pub fn run() {
                     if let Ok(mut guard) = state.0.lock() {
                         if let Some(mut child) = guard.take() {
                             let _ = child.kill();
+                            let _ = child.wait();
                         }
                     }
                 }
             }
         });
+}
+
+fn start_backend(app: &tauri::AppHandle, port: u16, token: &str) -> Result<Child, String> {
+    let (python, working_dir) = backend_location()?;
+    let data_dir = if let Some(value) = std::env::var_os("DESK_COMPANION_DATA_DIR") {
+        std::path::PathBuf::from(value)
+    } else if cfg!(debug_assertions) {
+        working_dir.clone()
+    } else {
+        app.path().local_data_dir().map_err(|err| err.to_string())?.join("DeskCompanion")
+    };
+    std::fs::create_dir_all(&data_dir).map_err(|err| format!("无法创建用户数据目录：{err}"))?;
+    let assets_dir = if cfg!(debug_assertions) { working_dir.join("client/public") } else { data_dir.join("assets") };
+    std::fs::create_dir_all(&assets_dir).map_err(|err| err.to_string())?;
+    let log_path = data_dir.join("backend.log");
+    let log = std::fs::OpenOptions::new().create(true).append(true).open(&log_path).map_err(|err| err.to_string())?;
+    let mut command = Command::new(python);
+    command.args(["-u", "-m", "desk_companion.local_api.server", "--port"])
+        .arg(port.to_string()).arg("--token").arg(token)
+        .current_dir(working_dir)
+        .env("DESK_COMPANION_DATA_DIR", &data_dir)
+        .env("DESK_COMPANION_ASSET_DIR", &assets_dir)
+        .env("PYTHONUTF8", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log.try_clone().map_err(|err| err.to_string())?))
+        .stderr(Stdio::from(log));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    command.spawn().map_err(|err| format!("无法启动本地助手：{err}。请完整解压发布包，保留 runtime 文件夹。日志：{}", log_path.display()))
+}
+
+#[cfg(debug_assertions)]
+fn backend_location() -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    Ok(("python".into(), std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")))
+}
+
+#[cfg(not(debug_assertions))]
+fn backend_location() -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    let exe = std::env::current_exe().map_err(|err| err.to_string())?;
+    let directory = exe.parent().ok_or("无法确定程序目录")?.to_path_buf();
+    let python = directory.join("runtime/python.exe");
+    if !python.is_file() { return Err("运行环境缺失。请完整解压发布包，保留 DeskCompanion.exe 旁的 runtime 文件夹。".into()); }
+    Ok((python, directory))
 }

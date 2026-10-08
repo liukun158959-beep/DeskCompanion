@@ -1,6 +1,8 @@
 """材料总账：官方表算晋升消耗，再减今天的仓库。数字不交给模型。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import argparse
 import json
 import sys
@@ -29,7 +31,7 @@ _CACHE: dict[str, dict] = {}
 
 
 def gamedata_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "gamedata"
+    return data_root() / "gamedata"
 
 
 def fetch() -> dict:

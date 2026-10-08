@@ -1,6 +1,8 @@
 """培养清单：点名干员和档位，用材料总账减今天的仓库。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import threading
 from pathlib import Path
@@ -15,7 +17,7 @@ _EMPTY = "没有点名的培养清单，算不了整体缺口。"
 
 
 def roster_path() -> Path:
-    return Path(__file__).resolve().parents[1] / ROSTER_NAME
+    return data_root() / ROSTER_NAME
 
 
 def snapshot() -> dict:

@@ -1,6 +1,8 @@
 """飞书日程与待办。失败把恢复指引写进返回字符串。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import os
 import shutil
 import subprocess
@@ -83,7 +85,7 @@ def _run_lark(args: list[str], timeout: int = 60, stdin: str | None = None) -> s
     env["PATH"] = node_dir + os.pathsep + env.get("PATH", "")
     env["LARKSUITE_CLI_NO_UPDATE_NOTIFIER"] = "1"
     env["LARKSUITE_CLI_NO_SKILLS_NOTIFIER"] = "1"
-    root = Path(__file__).resolve().parents[1]
+    root = data_root()
     try:
         completed = subprocess.run(
             cmd,

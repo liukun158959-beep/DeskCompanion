@@ -1,6 +1,8 @@
 """记住缩放、位置、人设和看板可改参数。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import threading
 import uuid
@@ -39,7 +41,7 @@ DEFAULT_PERSONA = (
 
 
 def state_path() -> Path:
-    return Path(__file__).resolve().parents[1] / STATE_NAME
+    return data_root() / STATE_NAME
 
 
 def new_session_id() -> str:

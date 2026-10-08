@@ -17,8 +17,17 @@ import {
   tapBubble,
 } from "./pet-gesture";
 import { currentMotion, modelBounds, playMotion, startPet } from "./pet-render";
+import { backendInfo, rpc } from "./client/api";
+import type { SetupStatus } from "./client/onboarding";
 
-const MODEL_URL = "/skins/kaltsit/kaltsit.model3.json";
+let petAvailable = false;
+const setupCard = document.createElement("button");
+setupCard.type = "button";
+setupCard.textContent = "DeskCompanion\n正在准备桌宠…";
+setupCard.setAttribute("aria-label", "打开 DeskCompanion 主窗口");
+Object.assign(setupCard.style, { position: "absolute", left: "20px", top: "130px", width: "220px", padding: "22px 16px", color: "#f4f1ea", background: "#101216", border: "1px solid #ffd429", borderRadius: "14px", whiteSpace: "pre-line", lineHeight: "1.7", cursor: "pointer" });
+document.body.appendChild(setupCard);
+setupCard.onclick = () => void rust("show_main");
 
 const bubbleEl = document.getElementById("bubble") as HTMLDivElement;
 const menuEl = document.getElementById("menu") as HTMLDivElement;
@@ -75,6 +84,10 @@ async function reportHitRegions(): Promise<void> {
   const rects: { x: number; y: number; w: number; h: number }[] = [];
   const bounds = modelBounds();
   if (bounds) rects.push(bounds);
+  if (!setupCard.hidden) {
+    const rect = setupCard.getBoundingClientRect();
+    rects.push({ x: rect.x, y: rect.y, w: rect.width, h: rect.height });
+  }
   for (const el of [bubbleEl, menuEl]) {
     if (el.classList.contains("hidden")) continue;
     const rect = el.getBoundingClientRect();
@@ -137,7 +150,7 @@ function endDragLock(): void {
 function onPointerDown(event: PointerEvent): void {
   if (event.button !== 0) return;
   const target = event.target as HTMLElement | null;
-  if (target?.closest("#menu, #bubble")) return;
+  if (target?.closest("#menu, #bubble, button")) return;
   gliding = false;
   gesture = pointerDown(event.screenX, event.screenY, performance.now());
   beginDragLock();
@@ -160,6 +173,7 @@ function onPointerUp(): void {
   gesture = IDLE;
   endDragLock();
   if (!result.moved) {
+    if (!petAvailable) return;
     bubble = tapBubble(bubble, Date.now());
     renderMenu(false);
     renderBubble();
@@ -270,9 +284,30 @@ async function main(): Promise<void> {
 
   const canvas = document.getElementById("stage") as HTMLCanvasElement;
   try {
-    await startPet(canvas, MODEL_URL);
+    let base = "";
+    if (isTauri()) {
+      const info = await backendInfo();
+      const setup = await rpc<SetupStatus>(info, "load_onboarding");
+      if (!setup.checks.pet) {
+        setupCard.textContent = "尚未添加桌宠形象\n点击打开主窗口\n在使用引导中查看素材位置";
+        await reportHitRegions();
+        return;
+      }
+      base = `http://127.0.0.1:${info.port}/pet-assets/${info.token}`;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = `${base}/Core/live2dcubismcore.js`;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Cubism Core 读取失败，请检查素材位置。"));
+      document.head.appendChild(script);
+    });
+    await startPet(canvas, `${base}/skins/kaltsit/kaltsit.model3.json`);
+    petAvailable = true;
+    setupCard.hidden = true;
   } catch (err) {
-    showError(`形象加载失败：${String(err)}。恢复：确认 public/Core 和 public/skins/kaltsit 都在。`);
+    setupCard.textContent = "桌宠尚未就绪\n点击打开主窗口查看使用引导";
+    showError(`形象加载失败：${String(err)}。请在主窗口的使用引导中查看素材位置。`);
   }
   await reportHitRegions();
 }

@@ -1,6 +1,8 @@
 """把 MAA DepotData.json 译成中文库存，写入 arknights_account.json。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import re
 import threading
@@ -15,7 +17,7 @@ _SYNC_RE = re.compile(
 
 
 def account_path() -> Path:
-    return Path(__file__).resolve().parents[1] / ACCOUNT_NAME
+    return data_root() / ACCOUNT_NAME
 
 
 class RetryableDepotError(RuntimeError):

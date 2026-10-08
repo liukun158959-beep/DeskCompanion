@@ -1,6 +1,8 @@
 """可切换的模型清单。Key 记在 models.json，接口不把原文交回页面。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import uuid
 from pathlib import Path
@@ -12,7 +14,7 @@ NAME = "models.json"
 
 
 def catalog_path() -> Path:
-    return Path(__file__).resolve().parents[1] / NAME
+    return data_root() / NAME
 
 
 def load_catalog() -> dict:

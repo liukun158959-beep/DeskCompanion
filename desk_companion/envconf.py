@@ -1,6 +1,8 @@
 """本项目 .env：模型键与森空岛凭证。保存模型时保留已有 SKLAND_*。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 from pathlib import Path
 
 LLM_KEYS = ("ATLAS_API_KEY", "ATLAS_BASE_URL", "ATLAS_MODEL")
@@ -17,7 +19,7 @@ SKLAND_TOKEN_HINT = (
 
 
 def env_path() -> Path:
-    return Path(__file__).resolve().parents[1] / ".env"
+    return data_root() / ".env"
 
 
 def parse_env_file() -> dict[str, str]:

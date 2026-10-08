@@ -1,13 +1,14 @@
 // 宠物渲染：kaltsit Live2D（迁移自 pet-ui/src/renderer/src/pet.js，改写为 TS）。
 // 弃用 guga 静态帧。对外暴露 modelBounds() 供 Rust 穿透 hit-test。
 import * as PIXI from "pixi.js";
-import { Live2DModel, MotionPriority } from "pixi-live2d-display/cubism4";
+import type { Live2DModel } from "pixi-live2d-display/cubism4";
 
 (window as unknown as { PIXI: typeof PIXI }).PIXI = PIXI;
 
 let app: PIXI.Application | null = null;
 let model: Live2DModel | null = null;
 let lastMotion = "";
+let live2d: typeof import("pixi-live2d-display/cubism4") | null = null;
 
 const HEADROOM = 72;
 
@@ -31,7 +32,8 @@ export async function startPet(canvas: HTMLCanvasElement, modelUrl: string): Pro
   const viewH = wrap.clientHeight;
   if (viewW <= 1 || viewH <= 1) throw new Error(`画布尺寸无效 ${viewW}x${viewH}`);
 
-  Live2DModel.registerTicker(PIXI.Ticker);
+  live2d = await import("pixi-live2d-display/cubism4");
+  live2d.Live2DModel.registerTicker(PIXI.Ticker);
   app = new PIXI.Application({
     view: canvas,
     backgroundAlpha: 0,
@@ -42,7 +44,7 @@ export async function startPet(canvas: HTMLCanvasElement, modelUrl: string): Pro
     height: viewH,
   });
 
-  model = await Live2DModel.from(modelUrl, { autoInteract: false });
+  model = await live2d.Live2DModel.from(modelUrl, { autoInteract: false });
   app.stage.addChild(model);
   await waitFrames(2);
 
@@ -90,11 +92,11 @@ async function runMotion(group: string): Promise<void> {
   const state = model.internalModel.motionManager.state;
   const idle = group === "Idle";
   if (!idle) model.internalModel.motionManager.stopAllMotions();
-  const priority = idle ? MotionPriority.IDLE : MotionPriority.FORCE;
+  const priority = idle ? live2d!.MotionPriority.IDLE : live2d!.MotionPriority.FORCE;
   const ok = await model.motion(group, undefined, priority);
   const idleAlready =
     idle &&
-    (state.currentPriority === MotionPriority.IDLE ||
+    (state.currentPriority === live2d!.MotionPriority.IDLE ||
       state.currentGroup === "Idle" ||
       state.reservedIdleGroup === "Idle");
   if (!ok && !idleAlready) {

@@ -1,6 +1,8 @@
 """明日方舟 / MAA 本机配置。独立文件，不进 user_state.json。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import threading
 import winreg
@@ -21,7 +23,7 @@ _LOCK = threading.Lock()
 
 
 def config_path() -> Path:
-    return Path(__file__).resolve().parents[1] / CONFIG_NAME
+    return data_root() / CONFIG_NAME
 
 
 def load_maa() -> dict:

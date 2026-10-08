@@ -56,9 +56,46 @@ def _health(connection, request):
         return connection.respond(200, "ok\n")
     if request.path.startswith("/depot-icon/"):
         return _depot_icon(connection, request.path)
+    if request.path.startswith("/pet-assets/"):
+        return _pet_asset(connection, request.path)
     if request.path.startswith("/ws"):
         return None
     return connection.respond(404, "not found\n")
+
+
+def read_pet_asset(request_path: str):
+    from urllib.parse import unquote, urlsplit
+    from ..paths import asset_root
+    path = urlsplit(request_path).path.removeprefix("/pet-assets/")
+    token, _, relative = path.partition("/")
+    if not TOKEN or token != TOKEN:
+        raise PermissionError("素材请求的 token 不对。")
+    root = asset_root().resolve()
+    target = (root / unquote(relative)).resolve()
+    if not target.is_relative_to(root) or not target.is_file() or target.suffix.lower() not in {
+        ".js", ".json", ".png", ".jpg", ".jpeg", ".webp", ".moc3", ".wav", ".mp3", ".ogg"
+    }:
+        raise FileNotFoundError("找不到形象素材。")
+    return target
+
+
+def _pet_asset(connection, request_path: str):
+    import mimetypes
+    from websockets.asyncio.server import Response
+    from websockets.datastructures import Headers
+    try:
+        path = read_pet_asset(request_path)
+    except PermissionError as exc:
+        return connection.respond(401, str(exc))
+    except (FileNotFoundError, ValueError, OSError):
+        return connection.respond(404, "asset not found\n")
+    body = path.read_bytes()
+    headers = Headers()
+    headers["Content-Type"] = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    headers["Content-Length"] = str(len(body))
+    headers["Access-Control-Allow-Origin"] = "*"
+    headers["Cache-Control"] = "no-store"
+    return Response(200, "OK", headers, body)
 
 
 def _depot_icon(connection, path: str):
@@ -101,8 +138,10 @@ def _dispatch(method: str, args: dict) -> dict:
 
 
 async def _handler(ws):
+    from urllib.parse import parse_qs, urlsplit
     req_path = ws.request.path if ws.request else ""
-    if TOKEN and f"token={TOKEN}" not in req_path:
+    parts = urlsplit(req_path)
+    if parts.path != "/ws" or (TOKEN and parse_qs(parts.query).get("token", [""])[0] != TOKEN):
         await ws.close(code=4401, reason="bad token")
         return
     async for raw in ws:

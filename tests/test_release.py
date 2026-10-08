@@ -1,0 +1,48 @@
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from desk_companion import automation, board_data, envconf, knowledge, maa_config, maa_depot
+from desk_companion import material_ledger, mcp_client, memory, model_catalog, raise_roster, state, usage
+from desk_companion.local_api import server
+
+
+class ReleaseTests(unittest.TestCase):
+    def test_user_paths_are_isolated_from_program_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with patch.dict(os.environ, {"DESK_COMPANION_DATA_DIR": str(root)}):
+                paths = [envconf.env_path(), model_catalog.catalog_path(), state.state_path(), memory.memory_path(),
+                         usage.usage_path(), maa_config.config_path(), mcp_client.mcp_config_path(), knowledge.model_root()]
+                self.assertTrue(all(path.is_relative_to(root) for path in paths))
+                result = model_catalog.upsert_entry({"base_url": "http://127.0.0.1:8000/v1", "model": "test", "api_key": "test-only"})
+                self.assertEqual(json.loads((root / "models.json").read_text())["active"], result["active"])
+                self.assertTrue((root / ".env").is_file())
+
+    def test_asset_request_requires_exact_token_and_stays_inside_asset_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            assets = root / "assets"
+            (assets / "skins/kaltsit").mkdir(parents=True)
+            target = assets / "skins/kaltsit/kaltsit.model3.json"
+            target.write_text("{}")
+            (root / "models.json").write_text('{"secret": true}')
+            with patch.dict(os.environ, {"DESK_COMPANION_ASSET_DIR": str(assets)}), patch.object(server, "TOKEN", "token-test"):
+                self.assertEqual(server.read_pet_asset("/pet-assets/token-test/skins/kaltsit/kaltsit.model3.json"), target)
+                for token in ["bad", "token-test-extra", ""]:
+                    with self.assertRaises(PermissionError):
+                        server.read_pet_asset(f"/pet-assets/{token}/skins/kaltsit/kaltsit.model3.json")
+                for name in ["../models.json", "%2e%2e/models.json", "%2e%2e%5cmodels.json", "missing.json", ".env"]:
+                    with self.subTest(name=name), self.assertRaises(FileNotFoundError):
+                        server.read_pet_asset(f"/pet-assets/token-test/{name}")
+
+    def test_release_frontend_excludes_private_resources(self):
+        root = Path(__file__).resolve().parents[1]
+        config = (root / "client/vite.config.ts").read_text(encoding="utf-8")
+        self.assertIn('publicDir: process.env.DESK_RELEASE === "1" ? false : "public"', config)
+        rust = (root / "client/src-tauri/src/lib.rs").read_text(encoding="utf-8")
+        self.assertIn('directory.join("runtime/python.exe")', rust)
+        self.assertIn('BackendProcess(Mutex::new(None))', rust)

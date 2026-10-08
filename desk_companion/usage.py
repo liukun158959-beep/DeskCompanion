@@ -1,6 +1,8 @@
 """对话用量落盘：token 来自 Atlas，金额按用户填的单价。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import threading
 from datetime import datetime
@@ -12,7 +14,7 @@ _LOCK = threading.Lock()
 
 
 def usage_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "memory" / "usage.jsonl"
+    return data_root() / "memory" / "usage.jsonl"
 
 
 def cost_cny(model: str, input_tokens: int, output_tokens: int, prices: dict) -> float | None:

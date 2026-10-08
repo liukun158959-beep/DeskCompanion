@@ -1,6 +1,8 @@
 """本地对话记忆：jsonl，按 session 分线程。不做向量库。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import threading
 from datetime import datetime, timedelta, timezone
@@ -11,7 +13,7 @@ _LOCK = threading.Lock()
 
 
 def memory_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "memory" / "chat.jsonl"
+    return data_root() / "memory" / "chat.jsonl"
 
 
 def stamp_missing_session(session_id: str) -> None:

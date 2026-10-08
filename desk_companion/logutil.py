@@ -1,6 +1,8 @@
 """崩溃日志：写 stderr 和 desk_companion.log，卡住则由独立进程杀。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import os
 import subprocess
 import sys
@@ -9,8 +11,8 @@ import time
 import traceback
 from pathlib import Path
 
-LOG_PATH = Path(__file__).resolve().parents[1] / "desk_companion.log"
-READY_FLAG = Path(__file__).resolve().parents[1] / "desk_companion.ready"
+LOG_PATH = data_root() / "desk_companion.log"
+READY_FLAG = data_root() / "desk_companion.ready"
 _LOCK = threading.Lock()
 CREATE_NO_WINDOW = 0x08000000
 

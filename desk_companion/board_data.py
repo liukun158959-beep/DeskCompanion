@@ -1,6 +1,8 @@
 """看板数据：解析 lark-cli JSON 信封，失败不装空。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import re
 import threading
@@ -23,7 +25,7 @@ _LOCK = threading.Lock()
 
 
 def today_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "memory" / "today.json"
+    return data_root() / "memory" / "today.json"
 
 
 def today_date() -> str:

@@ -2,7 +2,13 @@
 
 Windows 上常驻的个人助手。桌宠是入口，Atlas 是脑子。作者本机自用：问飞书今日安排，托管长时间任务（第一例是明日方舟日常）。
 
-不是安装包，不是多用户产品，不接插件市场。
+提供 Windows x64 便携版，配置保存在本机。不接插件市场。
+
+## 下载与首次使用
+
+到 [GitHub Releases](https://github.com/liukun158959-beep/DeskCompanion/releases) 下载 `DeskCompanion-0.2.0-windows-x64.zip`，完整解压后双击 `DeskCompanion.exe`。无需自行安装 Python、Atlas、Node 或 Rust；需要 Windows 10/11 x64 和 WebView2 Runtime。首次使用按引导填写模型信息。完整步骤、可选功能、备份与升级见 [使用说明](docs/GETTING_STARTED.md)。
+
+Live2D Core 和凯尔希素材不随公开包分发；未配置形象时桌宠窗口显示入口卡片，对话、记忆和笔记仍可使用。知识库检索运行库与权重、飞书 CLI、GitHub CLI、MAA 需按需另外安装。
 
 ## 本机跑（当前 Tauri 客户端）
 
@@ -20,7 +26,7 @@ pnpm tauri dev
 
 没有模型配置时自动打开首次引导，按「了解功能 → 连接模型 → 可选功能」准备。API 地址填服务商的 Base URL（通常含 `/v1`），模型名填控制台的准确模型 ID，API Key 填独立密码框。支持 OpenAI Chat Completions 兼容接口；模型调用工具还需支持 tool calling。保存后点「测试连通」，测试会发一条简短请求并可能计费。已有配置不会强制重新引导；「设置 → 打开使用引导」可随时重新查看配置、数据目录和其他能力的入口。
 
-Live2D Cubism Core 和形象包不在本仓库。当前客户端的 Core 放到 `client/public/Core/live2dcubismcore.js`，凯尔希形象放到 `client/public/skins/kaltsit/`（包含 `kaltsit.model3.json` 及其引用的素材）。没有这些文件启动会失败并给出路径，不要靠默认形象凑合。
+Live2D Cubism Core 和形象包不在本仓库。源码运行的 Core 放到 `client/public/Core/live2dcubismcore.js`，凯尔希形象放到 `client/public/skins/kaltsit/`（包含 `kaltsit.model3.json` 及其引用的素材）。便携版的素材位置在使用引导里显示，缺少素材时显示主窗入口卡片。
 
 旧入口仍保留：在 `pet-ui` 执行 `npm install`、`npm run build`，回到项目根目录执行 `python -m desk_companion`。旧入口使用 `pet-ui/public/Core/` 和 `skins/`，依然需要 Electron、pywebview 和托盘依赖。
 

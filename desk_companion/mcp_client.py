@@ -1,6 +1,8 @@
 """斜杠菜单里的 MCP：只读 desk-companion/mcp.json，stdio + Content-Length。"""
 from __future__ import annotations
 
+from .paths import data_root
+
 import json
 import os
 import queue
@@ -20,7 +22,7 @@ _ALLOWED = frozenset({"command", "args", "env"})
 
 
 def mcp_config_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "mcp.json"
+    return data_root() / "mcp.json"
 
 
 def mcp_fn_name(server: str, tool: str) -> str:
