@@ -221,6 +221,25 @@ class NewsTests(unittest.TestCase):
         with Image.open(image) as img:
             self.assertEqual(img.size, (1200, 640))
 
+        def check(elements):
+            for element in elements:
+                if element["tag"] == "markdown":
+                    self.assertNotIn("font_color", element)
+                check(element.get("elements", []))
+                for column in element.get("columns", []):
+                    check(column.get("elements", []))
+        check(card["body"]["elements"])
+
+    def test_cli_platform_rejection_is_reported_as_confirmed_instead_of_network(self):
+        raw = "CLI failed.\n" + json.dumps({"ok": False, "error": {"type": "api", "subtype": "unknown", "code": 230099,
+            "message": "unknown property font_color", "secret": "must-not-be-shown"}})
+        with patch.object(news_publish, "_run_lark", side_effect=RuntimeError(raw)):
+            with self.assertRaises(news_publish.PublishError) as caught:
+                news_publish.cli(fixture()["settings"], ["im", "+messages-send"])
+        self.assertTrue(caught.exception.confirmed)
+        self.assertIn("卡片格式", str(caught.exception))
+        self.assertNotIn("must-not-be-shown", str(caught.exception))
+
     def test_controller_rejects_changed_targets_before_submit(self):
         run = fixture()
         news.atomic_json(news.run_path(run["id"]), run)

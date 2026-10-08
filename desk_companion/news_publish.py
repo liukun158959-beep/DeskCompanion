@@ -19,14 +19,28 @@ class PublishError(RuntimeError):
         self.confirmed = confirmed
 
 
+def platform_error(value):
+    if not isinstance(value, dict) or value.get("ok") is not False:
+        return None
+    error = value.get("error") or {}
+    if not isinstance(error, dict):
+        return PublishError("飞书操作未确认成功，请检查平台诊断。")
+    code = error.get("code")
+    if code == 230099:
+        return PublishError("飞书卡片格式校验未通过，未发送群消息。", confirmed=True)
+    confirmed = error.get("type") in {"validation", "auth"} or (
+        error.get("type") == "api" and isinstance(code, int) and code > 0 and code not in {500, 502, 503, 504})
+    subtype = str(error.get("subtype", ""))[:60]
+    return PublishError("飞书操作未成功（" + subtype + "），请检查权限和推送位置。", confirmed=confirmed)
+
+
 def cli(cfg, args, *, identity="user", stdin=None, timeout=60):
     try:
         raw = _run_lark(["--profile", cfg["profile"], *args, "--as", identity], timeout=timeout, stdin=stdin)
         value = json.loads(raw)
-        if value.get("ok") is False:
-            error = value.get("error") or {}
-            subtype = error.get("subtype", "") if isinstance(error, dict) else ""
-            raise PublishError("飞书操作未成功（" + str(subtype)[:60] + "），请检查权限和推送位置。", confirmed=True)
+        error = platform_error(value)
+        if error:
+            raise error
         data = value.get("data", value)
         if isinstance(data, dict) and data.get("code", 0) != 0:
             raise PublishError("飞书操作被拒绝，请检查权限。", confirmed=True)
@@ -34,6 +48,16 @@ def cli(cfg, args, *, identity="user", stdin=None, timeout=60):
     except PublishError:
         raise
     except Exception as exc:
+        raw = str(exc)
+        start = raw.find("{")
+        if start >= 0:
+            try:
+                value, _ = json.JSONDecoder().raw_decode(raw[start:])
+                error = platform_error(value)
+            except (ValueError, TypeError):
+                error = None
+            if error:
+                raise error from None
         text = str(exc).lower()
         auth = any(x in text for x in ("scope", "permission", "unauthorized", "invalid_client", "forbidden"))
         raise PublishError("飞书授权或权限未通过，请在飞书页检查。" if auth else
@@ -272,7 +296,7 @@ def news_card(run, image_key):
             "header": {"title": {"tag": "plain_text", "content": "AI/Agent 工程日报"}, "subtitle": {"tag": "plain_text", "content": run["day"] + " · " + str(len(report["items"])) + " 条重点"}, "template": "blue"},
             "body": {"direction": "vertical", "vertical_spacing": "12px", "padding": "12px",
                      "elements": [row(first, "blue-50"), row(others), row([
-                         {**text("已归档官方来源；实践建议需验证，发布时间和局限详见文档。"), "font_color": "grey"},
+                         {**text("<font color='grey'>已归档官方来源；实践建议需验证，发布时间和局限详见文档。</font>"), "text_size": "notation"},
                          {"tag": "column_set", "flex_mode": "none", "columns": [column([b]) for b in links]}])]}}
 
 
