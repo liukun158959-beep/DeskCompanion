@@ -187,7 +187,7 @@ class TaskManager:
         task_id = row["id"]
         request = json.loads(row["request"])
         tree = process = None
-        phase = {"deadline": None}
+        phase = {"deadline": None, "waiting_note": None}
         ended = threading.Event()
         outcome = {}
         try:
@@ -222,8 +222,10 @@ class TaskManager:
                         else:
                             if kind in ("llm_start", "tool_start"):
                                 phase["deadline"] = time.monotonic() + request["limits"]["call_timeout"]
+                                phase["waiting_note"] = time.monotonic() + 30
                             elif kind in ("llm_end", "tool_end"):
                                 phase["deadline"] = None
+                                phase["waiting_note"] = None
                             self.event(task_id, kind, data)
                 except Exception:
                     outcome["error"] = "任务通信中断，工具可能已经执行，请查看时间线。"
@@ -233,7 +235,6 @@ class TaskManager:
             reader = threading.Thread(target=read, daemon=True)
             reader.start()
             deadline = time.monotonic() + request["limits"]["task_timeout"]
-            waiting_note = time.monotonic() + 30
             reason = ""
             while not ended.wait(.05):
                 if control["cancel"].is_set():
@@ -242,9 +243,9 @@ class TaskManager:
                 if time.monotonic() >= deadline or (phase["deadline"] and time.monotonic() >= phase["deadline"]):
                     reason = "timed_out"
                     break
-                if time.monotonic() >= waiting_note:
+                if phase["waiting_note"] and time.monotonic() >= phase["waiting_note"]:
                     self.event(task_id, "status", "当前调用还未返回。我会保留进度，到时限后停止等待。")
-                    waiting_note = float("inf")
+                    phase["waiting_note"] = None
             if reason:
                 control["cancel"].set()
                 tree.close()

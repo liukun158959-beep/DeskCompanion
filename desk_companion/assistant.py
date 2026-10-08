@@ -176,7 +176,10 @@ def build_agent(host):
     tools.register(**PLAN_SPEC)
     tools.register(**REMEMBER_SPEC)
     tools.register(**FORGET_SPEC)
-    tools.register(**WEB_SEARCH_SPEC)
+    def search(args):
+        return WEB_SEARCH_SPEC["func"](
+            args, on_status=lambda text: host.ui(lambda: host.on_stream_status(text)))
+    tools.register(**{**WEB_SEARCH_SPEC, "func": search})
     agent = Agent(
         llm=LLM(
             api_key=cfg["ATLAS_API_KEY"],

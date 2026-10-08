@@ -2,12 +2,20 @@
 from __future__ import annotations
 
 import json
+import socket
+import ssl
+import time
 import urllib.error
 import urllib.request
 
 QUERY_MAX = 200
 SOURCE_LIMIT = 5
 TIMEOUT_S = 30
+REQUEST_BUDGET_S = 60
+
+
+class RetryableSearchError(RuntimeError):
+    """仅用于网络或搜索服务的临时故障。"""
 
 SEARCH_HINT = (
     "联网搜索走当前模型的 API。"
@@ -70,27 +78,31 @@ def format_search(payload: dict) -> str:
     return "\n".join(lines)
 
 
-def web_search(args: dict) -> str:
+def web_search(args: dict, *, on_status=None) -> str:
+    cfg = {}
     try:
         if not isinstance(args, dict):
-            return "搜索参数不是对象，没有搜索。不要编。"
+            raise RuntimeError("搜索参数不是对象，没有搜索。不要编。")
         query = args.get("query")
         if type(query) is not str or not query.strip():
-            return "搜索词是空的，没有搜索。不要编。"
+            raise RuntimeError("搜索词是空的，没有搜索。不要编。")
         text = query.strip()
         if len(text) > QUERY_MAX:
-            return f"搜索词超过 {QUERY_MAX} 字，没有搜索。不要编。"
+            raise RuntimeError(f"搜索词超过 {QUERY_MAX} 字，没有搜索。不要编。")
         from .envconf import require_llm_env
 
         cfg = require_llm_env()
         endpoint = search_endpoint(cfg["ATLAS_BASE_URL"])
-        payload = _post(endpoint, cfg["ATLAS_API_KEY"], text)
+        payload = _post(endpoint, cfg["ATLAS_API_KEY"], text, on_status=on_status)
         return format_search(payload)
     except Exception as exc:
         message = str(exc).strip() or "联网搜索失败。"
+        if cfg.get("ATLAS_API_KEY"):
+            message = message.replace(cfg["ATLAS_API_KEY"], "[密钥已隐藏]")
         if "不要编" not in message:
             message += " 不要编。"
-        return message
+        # Atlas 根据异常记录真实失败，仍会把错误交给模型解释。
+        raise RuntimeError(message) from None
 
 
 WEB_SEARCH_SPEC = {
@@ -114,7 +126,31 @@ WEB_SEARCH_SPEC = {
 }
 
 
-def _post(endpoint: str, api_key: str, query: str) -> dict:
+def _post(endpoint: str, api_key: str, query: str, *, on_status=None) -> dict:
+    deadline = time.monotonic() + REQUEST_BUDGET_S
+    for attempt in range(2):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("联网搜索超时。恢复：稍后重试。")
+        try:
+            return _post_once(endpoint, api_key, query, min(TIMEOUT_S, remaining))
+        except RetryableSearchError:
+            if attempt == 1 or deadline - time.monotonic() <= .5:
+                raise
+            if on_status:
+                on_status("联网搜索遇到临时网络错误，正在重试一次。")
+            time.sleep(.5)
+    raise RuntimeError("联网搜索失败。")
+
+
+def _temporary_message(message: str) -> bool:
+    text = message.lower()
+    if any(term in text for term in ("certificate", "cert_verify", "invalid_client", "unauthorized", "forbidden")):
+        return False
+    return any(term in text for term in ("timeout", "timed out", "超时", "connection reset", "temporarily unavailable"))
+
+
+def _post_once(endpoint: str, api_key: str, query: str, timeout: float) -> dict:
     body = {
         "crawl_results": 0,
         "max_results": SOURCE_LIMIT,
@@ -132,21 +168,34 @@ def _post(endpoint: str, api_key: str, query: str) -> dict:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             text = response.read().decode("utf-8")
     except TimeoutError as exc:
-        raise RuntimeError("联网搜索超时。恢复：再说一次。") from exc
+        raise RetryableSearchError("联网搜索超时。恢复：稍后重试。") from exc
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(_http_error(exc.code, detail)) from exc
+        error = RetryableSearchError if exc.code in {408, 429, 500, 502, 503, 504} else RuntimeError
+        raise error(_http_error(exc.code, detail)) from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"联网搜索连不上。恢复：检查网络后再说一次。\n{exc.reason}") from exc
+        reason = exc.reason
+        temporary = not isinstance(reason, ssl.SSLCertVerificationError) and (
+            isinstance(reason, (TimeoutError, ConnectionResetError, socket.gaierror)) or _temporary_message(str(reason)))
+        # TLS 握手超时可能是 TimeoutError 或文本；证书校验错误不能通过重试掩盖。
+        error = RetryableSearchError if temporary else RuntimeError
+        raise error(f"联网搜索连不上。恢复：检查网络后再说一次。\n{reason}") from exc
+    except ConnectionResetError as exc:
+        raise RetryableSearchError("联网搜索连接中断。恢复：稍后重试。") from exc
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
         raise RuntimeError("联网搜索没有返回 JSON。不要编。") from exc
     if not isinstance(payload, dict):
         raise RuntimeError("联网搜索返回不是对象。不要编。")
+    # 服务端自身搜索上游失败时可能仍返回 HTTP 200。
+    if not payload.get("results"):
+        message = str(payload.get("error") or payload.get("message") or "")
+        if _temporary_message(message):
+            raise RetryableSearchError(f"联网搜索失败：{message} 不要编。")
     return payload
 
 
