@@ -102,7 +102,7 @@ export function streamNotebook(
       ws.close();
     }
   };
-  ws.onerror = () => handlers.onError("连不上本地后端。恢复：看桌宠日志后重启客户端");
+  ws.onerror = () => handlers.onError("连不上本地后端。恢复：看知行日志后重启客户端");
 }
 
 export function streamChat(
@@ -130,7 +130,7 @@ export function streamChat(
       ws.close();
     }
   };
-  ws.onerror = () => handlers.onError("连不上本地后端。恢复：看桌宠日志后重启客户端");
+  ws.onerror = () => handlers.onError("连不上本地后端。恢复：看知行日志后重启客户端");
 }
 
 export function rpc<T>(
@@ -156,6 +156,6 @@ export function rpc<T>(
       }
       reject(new Error(msg.result?.error || msg.data || "RPC 失败"));
     };
-    ws.onerror = () => reject(new Error("连不上本地后端。恢复：看桌宠日志后重启客户端"));
+    ws.onerror = () => reject(new Error("连不上本地后端。恢复：看知行日志后重启客户端"));
   });
 }

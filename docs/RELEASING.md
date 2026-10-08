@@ -7,7 +7,7 @@
 PowerShell，在仓库根目录运行（output 必须是新的绝对目录）：
 
 ```powershell
-python scripts/prepare_runtime.py --atlas ../Atlas --output C:/Build/DeskCompanion-runtime
+python scripts/prepare_runtime.py --atlas ../Atlas --output C:/Build/ZhiXing-runtime
 python -m unittest discover -s tests -v
 cd client
 pnpm install --frozen-lockfile
@@ -19,8 +19,8 @@ cd ..
 $env:DESK_RELEASE = '1'
 pnpm tauri build --no-bundle
 cd ..
-python scripts/smoke_release.py C:/Build/DeskCompanion-runtime
-python scripts/bundle_release.py --runtime-package C:/Build/DeskCompanion-runtime --output C:/Build/DeskCompanion-release
+python scripts/smoke_release.py C:/Build/ZhiXing-runtime
+python scripts/bundle_release.py --runtime-package C:/Build/ZhiXing-runtime --output C:/Build/ZhiXing-release
 ```
 
 运行时取 [Python 官方 3.13.16 x64 嵌入包](https://www.python.org/downloads/release/python-31316/)，校验官方 SHA256 后解压。依赖版本固定在 `scripts/runtime-lock.txt`，包内记录 `runtime-packages.txt` 和 `runtime-provenance.json`。

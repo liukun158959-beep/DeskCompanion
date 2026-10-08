@@ -30,7 +30,7 @@ export const COMPOSER_FIXTURE = {
   ],
   github: {
     ok: true,
-    items: [{ id: "liukun158959-beep/DeskCompanion", label: "liukun158959-beep/DeskCompanion" }],
+    items: [{ id: "liukun158959-beep/ZhiXing", label: "liukun158959-beep/ZhiXing" }],
   },
 };
 

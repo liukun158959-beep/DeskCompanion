@@ -7,7 +7,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-REPOSITORY = "liukun158959-beep/DeskCompanion"
+REPOSITORY = "liukun158959-beep/ZhiXing"
 RELEASES_URL = f"https://github.com/{REPOSITORY}/releases"
 MANIFEST = Path(__file__).parent / "ui/release.json"
 
@@ -44,7 +44,7 @@ class ReleaseRedirect(urllib.request.HTTPRedirectHandler):
 
 def check_updates():
     current = load_manifest()["version"]
-    headers = {"User-Agent": "DeskCompanion update check", "Accept": "application/vnd.github+json"}
+    headers = {"User-Agent": "ZhiXing update check", "Accept": "application/vnd.github+json"}
     try:
         try:
             request = urllib.request.Request(f"https://api.github.com/repos/{REPOSITORY}/releases/latest", headers=headers)
@@ -65,7 +65,7 @@ def check_updates():
             if not safe_release_url(url) or "/releases/tag/" not in url:
                 raise ValueError("尚未取得可核实的正式版本。")
             latest = url.rsplit("/", 1)[-1]
-            title, published = "DeskCompanion " + latest, ""
+            title, published = "知行 · ZhiXing " + latest, ""
             notes = "已从正式发布页核实版本，完整更新说明请打开下载页面查看。"
         remote, local = version_tuple(latest), version_tuple(current)
         return {"ok": True, "current_version": current, "latest_version": latest.removeprefix("v"),

@@ -90,7 +90,7 @@ export function MaaPane(props: {
       {props.logError ? <p data-maa-log-error className="mt-6 text-sm text-destructive">{props.logError}</p> : null}
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <LogBlock title="重点" items={props.logs?.highlights || []} />
-        <LogBlock title="桌宠" path={props.logs?.desk?.path} note={props.logs?.desk?.note} items={props.logs?.desk?.items || []} />
+        <LogBlock title="知行" path={props.logs?.desk?.path} note={props.logs?.desk?.note} items={props.logs?.desk?.items || []} />
         <LogBlock title="MAA GUI" path={props.logs?.maa_gui?.path} note={props.logs?.maa_gui?.note} items={props.logs?.maa_gui?.items || []} />
         <LogBlock title="Depot" path={props.logs?.maa_depot?.path} note={props.logs?.maa_depot?.note} items={props.logs?.maa_depot?.items || []} />
       </div>

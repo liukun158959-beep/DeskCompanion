@@ -6,7 +6,7 @@ import { MdLink, Markdown } from "./Markdown";
 import { localDay, readReleasePreferences, saveReleasePreferences, shouldShowRelease, type ReleasePreferences } from "./release-preferences";
 
 export const CURRENT_RELEASE = manifest;
-const releases = "https://github.com/liukun158959-beep/DeskCompanion/releases";
+const releases = "https://github.com/liukun158959-beep/ZhiXing/releases";
 export const CURRENT_RELEASE_URL = `${releases}/tag/${manifest.tag}`;
 
 export function useReleaseIntro(ready: boolean) {
@@ -58,7 +58,7 @@ export function ReleaseIntro(props: { daily: boolean; onDaily: (daily: boolean) 
         <button className={button} aria-label="关闭版本介绍" onClick={props.onClose}>关闭</button>
       </header>
       <div className="overflow-y-auto">
-        <img src={poster} alt="凯尔希桌宠 v0.2.2：版本介绍、检查更新和飞书通知" className="block aspect-video w-full object-contain" />
+        <img src={poster} alt="知行 ZhiXing v0.2.2 漫画封面：从对话，到行动" className="block aspect-video w-full object-contain" />
         <div className="px-6 py-5"><p className="mb-4 font-medium text-primary">{manifest.summary}</p>
           <ul className="grid gap-4 sm:grid-cols-2">{manifest.highlights.map(item => <li key={item.title}>
             <h2 className="text-sm font-semibold">{item.title}</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">{item.description}</p>

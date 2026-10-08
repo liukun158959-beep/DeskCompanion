@@ -1,18 +1,20 @@
-# DeskCompanion
+# 知行 · ZhiXing
 
-Windows 上常驻的个人助手。桌宠是入口，Atlas 是脑子。作者本机自用：问飞书今日安排，托管长时间任务（第一例是明日方舟日常）。
+Windows 上常驻的个人 Agent 工作台：对话、记忆、任务执行、知识整理与飞书协作。Atlas 提供 Agent 能力，凯尔希桌宠是可选的交互入口。
 
 提供 Windows x64 便携版，配置保存在本机。不接插件市场。
 
 ## 下载与首次使用
 
-到 [GitHub Releases](https://github.com/liukun158959-beep/DeskCompanion/releases) 下载 `DeskCompanion-0.2.1-windows-x64.zip`，完整解压后双击 `DeskCompanion.exe`。无需自行安装 Python、Atlas、Node 或 Rust；需要 Windows 10/11 x64 和 WebView2 Runtime。首次使用按引导填写模型信息。完整步骤、可选功能、备份与升级见 [使用说明](docs/GETTING_STARTED.md)。
+到 [GitHub Releases](https://github.com/liukun158959-beep/ZhiXing/releases) 下载 Windows x64 便携 ZIP，完整解压后运行入口程序。v0.2.2 起使用 `ZhiXing.exe`，此前版本使用 `DeskCompanion.exe`。无需自行安装 Python、Atlas、Node 或 Rust；需要 Windows 10/11 x64 和 WebView2 Runtime。首次使用按引导填写模型信息。完整步骤、可选功能、备份与升级见 [使用说明](docs/GETTING_STARTED.md)。
+
+项目原名 DeskCompanion。更名后仍沿用 `%LOCALAPPDATA%/DeskCompanion` 用户数据目录和原客户端标识，已有配置、聊天、记忆、素材及版本介绍偏好继续使用。源码目录和内部 Python 模块名保持兼容。
 
 Live2D Core 和凯尔希素材不随公开包分发；未配置形象时桌宠窗口显示入口卡片，对话、记忆和笔记仍可使用。知识库检索运行库与权重、飞书 CLI、GitHub CLI、MAA 需按需另外安装。
 
 ## 本机跑（当前 Tauri 客户端）
 
-源码版新增 **飞书 → 在飞书使用桌宠 Agent**，可复用本机 CLI 的应用接入本人私聊，调用模型、工具、技能、知识库和 MCP；长连接设置支持选择应用、更新密钥、自动连接、重连间隔和占用检查。配置与故障恢复见 [飞书 Agent 接入说明](docs/FEISHU_AGENT.md)。此功能尚未包含在 0.2.1 公开包中。
+源码版新增 **飞书 → 在飞书使用知行 Agent**，可复用本机 CLI 的应用接入本人私聊，调用模型、工具、技能、知识库和 MCP；长连接设置支持选择应用、更新密钥、自动连接、重连间隔和占用检查。配置与故障恢复见 [飞书 Agent 接入说明](docs/FEISHU_AGENT.md)。此功能尚未包含在 0.2.1 公开包中。
 
 需要 Windows、Python 3.11+、本机已 `pip install -e` 的 Atlas 源码、以及本机 `gh` / `lark-cli`（看板对应页才会通）。
 

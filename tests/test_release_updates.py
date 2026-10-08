@@ -135,7 +135,7 @@ class NotificationTests(unittest.TestCase):
         def request(url, **kwargs):
             if "bot/v3" in url: return {"bot": {"open_id": "test-bot"}}
             return {"data": {"has_more": False, "items": [{"sender": {"id": "test-bot"}, "msg_type": "interactive",
-                "body": {"content": "DeskCompanion v0.2.20"}}]}}
+                "body": {"content": "ZhiXing v0.2.20"}}]}}
         self.notify.request = request
         self.assertFalse(self.notify.verify_pending(self.release, 1))
         self.notify.request = lambda url, **kw: {"bot": {"open_id": "test-bot"}} if "bot/v3" in url else {

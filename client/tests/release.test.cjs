@@ -72,7 +72,7 @@ test('settings make no startup request, surface failure, allow retry, and render
     calls.push(method);
     if (calls.length === 1) throw Error('offline');
     return { ok: true, latest_version: '0.3.0', status: 'available', notes: '正式说明',
-      release_url: 'https://github.com/liukun158959-beep/DeskCompanion/releases/tag/v0.3.0' };
+      release_url: 'https://github.com/liukun158959-beep/ZhiXing/releases/tag/v0.3.0' };
   });
   let renderer;
   act(() => { renderer = create(React.createElement(ReleaseSettings, { info: { port: 1, token: 'test' }, onShowIntro() {} })); });

@@ -35,7 +35,7 @@ export type Analysis =
 const FENCE = /```maa-rules\s*([\s\S]*?)```/;
 
 export function sourceLabel(source: RuleSource): string {
-  return source === "doc" ? "文档原句" : "桌宠规则";
+  return source === "doc" ? "文档原句" : "知行规则";
 }
 
 export function parseRules(body: string): MaaRule[] {

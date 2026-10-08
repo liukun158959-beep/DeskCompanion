@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DeskCompanion",
+  "productName": "ZhiXing",
   "version": "0.2.2",
   "identifier": "cn.deskcompanion.client",
   "build": {
@@ -26,7 +26,7 @@
       },
       {
         "label": "main",
-        "title": "DeskCompanion",
+        "title": "知行 · ZhiXing",
         "backgroundColor": "#101216",
         "url": "client.html",
         "width": 1180,

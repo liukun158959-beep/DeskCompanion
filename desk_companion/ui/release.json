@@ -2,8 +2,8 @@
   "version": "0.2.2",
   "tag": "v0.2.2",
   "date": "2026-10-08",
-  "title": "凯尔希桌宠 · 这次，升级了！",
-  "summary": "启动即可了解新能力，更新有入口，发布有通知。",
+  "title": "知行 · ZhiXing：从对话，到行动",
+  "summary": "个人 Agent 工作台 · 对话、记忆、任务与协作",
   "image": "release-v0.2.2.png",
   "highlights": [
     {"title": "启动版本介绍", "description": "适配当前皮肤，支持每日只展示一次；新版本当天仍可展示，离线也能查看。"},
