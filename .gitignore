@@ -12,16 +12,23 @@ __pycache__/
 skins/**
 !skins/.gitkeep
 user_state.json
+models.json
+mcp.json
 maa.json
 automation_jobs.json
 arknights_account.json
+raise_roster.json
 memory/
+models/
+gamedata/
 diagnose_out/
 _work/
 pet-ui/out/
 **/live2dcubismcore.js
 # Rust / Tauri 构建产物
 target/
+# Tauri 根据权限与依赖自动生成，构建时重建
+client/src-tauri/gen/
 # Tauri 前端构建产物
 client/dist/
 # 宠物形象与 Live2D Core（原图/Core 不进仓库，本地从 skins/ 与 pet-ui 复制）

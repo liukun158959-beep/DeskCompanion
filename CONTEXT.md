@@ -1,49 +1,26 @@
 # desk-companion
 
-Windows 上常驻的个人助手；桌宠是交互面，Agent 是脑子。第一版只给作者自己用。
+Windows 上常驻的个人助手，作者本机自用。凯尔希桌宠是入口，Atlas 是脑子。不做多用户、安装包分发或插件市场。
 
-## 语言
+## 当前架构
 
-**桌宠（Pet）**:
-常驻桌面的角色窗口（置顶、可拖、可点），是人和助手说话的入口。
-_避免使用_: 监视器, overlay, companion platform
+- 主入口：client/ 的 Tauri 2 + React + TypeScript 客户端，主窗和透明 Live2D 宠物窗。
+- Rust 拉起 desk_companion.local_api.server，绑定本机随机端口；前端通过带进程 token 的 WebSocket 调用白名单 RPC，并接收对话流。
+- Python 的 HeadlessApp 复用 App / BoardWorkbench 数据方法，通过 Atlas 组装模型与业务工具。
+- python -m desk_companion 的 Electron / pywebview 旧入口仍保留。pet-ui/、Windows 窗口辅助模块、旧看板及资源仍有实际引用，不能当成无用文件删除。
 
-**助手（Assistant）**:
-真正执行任务的 Agent，由桌宠转达输入并返回结果。
-_避免使用_: 聊天机器人, Copilot, 编码监视器
+## 已有能力与约束
 
-**第一版（V1）**:
-只在作者本机跑通即成功，不做安装包、不做开源分发、不做多用户。
-_避免使用_: 产品化, Marketplace, 跨平台
+- 多会话对话、模型清单与切换、思考和 token 统计、技能与临时 MCP 工具、飞书整篇文档注入。
+- 当前线程去重后的全部正文参与上下文；超过输入预算才压缩，原文仍留在 memory/chat.jsonl。
+- 跨会话事实由工具或用户写入 memory/facts.json。模型写入必须有当前用户原话作依据，工具没有成功回执不能声称记住。
+- 飞书文档知识库使用本地向量检索和重排。笔记会话与普通对话分开，带来源引用，可导出 Markdown 或飞书文档。
+- 飞书日程和待办、GitHub 状态与路线图、MAA 长任务、森空岛、仓库一览、培养清单和材料缺口。
+- 仓库一览可以展示旧账；刷图与培养缺口必须使用今天的库存。数量由程序计算，不交给模型口算。
+- 失败要说明原因和恢复方式，不编数据、不悄悄换来源。
 
-**像素精灵（Sprite）**:
-V1 的桌宠外观：图片或精灵表，不是 Live2D。形象必须可换成用户自己的素材。
-_避免使用_: Live2D, Cubism, 口型同步
+## 文件和提交
 
-**今日安排（Daily Brief）**:
-V1 要跑通的那一件事：点桌宠说话，用飞书日程和未完成任务回答「今天干什么」。
-_避免使用_: IM 客户端, 编码监视器
+个人配置、凭据、记忆、模型权重、游戏数据、Live2D 素材与生成产物均按 .gitignore 留在本机。历史文档保留为决策记录，阅读时以当前代码和更新的产品条款核对。
 
-**形象包（Skin）**:
-一个 Codex Pet 文件夹：`pet.json` + `spritesheet.webp`（或 png）。8 列 × 9 行，每格 192×208。丢进 skins 即可换角色。
-_避免使用_: 皮肤编辑器, Cubism 模型, 自造精灵格式
-
-**咕嘎（Guga）**:
-V1 默认形象。社区 Codex Pet（作者 CIRCUS），企鹅帽衫 Q 版。素材从 [codex-pet.org/pets/guga](https://codex-pet.org/pets/guga/) 获取，不把原图提交进本仓库。
-_避免使用_: Wimi 内置角色（仓库里没有图）
-
-**气泡对话（Bubble Chat）**:
-点桌宠后在角色旁输入，回车发给 Atlas，回答仍在气泡。只要打字，不要语音。
-_避免使用_: 独立大聊天窗, TTS, ASR
-
-**壳（Shell）**:
-同一 Python 进程：宠物用 Windows 分层窗（逐像素 Alpha），气泡和看板用 pywebview HTML，脑子是 Atlas。
-_避免使用_: Electron sidecar, Tauri, 品红扣图
-
-**今日看板（Daily Board）**:
-独立窗：左侧今天日程时间轴，右侧未完成待办。托盘或右键打开。
-_避免使用_: 控制中心, 设置页
-
-**托盘（Tray）**:
-常驻通知区入口。显示/隐藏宠物、打开看板、退出。关看板不等于退出。
-_避免使用_: 后台服务, 开机安装包
+每项改动对应一个 GitHub issue，提交写 Fixes #编号: 中文说明。，直推 main，不开 PR。验证命令见 README。
