@@ -37,6 +37,7 @@ import { matchRules, parseRules, type Analysis, type MaaRule } from "./maa-rules
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
 import { Markdown, MdLink, openableHref, PlainLinks } from "./Markdown";
 import { DEFAULT_SAMPLING, samplingFromInputs, EFFORTS, type Sampling } from "./sampling";
+import { startupFailed, startupReady, startupStatus } from "./startup";
 import {
   backendInfo,
   rpc,
@@ -385,11 +386,14 @@ export function App() {
 
   async function loadThread(backend: BackendInfo) {
     const data = await rpc<{
+      ok?: boolean;
+      error?: string;
       session_id: string;
       items: ChatItem[];
       sessions: SessionItem[];
       context?: ContextView;
     }>(backend, "load_chat_log");
+    if (data.ok === false) throw new Error(data.error || "会话读取失败。");
     setThread({
       sessionId: data.session_id,
       sessions: data.sessions,
@@ -470,19 +474,26 @@ export function App() {
           ],
         });
       }
+      startupReady();
       return;
     }
+    startupStatus("正在连接本地助手…");
     backendInfo()
       .then(async (backend) => {
         setInfo(backend);
+        startupStatus("正在读取会话…");
         await loadThread(backend);
         await loadNotebooks(backend);
         const models = await rpc<ModelList>(backend, "load_models");
         if (!models.ok) throw new Error(models.error || "模型列表读取失败。");
         setModelItems(models.items);
         setActiveModelId(models.active);
+        startupReady();
       })
-      .catch((err: unknown) => setError(String(err)));
+      .catch((err: unknown) => {
+        setError(String(err));
+        startupFailed(err);
+      });
   }, []);
 
   useEffect(() => {

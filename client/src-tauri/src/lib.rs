@@ -34,8 +34,17 @@ fn set_hit_regions(regions: tauri::State<HitRegions>, rects: Vec<Rect>) {
 }
 
 #[tauri::command]
-fn backend_info(info: tauri::State<BackendInfo>) -> BackendInfo {
-    info.inner().clone()
+async fn backend_info(info: tauri::State<'_, BackendInfo>) -> Result<BackendInfo, String> {
+    let backend = info.inner().clone();
+    let port = backend.port;
+    // 窗口先打开并显示启动页，健康检查在后台等待，不阻塞 UI 线程。
+    let healthy = tauri::async_runtime::spawn_blocking(move || wait_healthy(port))
+        .await
+        .map_err(|err| format!("助手启动检查失败：{err}。请查看启动终端。"))?;
+    if !healthy {
+        return Err("本地助手未能启动。请查看启动终端，确认 Python 与 Atlas 已安装，再重新启动客户端。".into());
+    }
+    Ok(backend)
 }
 
 // 隐藏只是把宠物窗收起，主窗还在，可再唤出。不要关整个进程。
@@ -242,10 +251,6 @@ pub fn run() {
         .current_dir(format!("{server_dir}/.."))
         .spawn()
         .expect("启动 Python 后端失败。恢复：确认 python 在 PATH 且已 pip install -e 本项目");
-
-    if !wait_healthy(port) {
-        panic!("Python 后端健康检查超时。恢复：手动跑 python -m desk_companion.local_api.server 看报错");
-    }
 
     let regions = std::sync::Arc::new(Mutex::new(Vec::<Rect>::new()));
     let regions_for_state = regions.clone();

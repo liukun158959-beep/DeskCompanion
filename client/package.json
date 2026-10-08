@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node --test tests/startup.test.cjs",
     "tauri": "tauri"
   },
   "dependencies": {

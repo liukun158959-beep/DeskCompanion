@@ -4,9 +4,52 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DeskCompanion</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #101216; }
+      .startup { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; overflow: hidden; background: #101216; color: #f4f1ea; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; transition: opacity 220ms ease; }
+      .startup::before { content: ""; position: absolute; inset: -60px; background-image: linear-gradient(#ffd42908 1px, transparent 1px), linear-gradient(90deg, #ffd42908 1px, transparent 1px); background-size: 56px 56px; mask-image: radial-gradient(ellipse at center, black, transparent 70%); animation: startup-grid 16s linear infinite; }
+      .startup-card { position: relative; width: min(440px, calc(100vw - 48px)); text-align: center; }
+      .startup-emblem { position: relative; display: grid; place-items: center; width: 112px; height: 112px; margin: 0 auto 32px; color: #ffd429; }
+      .startup-orbit { position: absolute; inset: 9px; border: 1px solid #ffd42930; transform: rotate(45deg); }
+      .startup-orbit::before, .startup-orbit::after { content: ""; position: absolute; width: 7px; height: 7px; background: #ffd429; box-shadow: 0 0 18px #ffd42966; animation: startup-pulse 2s ease-in-out infinite; }
+      .startup-orbit::before { top: -4px; left: -4px; }
+      .startup-orbit::after { right: -4px; bottom: -4px; animation-delay: 1s; }
+      .startup-core { width: 64px; height: 64px; animation: startup-breathe 3s ease-in-out infinite; }
+      .startup-title { margin: 0; font-size: 25px; font-weight: 600; letter-spacing: 2px; }
+      .startup-caption { margin: 10px 0 30px; color: #92979f; font-size: 13px; letter-spacing: 3px; }
+      .startup-track { height: 2px; width: 180px; margin: 0 auto 20px; overflow: hidden; background: #ffffff12; }
+      .startup-track::after { content: ""; display: block; width: 50%; height: 100%; background: #ffd429; animation: startup-track 1.8s ease-in-out infinite; }
+      .startup-status { margin: 0; color: #c8cbd1; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .startup-retry { margin-top: 20px; border: 1px solid #ffd42955; border-radius: 6px; background: #ffd4290d; color: #ffd429; padding: 9px 20px; cursor: pointer; font: inherit; font-size: 13px; }
+      .startup-retry:focus-visible { outline: 2px solid #ffd429; outline-offset: 4px; }
+      .startup-footer { position: absolute; bottom: 28px; color: #676d76; font-size: 11px; letter-spacing: 2px; }
+      .startup[data-state="error"] .startup-status { color: #ffb4b4; }
+      .startup[data-state="error"] .startup-track::after { animation: none; background: #ff8484; width: 100%; }
+      .startup-exit { opacity: 0; pointer-events: none; }
+      @keyframes startup-grid { to { transform: translate(56px, 56px); } }
+      @keyframes startup-pulse { 50% { opacity: 0.3; } }
+      @keyframes startup-breathe { 50% { opacity: 0.65; transform: scale(0.94); } }
+      @keyframes startup-track { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+      @media (prefers-reduced-motion: reduce) { .startup, .startup *, .startup::before, .startup-track::after, .startup-orbit::before, .startup-orbit::after { animation: none !important; transition: none !important; } }
+    </style>
   </head>
   <body>
+    <div id="startup" class="startup" data-state="loading" role="status" aria-live="polite" aria-label="客户端正在启动">
+      <div class="startup-card">
+        <div class="startup-emblem" aria-hidden="true">
+          <div class="startup-orbit"></div>
+          <svg class="startup-core" viewBox="0 0 64 64" fill="none"><path d="M32 6 55 19v26L32 58 9 45V19L32 6Z" stroke="currentColor" stroke-width="1.5"/><path d="m32 18 12 7v14l-12 7-12-7V25l12-7Z" fill="currentColor" fill-opacity=".12" stroke="currentColor"/><path d="M32 6v12M55 19l-11 6M55 45l-11-6M32 58V46M9 45l11-6M9 19l11 6" stroke="currentColor" stroke-opacity=".5"/></svg>
+        </div>
+        <h1 class="startup-title">DeskCompanion</h1>
+        <p class="startup-caption">凯尔希 · 随时待命</p>
+        <div class="startup-track" aria-hidden="true"></div>
+        <p id="startup-status" class="startup-status">正在载入界面…</p>
+        <button id="startup-retry" class="startup-retry" type="button" hidden>重新加载</button>
+      </div>
+      <div class="startup-footer" aria-hidden="true">DESKCOMPANION</div>
+    </div>
     <div id="root"></div>
+    <script src="/startup.js"></script>
     <script type="module" src="/src/client/main.tsx"></script>
   </body>
 </html>

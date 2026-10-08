@@ -27,6 +27,7 @@
       {
         "label": "main",
         "title": "DeskCompanion",
+        "backgroundColor": "#101216",
         "url": "client.html",
         "width": 1180,
         "height": 760,

@@ -16,6 +16,8 @@ pnpm install
 pnpm tauri dev
 ```
 
+主窗启动时显示动画和当前准备阶段，助手连接、会话读取完成后切入主界面。失败会显示原因和「重新加载」；后端未能启动时按提示检查终端并重启客户端。
+
 Live2D Cubism Core 和形象包不在本仓库。当前客户端的 Core 放到 `client/public/Core/live2dcubismcore.js`，凯尔希形象放到 `client/public/skins/kaltsit/`（包含 `kaltsit.model3.json` 及其引用的素材）。没有这些文件启动会失败并给出路径，不要靠默认形象凑合。
 
 旧入口仍保留：在 `pet-ui` 执行 `npm install`、`npm run build`，回到项目根目录执行 `python -m desk_companion`。旧入口使用 `pet-ui/public/Core/` 和 `skins/`，依然需要 Electron、pywebview 和托盘依赖。
@@ -44,4 +46,4 @@ Live2D Cubism Core 和形象包不在本仓库。当前客户端的 Core 放到 
 
 根目录执行 `python -m unittest discover -s tests -v`，测试在临时目录写样本，不修改个人记忆、账号和模型配置，也不发送飞书消息或启动游戏。
 
-在 `client` 执行 `pnpm exec tsc --noEmit` 和 `pnpm build`，在 `client/src-tauri` 执行 `cargo check --locked`。旧入口在 `pet-ui` 执行 `npm run build`。Tauri 的 `gen/` 是自动生成目录，不进 Git。
+在 `client` 执行 `pnpm test`、`pnpm exec tsc --noEmit` 和 `pnpm build`，在 `client/src-tauri` 执行 `cargo check --locked`。旧入口在 `pet-ui` 执行 `npm run build`。Tauri 的 `gen/` 是自动生成目录，不进 Git。
