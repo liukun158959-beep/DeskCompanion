@@ -46,8 +46,26 @@ def require_today_inventory() -> dict:
     """只读账本。depot_sync 必须是本机今天。"""
     path = account_path()
     data = _read_account(path)
-    sync_raw = data.get("depot_sync")
-    _require_local_today(sync_raw, path)
+    _require_local_today(data.get("depot_sync"), path)
+    return _checked_inventory(data, path)
+
+
+def read_saved_inventory() -> dict:
+    """只读账本库存。不要求 depot_sync 是今天。"""
+    path = account_path()
+    return _checked_inventory(_read_account(path), path)
+
+
+def describe_depot_sync(sync_raw) -> tuple[str, str, bool]:
+    """返回原始时间、本机日历日、是否今天。缺字段或解析失败则抛。"""
+    path = account_path()
+    when = _parse_sync_time(sync_raw, path, field="depot_sync", how="先开一次清日常。")
+    local_day = when.astimezone().date()
+    today = datetime.now().astimezone().date()
+    return sync_raw.strip(), local_day.isoformat(), local_day == today
+
+
+def _checked_inventory(data: dict, path: Path) -> dict:
     inventory = data.get("inventory")
     if not isinstance(inventory, dict):
         raise RuntimeError(

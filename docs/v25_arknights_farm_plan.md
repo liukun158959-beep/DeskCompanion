@@ -251,3 +251,44 @@ gitignore，不进 `user_state`。必填：`monthly_card`、`potions`、`invento
 4. 作者会填 `standing` 本周玉和本月增补。验证：缺字段失败后是否去填。
 5. 企鹅对 PR/CA/AP/主题曲有样本。新开活动第一天掉落不足必须降级。
 6. 版本日 / 商店关闭日 / 保全 16 日节点不编造。
+
+## 8. 材料总账（点名清单，不是今天刷什么）
+
+否决：爬 PRTS、Chroma、把缺口交给模型加总。账用官方游戏数据 JSON，代码相减。
+
+数据是 `Kengxxiao/ArknightsGameData` 的 `zh_CN/gamedata/excel/` 三张表：`item_table.json`、`character_table.json`、`building_data.json`。落到 gitignore 的 `gamedata/`。下载失败就停，不换数据源。
+
+在 `desk-companion` 目录：
+
+```
+python -m desk_companion.material_ledger fetch
+python -m desk_companion.material_ledger catalog 近卫芯片
+python -m desk_companion.material_ledger cost 银灰 精一
+python -m desk_companion.material_ledger gap 银灰:精一
+```
+
+1. `catalog`：编号、中文名、阶级、加工站或制造站配方。
+2. `cost`：只算升到这一档的 `evolveCost`。精一是 `phases[1]`，精二是 `phases[2]`。不含技能升级、专精、模组。本职业芯片名与 `farm_plan.CHIP_ITEMS` 一致。
+3. `gap`：点名清单先加总，再减今天的仓库。没有清单就失败。仓不是今天就失败，并让用户先清日常。仓库没写出的材料按 0，但要标明「未记录」。
+
+本刀不接对话、不做活动商店、不做企鹅次数。六星精一芯片个数以表里的 `evolveCost` 为准，不在代码里写死。这张表不含龙门币。三星精一的消耗是空的，命令会失败并说明没有晋升消耗。
+
+### 8.1 仓库一览
+
+看板「仓库」紧挨清日常。打开后按芯片、芯片组、双芯片、精英材料（`iconId` 以 `MTL_SL_` 开头）、技巧概要、作战记录、货币、其余分组，每格是 MAA 图标、名字、阶级和数量。图标读 `{MAA}/resource/template/items/`，文件名来自同一份 `item_index.json`。不在打开时查 PRTS。
+
+仓不是今天也列出数量，日期行写明日历日和「不是今天」。缺文件、没有日期、库存格式坏了才整页失败。名字对不上材料表的仍单独成组。MAA 没有这张图时，格子仍有名字和数量，并标出缺图标。这一页不算培养缺口。`gap` 和今天刷什么仍要求仓库是今天。
+
+### 8.2 培养清单
+
+When 博士已经能看见仓库，I want 在看板上点名要养的干员和档位，so I can 看到这些人升到这一档还缺多少，不用每次重打命令。
+
+非目标：不接对话，不算技能升级、专精、模组，不把精一和精二自动累加成「从零到精二」，不做活动商店和企鹅，不从森空岛自动生成该养谁。
+
+清单写在 gitignore 的 `raise_roster.json`，和仓库账本分开。没有文件就是空清单。同一干员同一档重复添加失败。档位只认精一、精二。名字先走材料总账的干员查找，通过才落盘。计算直接调用已有的 `gap`，不另写加法。
+
+看板子导航「培养」在仓库下面。名单始终显示。仓是今天才列出每种材料的需要、仓库、缺口；仓库没写出的标「未记录」并按 0。仓不是今天，或清单为空：名单还在（空清单就没有行），缺口区只有失败句，不出现任何需要、仓库、缺口数字。
+
+Given 清单是银灰精一和陈精一、今天仓库里近卫芯片是 2，When 打开培养，Then 近卫芯片需要 10、仓库 2、缺口 8。
+Given 仓不是今天，When 打开培养，Then 名单仍在，页面上没有缺口数字。
+Given 清单为空，When 打开培养，Then 没有缺口数字，并说明没有点名清单。
