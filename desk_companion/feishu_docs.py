@@ -167,3 +167,70 @@ def _parse_search_hit(item: dict) -> dict | None:
         "url": str(url),
         "token": str(token),
     }
+
+
+def fetch_docx_markdown(doc: str, label: str) -> str:
+    """读一整篇 docx 的 markdown。没有正文就失败，不截断。"""
+    target = (doc or "").strip()
+    title = (label or "").strip() or "（无标题）"
+    if not target or any(ch.isspace() for ch in target):
+        raise RuntimeError(f"《{title}》没有可用的文档地址。")
+    raw = _run_lark(
+        [
+            "docs",
+            "+fetch",
+            "--as",
+            "user",
+            "--doc",
+            target,
+            "--doc-format",
+            "markdown",
+            "--detail",
+            "simple",
+            "--format",
+            "json",
+        ],
+        timeout=60,
+    )
+    return markdown_from_fetch(raw, title)
+
+
+def markdown_from_fetch(raw: str, label: str) -> str:
+    title = (label or "").strip() or "（无标题）"
+    text = (raw or "").strip()
+    start = text.find("{")
+    if start < 0:
+        raise RuntimeError(f"读取《{title}》未返回 JSON。\n{raw}")
+    try:
+        env, _end = json.JSONDecoder().raw_decode(text[start:])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"读取《{title}》未返回 JSON。\n{raw}") from exc
+    if not isinstance(env, dict):
+        raise RuntimeError(f"读取《{title}》根节点不是对象。\n{raw}")
+    if env.get("ok") is False:
+        raise RuntimeError(f"读取《{title}》失败。{AUTH_HINT}\n{raw}")
+    data = env.get("data")
+    if not isinstance(data, dict):
+        raise RuntimeError(f"读取《{title}》成功信封缺少 data。\n{raw}")
+    document = data.get("document")
+    if not isinstance(document, dict):
+        raise RuntimeError(f"读取《{title}》成功信封缺少 document。\n{raw}")
+    content = document.get("content")
+    if type(content) is not str or not content.strip():
+        raise RuntimeError(f"《{title}》没有正文。")
+    return content
+
+
+def doc_turn_block(docs: list) -> str:
+    """点名文档的正文。只拼进发给模型的这一轮，不写入对话记录。"""
+    if type(docs) is not list or not docs:
+        raise RuntimeError("飞书文档点选必须是非空列表。")
+    parts = ["【文档正文】"]
+    for item in docs:
+        if not isinstance(item, dict):
+            raise RuntimeError("飞书文档点选的每一项必须是对象。")
+        body = fetch_docx_markdown(str(item.get("id") or ""), str(item.get("label") or ""))
+        title = str(item.get("label") or "").strip() or "（无标题）"
+        parts.append(f"# {title}\n{body}")
+    parts.append("以上就是飞书文档正文。只根据正文回答，不要编文档里没有的内容。")
+    return "\n\n".join(parts)

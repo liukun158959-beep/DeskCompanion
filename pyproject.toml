@@ -9,6 +9,8 @@ dependencies = [
     "pywin32>=306",
     "pywebview>=5.0",
     "pystray>=0.19",
+    "huggingface_hub>=0.23",
+    "sentence-transformers>=3.0",
 ]
 
 [build-system]
