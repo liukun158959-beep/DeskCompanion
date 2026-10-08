@@ -29,6 +29,7 @@ RPC_METHODS = frozenset({
     "load_usage", "load_chat_log", "load_memory", "compress_context",
     "add_fact", "update_fact", "delete_fact", "delete_memory_turn",
     "load_feishu", "feishu_login", "feishu_logout",
+    "load_feishu_agent", "start_feishu_agent", "stop_feishu_agent",
     "load_maa", "load_depot", "load_raise", "add_raise", "remove_raise",
     "load_github", "load_skland", "sync_skland",
     "save_maa_paths", "save_maa_option",
@@ -138,7 +139,12 @@ def _dispatch(method: str, args: dict) -> dict:
     if fn is None:
         return {"ok": False, "error": f"Bridge 无此方法：{method}"}
     try:
-        result = fn(**args) if args else fn()
+        if method in {"load_feishu_agent", "start_feishu_agent", "stop_feishu_agent"}:
+            result = fn(**args) if args else fn()
+        else:
+            # 飞书与桌面共享 Agent；数据方法不能读到临时切换中的飞书线程。
+            with HOST.turn_lock:
+                result = fn(**args) if args else fn()
         return {"ok": True, "result": result}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -199,17 +205,18 @@ async def _handle_chat(ws, msg: dict) -> None:
                     ("knowledge", json.dumps(payload, ensure_ascii=False)),
                 )
 
-            answer = HOST.run_chat(
-                str(msg.get("text", "")),
-                msg.get("chips"),
-                delta_sink,
-                status_sink,
-                sampling,
-                think_sink,
-                str(msg.get("model_id") or ""),
-                bool(msg.get("knowledge")),
-                knowledge_sink,
-            )
+            with HOST.turn_lock:
+                answer = HOST.run_chat(
+                    str(msg.get("text", "")),
+                    msg.get("chips"),
+                    delta_sink,
+                    status_sink,
+                    sampling,
+                    think_sink,
+                    str(msg.get("model_id") or ""),
+                    bool(msg.get("knowledge")),
+                    knowledge_sink,
+                )
             loop.call_soon_threadsafe(queue.put_nowait, ("done", answer))
         except Exception as exc:
             loop.call_soon_threadsafe(queue.put_nowait, ("error", f"{type(exc).__name__}: {exc}"))
@@ -239,14 +246,15 @@ async def _handle_notebook(ws, msg: dict) -> None:
 
     def run() -> None:
         try:
-            found = HOST.run_notebook(
-                str(msg.get("session_id") or ""),
-                str(msg.get("text") or ""),
-                msg.get("doc_ids") if isinstance(msg.get("doc_ids"), list) else [],
-                sampling,
-                delta_sink,
-                status_sink,
-            )
+            with HOST.turn_lock:
+                found = HOST.run_notebook(
+                    str(msg.get("session_id") or ""),
+                    str(msg.get("text") or ""),
+                    msg.get("doc_ids") if isinstance(msg.get("doc_ids"), list) else [],
+                    sampling,
+                    delta_sink,
+                    status_sink,
+                )
             loop.call_soon_threadsafe(
                 queue.put_nowait,
                 ("done", json.dumps(found, ensure_ascii=False)),
@@ -270,10 +278,13 @@ async def main() -> None:
     args = parser.parse_args()
     TOKEN = args.token
     HOST = HeadlessApp()
-
-    async with serve(_handler, "127.0.0.1", args.port, process_request=_health):
-        print(f"local_api ready on 127.0.0.1:{args.port}", flush=True)
-        await asyncio.Future()
+    asyncio.create_task(asyncio.to_thread(HOST.feishu_agent.autostart))
+    try:
+        async with serve(_handler, "127.0.0.1", args.port, process_request=_health):
+            print(f"local_api ready on 127.0.0.1:{args.port}", flush=True)
+            await asyncio.Future()
+    finally:
+        await asyncio.to_thread(HOST.feishu_agent.stop, False)
 
 
 if __name__ == "__main__":

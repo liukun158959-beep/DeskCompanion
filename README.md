@@ -12,6 +12,8 @@ Live2D Core 和凯尔希素材不随公开包分发；未配置形象时桌宠�
 
 ## 本机跑（当前 Tauri 客户端）
 
+源码版新增 **飞书 → 在飞书使用桌宠 Agent**，可复用本机 CLI 的应用接入本人私聊，调用模型、工具、技能、知识库和 MCP。配置与故障恢复见 [飞书 Agent 接入说明](docs/FEISHU_AGENT.md)。此功能尚未包含在 0.2.1 公开包中。
+
 需要 Windows、Python 3.11+、本机已 `pip install -e` 的 Atlas 源码、以及本机 `gh` / `lark-cli`（看板对应页才会通）。
 
 ```powershell

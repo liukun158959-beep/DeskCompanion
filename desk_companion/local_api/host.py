@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import time
+import threading
 import uuid
 from typing import Callable
 
@@ -22,6 +23,9 @@ class HeadlessApp(App):
 
     def __init__(self) -> None:
         super().__init__(skin_id="", headless=True)
+        self.turn_lock = threading.RLock()
+        from ..feishu_agent import FeishuAgent
+        self.feishu_agent = FeishuAgent(self)
         # 当前 WS 流式回调，send_* 期间由 server 设置；None 表示无活跃流
         self._delta_sink: Callable[[str], None] | None = None
         self._status_sink: Callable[[str], None] | None = None
@@ -37,6 +41,22 @@ class HeadlessApp(App):
     def on_stream_status(self, text: str) -> None:
         if self._status_sink is not None:
             self._status_sink(text)
+
+    def run_channel_chat(self, text: str, session_id: str, chips: dict, knowledge: bool = False) -> str:
+        """飞书有独立历史，桌面选中的线程在本轮结束后恢复。"""
+        from ..sampling import parse_sampling
+        with self.turn_lock:
+            previous = self.state.session_id
+            self.state.session_id = session_id
+            try:
+                return self.run_chat(text, chips, lambda _: None, lambda _: None,
+                                     parse_sampling({"reasoning_effort": "low", "temperature": .5, "top_p": 1}),
+                                     lambda _: None, knowledge=knowledge)
+            finally:
+                self.state.session_id = previous
+                self.state.save()
+                if self.agent is not None:
+                    self.agent.memory.clear()
 
     def run_chat(
         self,

@@ -23,6 +23,15 @@ class Bridge:
         log(f"pet_load {'ready' if ready else 'error'}: {message[:2000]}")
         return {"ok": True}
 
+    def load_feishu_agent(self) -> dict:
+        return self._host.feishu_agent.status()
+
+    def start_feishu_agent(self) -> dict:
+        return self._host.feishu_agent.enable()
+
+    def stop_feishu_agent(self) -> dict:
+        return self._host.feishu_agent.stop()
+
     def send_chat(self, text: str) -> None:
         self._host.ui(lambda: self._host.send_chat(text))
 
