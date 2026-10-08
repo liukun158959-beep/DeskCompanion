@@ -21,7 +21,7 @@ from .host import HeadlessApp
 # 白名单：bridge 上可无头调用的数据方法。窗口/UI 类（close_bubble/fit_card/
 # open_url/ask_today/ask_logs/close_board/send_chat）与流式（send_board_chat）不在此。
 RPC_METHODS = frozenset({
-    "load_onboarding", "complete_onboarding",
+    "load_onboarding", "complete_onboarding", "report_pet_status",
     "load_board", "delete_agenda", "delete_task", "create_agenda", "load_log_errors", "load_skills",
     "load_persona", "save_persona",
     "load_model", "save_model", "test_model",
@@ -73,14 +73,13 @@ def read_pet_asset(request_path: str):
     root = asset_root().resolve()
     target = (root / unquote(relative)).resolve()
     if not target.is_relative_to(root) or not target.is_file() or target.suffix.lower() not in {
-        ".js", ".json", ".png", ".jpg", ".jpeg", ".webp", ".moc3", ".wav", ".mp3", ".ogg"
+        ".js", ".json", ".png", ".jpg", ".jpeg", ".webp", ".moc3", ".wasm", ".wav", ".mp3", ".ogg"
     }:
         raise FileNotFoundError("找不到形象素材。")
     return target
 
 
 def _pet_asset(connection, request_path: str):
-    import mimetypes
     from websockets.asyncio.server import Response
     from websockets.datastructures import Headers
     try:
@@ -91,9 +90,17 @@ def _pet_asset(connection, request_path: str):
         return connection.respond(404, "asset not found\n")
     body = path.read_bytes()
     headers = Headers()
-    headers["Content-Type"] = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    # Windows 注册表可能将 .js 标记成 text/plain；跨源脚本会被浏览器拒绝。
+    # 素材类型固定，不能使用受注册表影响的 mimetypes.guess_type。
+    headers["Content-Type"] = {
+        ".js": "application/javascript; charset=utf-8", ".json": "application/json; charset=utf-8",
+        ".wasm": "application/wasm", ".png": "image/png", ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg", ".webp": "image/webp", ".wav": "audio/wav",
+        ".mp3": "audio/mpeg", ".ogg": "audio/ogg",
+    }.get(path.suffix.lower(), "application/octet-stream")
     headers["Content-Length"] = str(len(body))
     headers["Access-Control-Allow-Origin"] = "*"
+    headers["X-Content-Type-Options"] = "nosniff"
     headers["Cache-Control"] = "no-store"
     return Response(200, "OK", headers, body)
 

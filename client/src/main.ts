@@ -17,8 +17,9 @@ import {
   tapBubble,
 } from "./pet-gesture";
 import { currentMotion, modelBounds, playMotion, startPet } from "./pet-render";
-import { backendInfo, rpc } from "./client/api";
+import { backendInfo, rpc, type BackendInfo } from "./client/api";
 import type { SetupStatus } from "./client/onboarding";
+import { loadCubismCore, petErrorText } from "./pet-assets";
 
 let petAvailable = false;
 const setupCard = document.createElement("button");
@@ -283,10 +284,13 @@ async function main(): Promise<void> {
   setInterval(() => void reportHitRegions(), 500);
 
   const canvas = document.getElementById("stage") as HTMLCanvasElement;
+  let backend: BackendInfo | null = null;
   try {
     let base = "";
+    let corePath = "client/public/Core/live2dcubismcore.js";
     if (isTauri()) {
       const info = await backendInfo();
+      backend = info;
       const setup = await rpc<SetupStatus>(info, "load_onboarding");
       if (!setup.checks.pet) {
         setupCard.textContent = "尚未添加桌宠形象\n点击打开主窗口\n在使用引导中查看素材位置";
@@ -294,20 +298,17 @@ async function main(): Promise<void> {
         return;
       }
       base = `http://127.0.0.1:${info.port}/pet-assets/${info.token}`;
+      corePath = `${setup.assets_dir}/Core/live2dcubismcore.js`;
     }
-    await new Promise<void>((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = `${base}/Core/live2dcubismcore.js`;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Cubism Core 读取失败，请检查素材位置。"));
-      document.head.appendChild(script);
-    });
+    await loadCubismCore(`${base}/Core/live2dcubismcore.js`, corePath);
     await startPet(canvas, `${base}/skins/kaltsit/kaltsit.model3.json`);
     petAvailable = true;
     setupCard.hidden = true;
+    if (backend) void rpc(backend, "report_pet_status", { ready: true, message: "Cubism Core 和形象已加载，待机动作已启动。" }).catch(() => {});
   } catch (err) {
     setupCard.textContent = "桌宠尚未就绪\n点击打开主窗口查看使用引导";
-    showError(`形象加载失败：${String(err)}。请在主窗口的使用引导中查看素材位置。`);
+    showError(petErrorText(err));
+    if (backend) void rpc(backend, "report_pet_status", { ready: false, message: petErrorText(err).replaceAll(backend.token, "[本地凭证]") }).catch(() => {});
   }
   await reportHitRegions();
 }

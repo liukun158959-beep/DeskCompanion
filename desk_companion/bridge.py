@@ -16,6 +16,13 @@ class Bridge:
         from .onboarding import complete
         return complete()
 
+    def report_pet_status(self, ready: bool, message: str = "") -> dict:
+        from .logutil import log
+        if type(ready) is not bool or type(message) is not str:
+            return {"ok": False, "error": "形象状态参数不正确。"}
+        log(f"pet_load {'ready' if ready else 'error'}: {message[:2000]}")
+        return {"ok": True}
+
     def send_chat(self, text: str) -> None:
         self._host.ui(lambda: self._host.send_chat(text))
 
