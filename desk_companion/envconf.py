@@ -53,7 +53,7 @@ def require_llm_env() -> dict[str, str]:
         raise RuntimeError(
             "本项目 .env 缺少 "
             + ", ".join(missing)
-            + "。打开看板「模型」页填写 API 地址、模型名和 Key。"
+            + "。打开主窗「设置」填写 API 地址、模型名和 Key。"
         )
     return {key: data[key] for key in LLM_KEYS}
 
