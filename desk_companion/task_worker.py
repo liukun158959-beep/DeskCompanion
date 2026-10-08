@@ -15,6 +15,10 @@ def main():
 
     # Atlas renderer、第三方库的调试输出不能混入事件协议。
     with contextlib.redirect_stdout(sys.stderr):
+        if request.get("workflow") == "ai_news":
+            from .news import execute
+            execute(request, emit)
+            return
         from atlas.core.plugin import BasePlugin
         from atlas.core.terminator import MaxSteps, Timeout
         from .local_api.host import HeadlessApp

@@ -29,10 +29,13 @@ class Bridge:
     def list_agent_tasks(self, channel: str = "", session: str = "") -> dict:
         return self._host.tasks.list(channel, session)
 
-    def get_agent_task(self, task_id: str) -> dict:
+    def get_agent_task(self, task_id: str, focus: bool = True) -> dict:
         from .memory import list_chat
+        if type(focus) is not bool:
+            raise ValueError("任务焦点须为开关。")
         task = self._host.tasks.get(task_id)
-        self._host._focused_task = task_id
+        if focus:
+            self._host._focused_task = task_id
         return {"ok": True, "task": task, "history": list_chat(task["session"])}
 
     def cancel_agent_task(self, task_id: str) -> dict:
@@ -176,6 +179,22 @@ class Bridge:
 
     def run_automation_job(self, job_id: str) -> dict:
         return self._host.run_automation_job(job_id)
+
+    def load_news(self) -> dict:
+        from .news_controller import snapshot
+        return snapshot()
+
+    def save_news_settings(self, payload: dict) -> dict:
+        from .news import save_settings
+        return save_settings(payload)
+
+    def check_news_targets(self) -> dict:
+        from .news_controller import check
+        return check()
+
+    def run_news(self, publish: bool = False, run_id: str = "", send_group: bool = True) -> dict:
+        from .news_controller import start
+        return start(self._host, publish=publish, run_id=run_id, send_group=send_group)
 
     def close_bubble(self) -> None:
         self._host.ui(self._host.hide_bubble)

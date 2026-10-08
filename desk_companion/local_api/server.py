@@ -49,6 +49,7 @@ RPC_METHODS = frozenset({
     "new_chat_session", "switch_chat_session", "clear_chat",
     "list_automation_jobs", "save_automation_job",
     "delete_automation_job", "run_automation_job",
+    "load_news", "save_news_settings", "check_news_targets", "run_news",
 })
 
 TOKEN = ""
@@ -74,9 +75,33 @@ def _health(connection, request):
         return _depot_icon(connection, request.path)
     if request.path.startswith("/pet-assets/"):
         return _pet_asset(connection, request.path)
+    if request.path.startswith("/news-cover/"):
+        return _news_cover(connection, request.path)
     if request.path.startswith("/ws"):
         return None
     return connection.respond(404, "not found\n")
+
+
+def _news_cover(connection, path):
+    from urllib.parse import parse_qs, urlsplit
+    from websockets.asyncio.server import Response
+    from websockets.datastructures import Headers
+    from ..news import run_path
+    parts = urlsplit(path)
+    token = parse_qs(parts.query).get("token", [""])[0]
+    if not TOKEN or not hmac.compare_digest(token.encode(), TOKEN.encode()):
+        return connection.respond(401, "bad token\n")
+    try:
+        file = run_path(parts.path.removeprefix("/news-cover/")).with_suffix(".png")
+        body = file.read_bytes()
+    except (OSError, ValueError):
+        return connection.respond(404, "cover not found\n")
+    headers = Headers()
+    headers["Content-Type"] = "image/png"
+    headers["Content-Length"] = str(len(body))
+    headers["Cache-Control"] = "no-store"
+    headers["Access-Control-Allow-Origin"] = "*"
+    return Response(200, "OK", headers, body)
 
 
 def read_pet_asset(request_path: str):
@@ -155,6 +180,7 @@ def _dispatch(method: str, args: dict) -> dict:
         return {"ok": False, "error": f"Bridge 无此方法：{method}"}
     try:
         if method in {"list_agent_tasks", "get_agent_task", "cancel_agent_task", "continue_agent_task", "save_agent_task_settings", "load_task_progress",
+                      "load_news", "save_news_settings", "check_news_targets", "run_news",
                       "load_feishu_agent", "start_feishu_agent", "stop_feishu_agent",
                       "list_feishu_agent_profiles", "save_feishu_agent_settings",
                       "update_feishu_agent_credentials", "check_feishu_agent_connection"}:
@@ -294,6 +320,16 @@ async def _handle_notebook(ws, msg: dict) -> None:
             break
 
 
+async def scheduled_jobs(host, shutdown):
+    """无头客户端也驱动本地定时器，不依赖旧宠物窗口 tick。"""
+    while not shutdown.is_set():
+        await asyncio.to_thread(host.automation.tick)
+        try:
+            await asyncio.wait_for(shutdown.wait(), 5)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def main() -> None:
     global TOKEN, HOST, SHUTDOWN
     parser = argparse.ArgumentParser()
@@ -304,11 +340,15 @@ async def main() -> None:
     HOST = HeadlessApp()
     SHUTDOWN = asyncio.Event()
     asyncio.create_task(asyncio.to_thread(HOST.feishu_agent.autostart))
+    scheduler = asyncio.create_task(scheduled_jobs(HOST, SHUTDOWN))
     try:
         async with serve(_handler, "127.0.0.1", args.port, process_request=_health):
             print(f"local_api ready on 127.0.0.1:{args.port}", flush=True)
             await SHUTDOWN.wait()
     finally:
+        SHUTDOWN.set()
+        HOST.automation.stop()
+        await scheduler
         if HOST._tasks is not None:
             HOST._tasks.shutdown()
         await asyncio.to_thread(HOST.feishu_agent.stop, False)

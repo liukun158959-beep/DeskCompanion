@@ -60,7 +60,7 @@ class TaskManager:
             self.cv.notify_all()
         return {"ok": True, "settings": self.settings}
 
-    def submit(self, text, session, channel="desktop", source=None, callback=None, **request):
+    def submit(self, text, session, channel="desktop", source=None, callback=None, task_limits=None, **request):
         if not isinstance(text, str) or not text.strip() or len(text) > 200000:
             raise ValueError("请填写有效问题。")
         if not isinstance(session, str) or not session:
@@ -69,7 +69,10 @@ class TaskManager:
         with self.cv:
             if self.stopped:
                 raise RuntimeError("桌宠正在退出。")
-            request.update(text=text, session_id=session, limits=dict(self.settings))
+            limits = {**self.settings, **(task_limits or {})}
+            if not 0 < limits["call_timeout"] <= limits["task_timeout"] <= 1800:
+                raise ValueError("任务时限不正确。")
+            request.update(text=text, session_id=session, limits=limits)
             request.setdefault("sampling", {"reasoning_effort": "low", "temperature": .5, "top_p": 1})
             with self.db() as db:
                 db.execute("INSERT INTO tasks(id,session,channel,text,request,state,created,source) VALUES(?,?,?,?,?,'queued',?,?)",
