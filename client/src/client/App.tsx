@@ -1,13 +1,21 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button, Card, CardBody, GlitchText, Input } from "reend-components";
 import { BoardPane, shouldReloadBoard, type BoardPayload } from "./board";
 import {
   BOARD_FIXTURE,
   BOARD_NOW,
+  COMPOSER_FIXTURE,
+  DEBUG_CONTEXT,
   DEBUG_FIXTURE,
+  KNOWLEDGE_CATALOG,
+  KNOWLEDGE_FIXTURE,
+  NOTE_FIXTURE,
+  DEPOT_FIXTURE,
+  MEMORY_FIXTURE,
+  RAISE_FIXTURE,
   FEISHU_LOGGED_OUT,
   FEISHU_WAITING,
   MAA_IDLE_FIXTURE,
@@ -19,39 +27,115 @@ import {
   installDeskDebug,
 } from "./debug";
 import { columnItems, MaaPane, type LogPayload, type MaaSnap } from "./maa";
+import { DepotPane, type DepotPayload } from "./depot";
+import { ContextCard, ContextSplit, MemoryPane, modelVerbatim, splitIndex, type ContextView, type MemoryPayload } from "./memory";
+import { KnowledgePane, KnowledgeTraceView, mergeKnowledgePage, type FeishuDoc, type KnowledgePayload } from "./knowledge";
+import { NoteMode, type NotebookPage, type NoteDoc, type NoteSession } from "./note";
+import { RaisePane, type RaisePayload } from "./raise";
 import { FeishuPane, feishuLoggedIn, feishuWaiting, type FeishuSnap } from "./feishu";
 import { matchRules, parseRules, type Analysis, type MaaRule } from "./maa-rules";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
-import { Markdown } from "./Markdown";
+import { Markdown, MdLink, openableHref, PlainLinks } from "./Markdown";
 import { DEFAULT_SAMPLING, samplingFromInputs, EFFORTS, type Sampling } from "./sampling";
 import {
   backendInfo,
   rpc,
   streamChat,
+  streamNotebook,
   type BackendInfo,
   type ChatItem,
   type SessionItem,
 } from "./api";
+import {
+  filterSlash,
+  NEED_REPO,
+  MCP_SEP,
+  SlashMenu,
+  SLASH_PARENTS,
+  slashQuery,
+  stripSlash,
+  type ComposerOptions,
+  type SlashItem,
+  type SlashParent,
+  type SlashSkill,
+  type SlashTool,
+} from "./slash-menu";
 
-type Pane = "chat" | "board" | "maa" | "feishu";
+type SideList = { ok: boolean; error?: string; items: SlashItem[] } | null;
+import {
+  clearStoredBackground,
+  BackgroundCrop,
+  readBackgroundFile,
+  readStoredBackground,
+  MODELS_FIXTURE,
+  PERSONA_FIXTURE,
+  SettingsPane,
+  storeBackground,
+  type ModelEntry,
+  type ModelList,
+  type ModelPublic,
+  type PersonaPublic,
+} from "./settings";
+
+type Pane = "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise";
 
 const debugKind = debugPane();
-const boardDebug = debugKind === "board" || debugKind === "maa" || debugKind === "feishu";
+const boardDebug = debugKind === "board" || debugKind === "maa" || debugKind === "feishu" || debugKind === "depot" || debugKind === "raise";
 
 type Thread = {
   sessionId: string;
   sessions: SessionItem[];
   items: ChatItem[];
+  context: ContextView | null;
 };
 
 export function App() {
   const [dark, setDark] = useState(true);
+  const [storedBg] = useState(() => readStoredBackground());
+  const [bgUrl, setBgUrl] = useState(storedBg.url);
+  const [bgError, setBgError] = useState(storedBg.error);
+  const [cropSrc, setCropSrc] = useState("");
+  const [cropError, setCropError] = useState("");
+  const [modelItems, setModelItems] = useState<ModelEntry[]>(() => (debugKind ? MODELS_FIXTURE.items : []));
+  const [activeModelId, setActiveModelId] = useState(() => (debugKind ? MODELS_FIXTURE.active : ""));
+  const [editingModelId, setEditingModelId] = useState(() => (debugKind ? MODELS_FIXTURE.active : ""));
+  const [modelForm, setModelForm] = useState<ModelPublic | null>(() => {
+    if (!debugKind) return null;
+    const item = MODELS_FIXTURE.items.find((row) => row.id === MODELS_FIXTURE.active);
+    return item ? { ok: true, base_url: item.base_url, model: item.model, has_key: item.has_key } : null;
+  });
+  const [personaForm, setPersonaForm] = useState<PersonaPublic | null>(null);
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsNotice, setSettingsNotice] = useState("");
+  const [personaError, setPersonaError] = useState("");
+  const [personaNotice, setPersonaNotice] = useState("");
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [keyEpoch, setKeyEpoch] = useState(0);
+  const applyBgRef = useRef<(url: string) => void>(() => {});
+  const clearBgRef = useRef<() => void>(() => {});
   const [pane, setPane] = useState<Pane>(
-    debugKind === "maa" ? "maa" : debugKind === "feishu" ? "feishu" : debugKind === "board" ? "board" : "chat",
+    debugKind === "maa"
+      ? "maa"
+      : debugKind === "depot"
+        ? "depot"
+        : debugKind === "raise"
+          ? "raise"
+          : debugKind === "feishu"
+        ? "feishu"
+        : debugKind === "board"
+          ? "board"
+          : debugKind === "settings"
+            ? "settings"
+            : "chat",
   );
   const [info, setInfo] = useState<BackendInfo | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
   const [draft, setDraft] = useState("");
+  const draftRef = useRef("");
+  const historyAt = useRef<number | null>(null);
+  const draftStash = useRef<string | null>(null);
+  const userLinesRef = useRef<string[]>([]);
+  const fillDraftRef = useRef<(text: string) => void>(() => {});
   const [sampling, setSampling] = useState<Sampling>(DEFAULT_SAMPLING);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -61,6 +145,60 @@ export function App() {
   const [boardLoading, setBoardLoading] = useState(false);
   const [statuses, setStatuses] = useState<StatusView[]>(boardDebug ? STATUS_FIXTURE : []);
   const [maa, setMaa] = useState<MaaSnap | null>(debugKind === "maa" ? MAA_IDLE_FIXTURE : null);
+  const [depot, setDepot] = useState<DepotPayload | null>(debugKind === "depot" ? DEPOT_FIXTURE : null);
+  const [depotLoading, setDepotLoading] = useState(false);
+  const [raise, setRaise] = useState<RaisePayload | null>(debugKind === "raise" ? RAISE_FIXTURE : null);
+  const [raiseLoading, setRaiseLoading] = useState(false);
+  const [raiseBusy, setRaiseBusy] = useState(false);
+  const [raiseFormError, setRaiseFormError] = useState("");
+  const [chatFace, setChatFace] = useState<"thread" | "memory" | "knowledge">(
+    debugKind === "memory" ? "memory" : debugKind === "knowledge" ? "knowledge" : "thread",
+  );
+  const [memory, setMemory] = useState<MemoryPayload | null>(debugKind === "memory" ? MEMORY_FIXTURE : null);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryBusy, setMemoryBusy] = useState(false);
+  const [memoryFormError, setMemoryFormError] = useState("");
+  const [knowledge, setKnowledge] = useState<KnowledgePayload | null>(debugKind === "knowledge" ? KNOWLEDGE_FIXTURE : null);
+  const [knowledgeCatalog, setKnowledgeCatalog] = useState<FeishuDoc[]>(debugKind === "knowledge" ? KNOWLEDGE_CATALOG : []);
+  const [knowledgeCatalogError, setKnowledgeCatalogError] = useState("");
+  const [knowledgeBusy, setKnowledgeBusy] = useState(false);
+  const [useKnowledge, setUseKnowledge] = useState(false);
+  const [noteSessionId, setNoteSessionId] = useState<string | null>(debugKind === "note" ? "note-1" : null);
+  const [noteSessions, setNoteSessions] = useState<NoteSession[]>(debugKind === "note" ? NOTE_FIXTURE.sessions : []);
+  const [noteDocs, setNoteDocs] = useState<NoteDoc[]>(debugKind === "note" ? NOTE_FIXTURE.docs : []);
+  const [noteChecked, setNoteChecked] = useState<string[]>(debugKind === "note" ? NOTE_FIXTURE.docs.map((doc) => doc.id) : []);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteStatus, setNoteStatus] = useState("");
+  const [noteError, setNoteError] = useState("");
+  const [noteListError, setNoteListError] = useState("");
+  const [noteSave, setNoteSave] = useState("");
+  const [noteSaveBad, setNoteSaveBad] = useState(false);
+  const [noteDocUrl, setNoteDocUrl] = useState("");
+
+  useEffect(() => {
+    if (debugPane()) return;
+    if (!info || !(knowledge?.downloads || []).some((item) => item.active)) return;
+    let stopped = false;
+    const id = window.setInterval(() => {
+      void rpc<KnowledgePayload>(info, "load_knowledge")
+        .then((page) => {
+          if (stopped) return;
+          if (page.ok === false) {
+            setKnowledge((cur) => ({ ...(cur || {}), error: page.error || "知识库状态没有读出来。" }));
+            return;
+          }
+          setKnowledge((cur) => mergeKnowledgePage(cur, page));
+        })
+        .catch((err) => {
+          if (stopped) return;
+          setKnowledge((cur) => ({ ...(cur || {}), error: String(err) }));
+        });
+    }, 500);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [info, knowledge?.downloads]);
   const [logs, setLogs] = useState<LogPayload | null>(debugKind === "maa" ? MAA_LOG_FIXTURE : null);
   const logsRef = useRef<LogPayload | null>(debugKind === "maa" ? MAA_LOG_FIXTURE : null);
   const [rules, setRules] = useState<MaaRule[] | null>(debugKind === "maa" ? parseRules(MAA_SKILL_RAW) : null);
@@ -94,12 +232,145 @@ export function App() {
   const scroller = useRef<HTMLDivElement>(null);
   const notesRef = useRef<string[]>([]);
   const thinkingRef = useRef("");
+  const [thinkPulse, setThinkPulse] = useState(false);
+  const [slashParent, setSlashParent] = useState<SlashParent>("skill");
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
+  const [repoPicking, setRepoPicking] = useState(false);
+  const [pendingRepoTool, setPendingRepoTool] = useState<SlashTool | null>(null);
+  const [pickedSkills, setPickedSkills] = useState<SlashSkill[]>([]);
+  const [pickedTools, setPickedTools] = useState<SlashTool[]>([]);
+  const [pickedDocs, setPickedDocs] = useState<SlashItem[]>([]);
+  const [pickedMcp, setPickedMcp] = useState<SlashItem[]>([]);
+  const [pickedRepo, setPickedRepo] = useState("");
+  const [composer, setComposer] = useState<ComposerOptions | null>(null);
+  const [composerError, setComposerError] = useState("");
+  const [docCatalog, setDocCatalog] = useState<SideList>(null);
+  const [mcpCatalog, setMcpCatalog] = useState<SideList>(null);
   const debugMode = preview !== null;
+  const shownItems = preview || thread?.items || [];
+  const shownContext = debugMode ? DEBUG_CONTEXT : thread?.context || null;
+  const shownCovered = shownContext?.covered || [];
+  const compressSplit = splitIndex(shownItems, shownCovered);
+  const shownVerbatim = modelVerbatim(shownItems, shownCovered);
+  const slashNeedle = slashQuery(draft);
+  const menuOpen = (slashNeedle !== null && slashDismissed !== draft) || repoPicking;
+  const menuKeyRef = useRef<(ev: KeyboardEvent) => void>(() => {});
+  const slashIndexRef = useRef(0);
+  const catalogGen = useRef(0);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.classList.toggle("light", !dark);
   }, [dark]);
+
+  useEffect(() => {
+    slashIndexRef.current = 0;
+    setSlashIndex(0);
+  }, [slashNeedle, slashParent, repoPicking]);
+
+  useEffect(() => {
+    if (menuOpen) return;
+    setDocCatalog(null);
+    setMcpCatalog(null);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen || (slashParent !== "doc" && slashParent !== "mcp")) return;
+    if (debugMode) {
+      if (!docCatalog) {
+        setDocCatalog({
+          ok: true,
+          items: [
+            { id: "https://example.feishu.cn/docx/doc-token", label: "本周复盘" },
+            { id: "https://example.feishu.cn/docx/doc-token-2", label: "今日总结" },
+          ],
+        });
+      }
+      if (!mcpCatalog) {
+        setMcpCatalog({
+          ok: true,
+          items: [{ id: `demo${MCP_SEP}ping`, label: "demo / ping", description: "看服务是否活着" }],
+        });
+      }
+      return;
+    }
+    if (slashParent === "doc" && docCatalog) return;
+    if (slashParent === "mcp" && mcpCatalog) return;
+    if (!info) {
+      const failed = { ok: false, error: "还没有连上本地后端。恢复：重启客户端。", items: [] };
+      if (slashParent === "doc") setDocCatalog(failed);
+      else setMcpCatalog(failed);
+      return;
+    }
+    const parent = slashParent;
+    const gen = catalogGen.current + 1;
+    catalogGen.current = gen;
+    const method = parent === "doc" ? "list_feishu_docs" : "list_mcp_tools";
+    rpc<{ ok: boolean; error?: string; items: { id?: string; label?: string; title?: string; url?: string; token?: string; description?: string }[] }>(
+      info,
+      method,
+    )
+      .then((data) => {
+        if (catalogGen.current !== gen) return;
+        if (!data.ok) {
+          const failed = { ok: false, error: data.error || "读取失败。", items: [] as SlashItem[] };
+          if (parent === "doc") setDocCatalog(failed);
+          else setMcpCatalog(failed);
+          return;
+        }
+        if (parent === "doc") {
+          setDocCatalog({
+            ok: true,
+            error: data.error,
+            items: (data.items || []).map((row) => ({
+              id: row.url || row.token || "",
+              label: row.title || row.label || "（无标题）",
+            })),
+          });
+          return;
+        }
+        setMcpCatalog({
+          ok: true,
+          error: data.error,
+          items: (data.items || []).map((row) => ({
+            id: row.id || "",
+            label: row.label || "",
+            description: row.description,
+          })),
+        });
+      })
+      .catch((err: unknown) => {
+        if (catalogGen.current !== gen) return;
+        const failed = { ok: false, error: String(err), items: [] as SlashItem[] };
+        if (parent === "doc") setDocCatalog(failed);
+        else setMcpCatalog(failed);
+      });
+  }, [menuOpen, slashParent, debugMode, docCatalog, mcpCatalog, info]);
+
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => menuKeyRef.current(ev);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen || composer || composerError) return;
+    if (debugMode) {
+      setComposer(COMPOSER_FIXTURE);
+      return;
+    }
+    if (!info) {
+      setComposerError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    rpc<ComposerOptions>(info, "load_composer_options")
+      .then((data) => {
+        if (!data.ok) throw new Error(data.error || "菜单读取失败。");
+        setComposer(data);
+      })
+      .catch((err: unknown) => setComposerError(String(err)));
+  }, [menuOpen, composer, composerError, debugMode, info]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -117,12 +388,28 @@ export function App() {
       session_id: string;
       items: ChatItem[];
       sessions: SessionItem[];
+      context?: ContextView;
     }>(backend, "load_chat_log");
     setThread({
       sessionId: data.session_id,
       sessions: data.sessions,
       items: data.items,
+      context: data.context || null,
     });
+  }
+
+  function formFromEntry(item: ModelEntry): ModelPublic {
+    return { ok: true, base_url: item.base_url, model: item.model, has_key: item.has_key };
+  }
+
+  function rememberModels(data: ModelList, editId = "") {
+    setModelItems(data.items);
+    setActiveModelId(data.active);
+    const nextEdit = data.items.some((item) => item.id === editId) ? editId : data.active;
+    setEditingModelId(nextEdit);
+    const item = data.items.find((row) => row.id === nextEdit);
+    setModelForm(item ? formFromEntry(item) : null);
+    setKeyEpoch((n) => n + 1);
   }
 
   useEffect(() => {
@@ -144,26 +431,106 @@ export function App() {
       seedMaaLogs: (next) => seedLogsRef.current(next),
       openFeishu: () => openFeishuRef.current(),
       seedFeishu: (snap) => rememberFeishuRef.current(snap),
+      seedDepot: (payload) => {
+        setPane("depot");
+        setDepot(payload);
+      },
+      seedRaise: (payload) => {
+        setPane("raise");
+        setRaise(payload);
+        setRaiseFormError("");
+      },
+      seedMemory: (payload) => {
+        setPane("chat");
+        setChatFace("memory");
+        setMemory(payload);
+        setMemoryFormError("");
+      },
       shouldReloadBoard,
       setSampling: (effort, temperature, topP) => {
         setSampling(samplingFromInputs(effort, temperature, topP));
       },
+      pulseThinking: setThinkPulse,
+      setGenerating: setBusy,
+      fillDraft: (text) => fillDraftRef.current(text),
+      openSettings: () => setPane("settings"),
+      setBackground: (url) => applyBgRef.current(url),
+      clearBackground: () => clearBgRef.current(),
+      openBackgroundCrop: (url) => openCropRef.current(url),
     });
-    if (debugPane()) return;
+    if (debugPane()) {
+      if (debugPane() === "chat" || debugPane() === "note") {
+        setThread({
+          sessionId: "s-current",
+          items: [],
+          context: DEBUG_CONTEXT,
+          sessions: [
+            { id: "s-current", title: "今天干什么", updated: "", count: 2 },
+            { id: "s-other", title: "另一段", updated: "", count: 1 },
+          ],
+        });
+      }
+      return;
+    }
     backendInfo()
       .then(async (backend) => {
         setInfo(backend);
         await loadThread(backend);
+        await loadNotebooks(backend);
+        const models = await rpc<ModelList>(backend, "load_models");
+        if (!models.ok) throw new Error(models.error || "模型列表读取失败。");
+        setModelItems(models.items);
+        setActiveModelId(models.active);
       })
       .catch((err: unknown) => setError(String(err)));
   }, []);
 
   useEffect(() => {
+    if (pane !== "settings") return;
+    if (debugKind) {
+      setPersonaForm(PERSONA_FIXTURE);
+      setSettingsError("");
+      setPersonaError("");
+      return;
+    }
+    if (!info) {
+      setSettingsError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    let gone = false;
+    void (async () => {
+      try {
+        const data = await rpc<ModelList>(info, "load_models");
+        if (gone) return;
+        if (!data.ok) throw new Error(data.error || "模型列表读取失败。");
+        rememberModels(data);
+        setSettingsError("");
+      } catch (err) {
+        if (!gone) setSettingsError(String(err));
+      }
+      try {
+        const data = await rpc<PersonaPublic>(info, "load_persona");
+        if (gone) return;
+        if (!data.ok) throw new Error(data.error || "系统提示词读取失败。");
+        setPersonaForm(data);
+        setPersonaError("");
+      } catch (err) {
+        if (!gone) setPersonaError(String(err));
+      }
+    })();
+    return () => {
+      gone = true;
+    };
+  }, [pane, info]);
+
+  useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
-  }, [thread?.items, status]);
+  }, [thread?.items, noteSessions, noteSessionId, noteStatus, status]);
 
   async function newSession() {
-    if (!info || busy) return;
+    setNoteSessionId(null);
+    setChatFace("thread");
+    if (!info || busy || debugPane()) return;
     setError("");
     const created = await rpc<{ session_id: string }>(info, "new_chat_session");
     if (!created.session_id) return;
@@ -171,6 +538,9 @@ export function App() {
   }
 
   async function openSession(sessionId: string) {
+    setNoteSessionId(null);
+    setChatFace("thread");
+    if (debugPane()) return;
     if (!info || busy || sessionId === thread?.sessionId) return;
     setError("");
     await rpc(info, "switch_chat_session", { session_id: sessionId });
@@ -178,20 +548,58 @@ export function App() {
   }
 
   function send() {
-    const text = draft.trim();
-    if (!info || !thread || !text || busy) return;
+    if (noteSessionId) {
+      sendNote();
+      return;
+    }
+    const text = stripSlash(draft);
+    const skills = pickedSkills.map((item) => item.id);
+    const cli = pickedTools.map((item) => item.id);
+    const docs = pickedDocs.map((item) => ({ id: item.id, label: item.label }));
+    const mcp = pickedMcp.map((item) => {
+      const cut = item.id.indexOf(MCP_SEP);
+      return {
+        server: cut < 0 ? "" : item.id.slice(0, cut),
+        tool: cut < 0 ? "" : item.id.slice(cut + MCP_SEP.length),
+        label: item.label,
+      };
+    });
+    const needsRepo = pickedTools.some((item) => NEED_REPO.has(item.id));
+    if (busy) return;
+    if (!text && skills.length === 0 && cli.length === 0 && docs.length === 0 && mcp.length === 0) return;
+    if (needsRepo && !pickedRepo) {
+      setError("选了 GitHub 近况或路线图时必须同时选一个已列出的仓库。");
+      return;
+    }
+    if (!activeModelId) {
+      setError("还没有可选模型。打开设置添加一个。");
+      return;
+    }
+    if (!info || !thread) return;
+    const chips = { skills, cli, github: needsRepo ? pickedRepo : "", docs, mcp };
+    historyAt.current = null;
+    draftStash.current = null;
     setDraft("");
+    setPickedSkills([]);
+    setPickedTools([]);
+    setPickedDocs([]);
+    setPickedMcp([]);
+    setPickedRepo("");
+    setRepoPicking(false);
+    setPendingRepoTool(null);
+    setSlashDismissed(null);
     setBusy(true);
     setError("");
-    setStatus("凯尔希思考中…");
+    setStatus("");
     notesRef.current = [];
     thinkingRef.current = "";
     const sent = sampling;
+    const shown = userShown(text, docs);
     setThread({
       ...thread,
-      items: [...thread.items, { role: "user", text }, { role: "pet", text: "" }],
+      items: [...thread.items, { role: "user", text: shown }, { role: "pet", text: "" }],
     });
-    streamChat(info, text, sent, {
+    streamChat(info, text, sent, chips, activeModelId, {
       onStatus: (line) => {
         if (!line) return;
         setStatus("");
@@ -216,6 +624,17 @@ export function App() {
           const last = items[items.length - 1];
           if (!last || last.role !== "pet") return cur;
           items[items.length - 1] = { ...last, thinking };
+          return { ...cur, items };
+        });
+      },
+      onKnowledge: (trace) => {
+        if (!trace) return;
+        setThread((cur) => {
+          if (!cur) return cur;
+          const items = cur.items.slice();
+          const last = items[items.length - 1];
+          if (!last || last.role !== "pet") return cur;
+          items[items.length - 1] = { ...last, knowledge: trace };
           return { ...cur, items };
         });
       },
@@ -267,7 +686,412 @@ export function App() {
         setBusy(false);
         setError(message);
       },
+    }, useKnowledge);
+  }
+
+  function takeNotebook(page: NotebookPage): boolean {
+    if (page.ok === false) {
+      setNoteListError(page.error || "笔记没有打开。");
+      return false;
+    }
+    if (!Array.isArray(page.docs) || !Array.isArray(page.sessions)) {
+      setNoteListError("笔记列表缺字段。恢复：重启客户端后再开笔记。");
+      return false;
+    }
+    setNoteDocs(page.docs);
+    setNoteSessions(page.sessions);
+    setNoteListError("");
+    return true;
+  }
+
+  async function loadNotebooks(backend: BackendInfo) {
+    try {
+      const page = await rpc<NotebookPage>(backend, "load_notebook");
+      takeNotebook(page);
+    } catch (err) {
+      setNoteListError(String(err));
+    }
+  }
+
+  function openNoteSession(id: string) {
+    setChatFace("thread");
+    setPane("chat");
+    setNoteSessionId(id);
+    setNoteListError("");
+    setNoteError("");
+    setNoteSave("");
+    setNoteSaveBad(false);
+    setNoteDocUrl("");
+    setNoteStatus("");
+    setNoteChecked(noteDocs.map((doc) => doc.id));
+  }
+
+  async function newNotebook() {
+    if (busy || noteBusy) {
+      setNoteListError("凯尔希正在说话，等这句说完再开新笔记。");
+      return;
+    }
+    if (debugPane()) {
+      setNoteListError("调试页只看样本，不开新笔记。");
+      return;
+    }
+    if (!info) {
+      setNoteListError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setNoteListError("");
+    try {
+      const page = await rpc<NotebookPage>(info, "new_notebook");
+      if (!takeNotebook(page) || !page.session_id) {
+        if (!page.session_id && page.ok !== false) setNoteListError("新笔记没有 id。恢复：再点一次新笔记。");
+        return;
+      }
+      setChatFace("thread");
+      setPane("chat");
+      setNoteSessionId(page.session_id);
+      setNoteError("");
+      setNoteSave("");
+      setNoteDocUrl("");
+      setNoteChecked((page.docs || []).map((doc) => doc.id));
+    } catch (err) {
+      setNoteListError(String(err));
+    }
+  }
+
+  function patchNote(sessionId: string, mapTurns: (turns: NoteSession["turns"]) => NoteSession["turns"], title?: string) {
+    setNoteSessions((cur) => cur.map((session) => {
+      if (session.id !== sessionId) return session;
+      return { ...session, title: title || session.title, turns: mapTurns(session.turns) };
+    }));
+  }
+
+  function sendNote() {
+    const text = stripSlash(draft).trim();
+    const sessionId = noteSessionId;
+    if (!sessionId || busy || noteBusy || !text) return;
+    if (pickedSkills.length || pickedTools.length || pickedDocs.length || pickedMcp.length || pickedRepo) {
+      setNoteError("笔记只根据勾选的来源回答。去掉这些点选后再问。");
+      return;
+    }
+    if (!noteChecked.length) {
+      setNoteError("先勾选来源再问。");
+      return;
+    }
+    if (debugPane()) {
+      setDraft("");
+      setNoteError("");
+      patchNote(sessionId, (turns) => [...turns, { role: "user", text }]);
+      setNoteError("调试页只看样本，不检索。");
+      return;
+    }
+    if (!info) {
+      setNoteError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    if (!activeModelId) {
+      setNoteError("还没有可选模型。打开设置添加一个。");
+      return;
+    }
+    setDraft("");
+    setNoteError("");
+    setNoteSave("");
+    setNoteDocUrl("");
+    setNoteStatus("正在检索来源");
+    setNoteBusy(true);
+    const current = noteSessions.find((item) => item.id === sessionId);
+    patchNote(
+      sessionId,
+      (turns) => [...turns, { role: "user", text }, { role: "pet", text: "" }],
+      current?.title === "新笔记" ? text.slice(0, 24) : undefined,
+    );
+    let tokens = 0;
+    streamNotebook(info, sessionId, text, noteChecked, sampling, {
+      onStatus: (line) => {
+        if (line) setNoteStatus(line);
+      },
+      onToken: (piece) => {
+        tokens += piece.length;
+        setNoteStatus("");
+        patchNote(sessionId, (turns) => {
+          const next = turns.slice();
+          const last = next[next.length - 1];
+          if (last && last.role === "pet") next[next.length - 1] = { ...last, text: last.text + piece };
+          return next;
+        });
+      },
+      onDone: (payload) => {
+        setNoteBusy(false);
+        setNoteStatus("");
+        patchNote(sessionId, (turns) => {
+          const next = turns.slice();
+          const last = next[next.length - 1];
+          if (last && last.role === "pet") {
+            next[next.length - 1] = { ...last, text: payload.answer || last.text, cites: payload.cites || [] };
+          }
+          return next;
+        });
+      },
+      onError: (message) => {
+        setNoteBusy(false);
+        setNoteStatus("");
+        setNoteError(message);
+        if (tokens) return;
+        patchNote(sessionId, (turns) => {
+          const next = turns.slice();
+          const last = next[next.length - 1];
+          if (last && last.role === "pet" && !last.text) next.pop();
+          return next;
+        });
+      },
     });
+  }
+
+  async function saveNote(index: number) {
+    const sessionId = noteSessionId;
+    const session = noteSessions.find((item) => item.id === sessionId);
+    const turns = session?.turns || [];
+    const turn = turns[index];
+    const question = [...turns.slice(0, index)].reverse().find((item) => item.role === "user")?.text || "";
+    if (!sessionId || !turn || turn.role !== "pet" || !question) {
+      setNoteSaveBad(true);
+      setNoteSave("这条回答对不上问题，没有存成笔记。");
+      return;
+    }
+    if (debugPane()) {
+      setNoteSaveBad(true);
+      setNoteSave("调试页只看样本，不存笔记。");
+      return;
+    }
+    if (!info) {
+      setNoteSaveBad(true);
+      setNoteSave("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setNoteBusy(true);
+    setNoteSaveBad(false);
+    setNoteSave("正在存成笔记");
+    try {
+      const page = await rpc<NotebookPage>(info, "save_notebook_note", {
+        session_id: sessionId,
+        question,
+        answer: turn.text,
+        cites: turn.cites || [],
+      });
+      if (!takeNotebook(page)) {
+        setNoteSaveBad(true);
+        setNoteSave(page.error || "笔记没有存成。");
+        return;
+      }
+      setNoteSaveBad(false);
+      setNoteSave("已存成笔记");
+    } catch (err) {
+      setNoteSaveBad(true);
+      setNoteSave(String(err));
+    } finally {
+      setNoteBusy(false);
+    }
+  }
+
+  async function summarizeNotes(noteIds: string[]) {
+    const sessionId = noteSessionId;
+    if (!sessionId) {
+      setNoteSaveBad(true);
+      setNoteSave("没有打开笔记会话。恢复：从侧边栏重新打开。");
+      return;
+    }
+    if (!noteIds.length) {
+      setNoteSaveBad(true);
+      setNoteSave("先勾选要总结的回答。");
+      return;
+    }
+    if (debugPane()) {
+      setNoteSaveBad(true);
+      setNoteSave("调试页只看样本，不总结。");
+      return;
+    }
+    if (!info) {
+      setNoteSaveBad(true);
+      setNoteSave("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setNoteBusy(true);
+    setNoteSaveBad(false);
+    setNoteDocUrl("");
+    setNoteSave("正在总结勾选的回答");
+    try {
+      const page = await rpc<NotebookPage>(info, "summarize_notebook", {
+        session_id: sessionId,
+        note_ids: noteIds,
+        sampling,
+      });
+      if (Array.isArray(page.docs) && Array.isArray(page.sessions)) {
+        setNoteDocs(page.docs);
+        setNoteSessions(page.sessions);
+        setNoteListError("");
+      }
+      if (page.ok === false) {
+        setNoteSaveBad(true);
+        setNoteSave(page.error || "回答没有总结成文档。");
+        return;
+      }
+      if (!page.path) {
+        setNoteSaveBad(true);
+        setNoteSave("总结没有返回文件路径。恢复：再总结一次。");
+        return;
+      }
+      setNoteDocUrl("");
+      setNoteSaveBad(false);
+      setNoteSave(page.message || "已把勾选的回答总结成一份文档。");
+    } catch (err) {
+      setNoteSaveBad(true);
+      setNoteSave(String(err));
+    } finally {
+      setNoteBusy(false);
+    }
+  }
+
+  async function deleteNote(id: string) {
+    const sessionId = noteSessionId;
+    if (!sessionId) {
+      setNoteSaveBad(true);
+      setNoteSave("没有打开笔记会话。恢复：从侧边栏重新打开。");
+      return;
+    }
+    if (debugPane()) {
+      setNoteSaveBad(true);
+      setNoteSave("调试页只看样本，不删笔记。");
+      return;
+    }
+    if (!info) {
+      setNoteSaveBad(true);
+      setNoteSave("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setNoteBusy(true);
+    try {
+      const page = await rpc<NotebookPage>(info, "delete_notebook_note", { session_id: sessionId, note_id: id });
+      if (!takeNotebook(page)) {
+        setNoteSaveBad(true);
+        setNoteSave(page.error || "笔记没有删掉。");
+        return;
+      }
+      setNoteSaveBad(false);
+      setNoteSave("已删除笔记");
+    } catch (err) {
+      setNoteSaveBad(true);
+      setNoteSave(String(err));
+    } finally {
+      setNoteBusy(false);
+    }
+  }
+
+  async function exportNote(kind: "markdown" | "feishu", id: string) {
+    const sessionId = noteSessionId;
+    if (!sessionId) {
+      setNoteSaveBad(true);
+      setNoteSave("没有打开笔记会话。恢复：从侧边栏重新打开。");
+      return;
+    }
+    if (debugPane()) {
+      setNoteSaveBad(true);
+      setNoteSave(kind === "markdown" ? "调试页只看样本，不生成 Markdown。" : "调试页只看样本，不生成飞书文档。");
+      return;
+    }
+    if (!info) {
+      setNoteSaveBad(true);
+      setNoteSave("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setNoteBusy(true);
+    setNoteSaveBad(false);
+    setNoteDocUrl("");
+    setNoteSave(kind === "markdown" ? "正在生成 Markdown" : "正在生成飞书文档");
+    try {
+      const page = await rpc<NotebookPage>(
+        info,
+        kind === "markdown" ? "export_notebook_markdown" : "export_notebook_feishu",
+        { session_id: sessionId, note_id: id },
+      );
+      if (kind === "markdown" && Array.isArray(page.docs) && Array.isArray(page.sessions)) {
+        setNoteDocs(page.docs);
+        setNoteSessions(page.sessions);
+        setNoteListError("");
+      }
+      if (page.ok === false) {
+        setNoteSaveBad(true);
+        setNoteSave(page.error || "文档没有生成。");
+        return;
+      }
+      if (kind === "feishu" && !page.url) {
+        setNoteSaveBad(true);
+        setNoteSave("飞书文档没有返回链接。恢复：再生成一次。");
+        return;
+      }
+      if (kind === "markdown" && !page.path) {
+        setNoteSaveBad(true);
+        setNoteSave("Markdown 没有返回路径。恢复：再生成一次。");
+        return;
+      }
+      setNoteDocUrl(page.url || "");
+      setNoteSaveBad(false);
+      setNoteSave(page.message || (kind === "markdown" ? "已生成 Markdown，并打开了文件。" : "已生成飞书文档，并打开了链接。"));
+    } catch (err) {
+      setNoteSaveBad(true);
+      setNoteSave(String(err));
+    } finally {
+      setNoteBusy(false);
+    }
+  }
+
+  async function manageNoteFile(action: "open" | "reveal" | "delete", id: string, name: string) {
+    const sessionId = noteSessionId;
+    if (!sessionId) {
+      setNoteSaveBad(true);
+      setNoteSave("没有打开笔记会话。恢复：从侧边栏重新打开。");
+      return;
+    }
+    if (debugPane()) {
+      const line = action === "open"
+        ? "调试页只看样本，不打开文件。"
+        : action === "reveal"
+          ? "调试页只看样本，不打开文件夹。"
+          : "调试页只看样本，不删除文件。";
+      setNoteSaveBad(true);
+      setNoteSave(line);
+      return;
+    }
+    if (!info) {
+      setNoteSaveBad(true);
+      setNoteSave("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    const method = action === "open"
+      ? "open_notebook_file"
+      : action === "reveal"
+        ? "reveal_notebook_file"
+        : "delete_notebook_file";
+    setNoteBusy(true);
+    setNoteSaveBad(false);
+    setNoteSave(action === "delete" ? "正在删除文件" : "正在打开");
+    try {
+      const page = await rpc<NotebookPage>(info, method, { session_id: sessionId, note_id: id, name });
+      if (action === "delete" && Array.isArray(page.docs) && Array.isArray(page.sessions)) {
+        setNoteDocs(page.docs);
+        setNoteSessions(page.sessions);
+      }
+      if (page.ok === false) {
+        setNoteSaveBad(true);
+        setNoteSave(page.error || "文件没有处理成。");
+        return;
+      }
+      setNoteSaveBad(false);
+      setNoteSave(page.message || "已处理这个文件。");
+    } catch (err) {
+      setNoteSaveBad(true);
+      setNoteSave(String(err));
+    } finally {
+      setNoteBusy(false);
+    }
   }
 
   function loadStatuses(backend: BackendInfo) {
@@ -473,6 +1297,258 @@ export function App() {
       setLogs(nextLogs);
     }
     rememberMaa(snap);
+  }
+
+  async function openDepot() {
+    setPane("depot");
+    if (boardClock !== null) {
+      setDepot((cur) => cur || DEPOT_FIXTURE);
+      return;
+    }
+    if (!info) {
+      setDepot({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。" });
+      return;
+    }
+    setDepotLoading(true);
+    try {
+      setDepot(await rpc<DepotPayload>(info, "load_depot"));
+    } catch (err) {
+      const text = String(err);
+      setDepot({
+        ok: false,
+        error: text.includes("load_depot")
+          ? "后端还没有仓库页。恢复：停掉当前客户端，在 desk-companion\\client 里重新运行 pnpm tauri dev。"
+          : text,
+      });
+    } finally {
+      setDepotLoading(false);
+    }
+  }
+
+  function raiseMiss(text: string) {
+    return text.includes("load_raise") || text.includes("add_raise") || text.includes("remove_raise")
+      ? "后端还没有培养清单。恢复：停掉当前客户端，在 desk-companion\\client 里重新运行 pnpm tauri dev。"
+      : text;
+  }
+
+  async function openMemory() {
+    setNoteSessionId(null);
+    setPane("chat");
+    setChatFace("memory");
+    setMemoryFormError("");
+    if (debugPane()) {
+      setMemory((cur) => cur || (debugPane() === "memory" ? MEMORY_FIXTURE : { ok: false, error: "调试页只看样本，不读取事实。", facts: [], items: [] }));
+      return;
+    }
+    if (!info) {
+      setMemory({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。", facts: [], items: [] });
+      return;
+    }
+    setMemoryLoading(true);
+    try {
+      setMemory(await rpc<MemoryPayload>(info, "load_memory"));
+    } catch (err) {
+      setMemory({ ok: false, error: String(err), facts: [], items: [] });
+    } finally {
+      setMemoryLoading(false);
+    }
+  }
+
+  async function openKnowledge() {
+    setNoteSessionId(null);
+    setPane("chat");
+    setChatFace("knowledge");
+    if (debugPane()) {
+      setKnowledge(KNOWLEDGE_FIXTURE);
+      setKnowledgeCatalog(KNOWLEDGE_CATALOG);
+      setKnowledgeCatalogError("");
+      return;
+    }
+    if (!info) {
+      setKnowledge({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。" });
+      return;
+    }
+    setKnowledgeBusy(true);
+    try {
+      const [page, docs] = await Promise.all([
+        rpc<KnowledgePayload>(info, "load_knowledge"),
+        rpc<{ ok?: boolean; error?: string; items?: FeishuDoc[] }>(info, "list_feishu_docs"),
+      ]);
+      setKnowledge(page);
+      if (docs.ok === false) {
+        setKnowledgeCatalog([]);
+        setKnowledgeCatalogError(docs.error || "飞书文档没有列出来。");
+      } else {
+        setKnowledgeCatalog(docs.items || []);
+        setKnowledgeCatalogError("");
+      }
+    } catch (err) {
+      setKnowledge({ ok: false, error: String(err) });
+    } finally {
+      setKnowledgeBusy(false);
+    }
+  }
+
+  async function knowledgeCall(method: string, args: Record<string, unknown> = {}): Promise<{ ok: boolean; error: string }> {
+    if (debugPane()) {
+      const error = "调试页只看样本，不下载、不入库、不检索。";
+      setKnowledge((cur) => ({ ...(cur || KNOWLEDGE_FIXTURE), error }));
+      return { ok: false, error };
+    }
+    if (!info) {
+      const error = "还没有连上本地后端。恢复：重启客户端。";
+      setKnowledge({ ok: false, error });
+      return { ok: false, error };
+    }
+    setKnowledgeBusy(true);
+    try {
+      const page = await rpc<KnowledgePayload>(info, method, args);
+      if (page.ok === false) {
+        const error = page.error || "知识库操作失败。";
+        setKnowledge((cur) => ({ ...(cur || {}), error }));
+        return { ok: false, error };
+      }
+      setKnowledge((cur) => mergeKnowledgePage(cur, { ...page, error: "" }));
+      return { ok: true, error: "" };
+    } catch (err) {
+      const error = String(err);
+      setKnowledge((cur) => ({ ...(cur || {}), ok: false, error }));
+      return { ok: false, error };
+    } finally {
+      setKnowledgeBusy(false);
+    }
+  }
+
+  async function compressContext(): Promise<boolean> {
+    if (debugPane()) {
+      setMemoryFormError("调试页只看样本，不压缩。");
+      return false;
+    }
+    if (!info) {
+      setError("还没有连上本地后端。恢复：重启客户端。");
+      return false;
+    }
+    setMemoryBusy(true);
+    setError("");
+    try {
+      const data = await rpc<MemoryPayload>(info, "compress_context");
+      if (data.ok === false) {
+        setError(data.error || "压缩没有完成。");
+        return false;
+      }
+      setMemory(data);
+      await loadThread(info);
+      return true;
+    } catch (err) {
+      setError(String(err));
+      return false;
+    } finally {
+      setMemoryBusy(false);
+    }
+  }
+
+  async function changeFact(
+    method: "add_fact" | "update_fact" | "delete_fact" | "delete_memory_turn",
+    args: Record<string, unknown>,
+  ): Promise<boolean> {
+    if (debugPane()) {
+      setMemoryFormError("调试页只看样本，不改记忆。");
+      return false;
+    }
+    if (!info) {
+      setMemoryFormError("还没有连上本地后端。恢复：重启客户端。");
+      return false;
+    }
+    setMemoryBusy(true);
+    try {
+      const data = await rpc<MemoryPayload>(info, method, args);
+      if (data.ok === false && !Array.isArray(data.facts)) {
+        setMemoryFormError(data.error || "事实没有改成。");
+        return false;
+      }
+      setMemoryFormError("");
+      setMemory(data);
+      if (method === "delete_memory_turn" && info) {
+        await loadThread(info);
+      }
+      return data.ok !== false;
+    } catch (err) {
+      setMemoryFormError(String(err));
+      return false;
+    } finally {
+      setMemoryBusy(false);
+    }
+  }
+
+  async function openRaise() {
+    setPane("raise");
+    setRaiseFormError("");
+    if (boardClock !== null) {
+      setRaise((cur) => cur || RAISE_FIXTURE);
+      return;
+    }
+    if (!info) {
+      setRaise({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。", roster: [], lines: [] });
+      return;
+    }
+    setRaiseLoading(true);
+    try {
+      setRaise(await rpc<RaisePayload>(info, "load_raise"));
+    } catch (err) {
+      setRaise({ ok: false, error: raiseMiss(String(err)), roster: [], lines: [] });
+    } finally {
+      setRaiseLoading(false);
+    }
+  }
+
+  async function addRaise(operator: string, rank: string) {
+    if (boardClock !== null) {
+      setRaiseFormError("调试页只看样本，不写入清单。");
+      return;
+    }
+    if (!info) {
+      setRaiseFormError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setRaiseBusy(true);
+    try {
+      const data = await rpc<RaisePayload>(info, "add_raise", { operator, rank });
+      if (data.ok === false && !Array.isArray(data.roster)) {
+        setRaiseFormError(data.error || "加入失败。");
+        return;
+      }
+      setRaiseFormError("");
+      setRaise(data);
+    } catch (err) {
+      setRaiseFormError(raiseMiss(String(err)));
+    } finally {
+      setRaiseBusy(false);
+    }
+  }
+
+  async function removeRaise(operator: string, rank: string) {
+    if (boardClock !== null) {
+      setRaiseFormError("调试页只看样本，不写入清单。");
+      return;
+    }
+    if (!info) {
+      setRaiseFormError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setRaiseBusy(true);
+    try {
+      const data = await rpc<RaisePayload>(info, "remove_raise", { operator, rank });
+      if (data.ok === false && !Array.isArray(data.roster)) {
+        setRaiseFormError(data.error || "移除失败。");
+        return;
+      }
+      setRaiseFormError("");
+      setRaise(data);
+    } catch (err) {
+      setRaiseFormError(raiseMiss(String(err)));
+    } finally {
+      setRaiseBusy(false);
+    }
   }
 
   async function openMaa() {
@@ -731,9 +1807,430 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [pane, boardClock, info, feishu]);
 
+  draftRef.current = draft;
+  userLinesRef.current = (preview || thread?.items || [])
+    .filter((item) => item.role === "user" && item.text.trim())
+    .map((item) => item.text);
+  applyBgRef.current = (url) => {
+    const saved = storeBackground(url);
+    if (saved.error) {
+      setBgError(saved.error);
+      return;
+    }
+    setBgUrl(saved.url);
+    setBgError("");
+  };
+  clearBgRef.current = () => {
+    clearStoredBackground();
+    setBgUrl("");
+    setBgError("");
+  };
+
+  const openCropRef = useRef<(url: string) => void>(() => {});
+  openCropRef.current = (url) => {
+    setCropError("");
+    setCropSrc(url);
+  };
+
+  async function pickBackground(file: File) {
+    const read = await readBackgroundFile(file);
+    if (read.error || !read.url) {
+      setBgError(read.error || "这张图打不开。恢复：换一张 png、jpg 或 webp。");
+      return;
+    }
+    setBgError("");
+    openCropRef.current(read.url);
+  }
+
+  function confirmCrop(url: string) {
+    const saved = storeBackground(url);
+    if (saved.error) {
+      setCropError(saved.error);
+      return;
+    }
+    setBgUrl(saved.url);
+    setBgError("");
+    setCropError("");
+    setCropSrc("");
+  }
+
+  function settingsPayload(draft: { base_url: string; model: string; api_key: string }) {
+    const base_url = draft.base_url.trim();
+    const model = draft.model.trim();
+    const api_key = draft.api_key.trim();
+    return { base_url, model, api_key };
+  }
+
+  function editModel(id: string) {
+    const item = modelItems.find((row) => row.id === id);
+    if (!item) return;
+    setEditingModelId(id);
+    setModelForm(formFromEntry(item));
+    setKeyEpoch((n) => n + 1);
+    setSettingsError("");
+    setSettingsNotice("");
+  }
+
+  async function useModel(id: string) {
+    const previous = activeModelId;
+    setActiveModelId(id);
+    if (debugKind) {
+      setSettingsError("");
+      setSettingsNotice("调试样本，未切换磁盘上的模型。");
+      return;
+    }
+    if (!info) {
+      setActiveModelId(previous);
+      setSettingsError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    try {
+      const data = await rpc<ModelList>(info, "use_model", { model_id: id });
+      if (!data.ok) throw new Error(data.error || "切换模型失败。");
+      setModelItems(data.items);
+      setActiveModelId(data.active);
+      setSettingsError("");
+      setSettingsNotice(data.message || "已切换模型。");
+      setError("");
+    } catch (err) {
+      setActiveModelId(previous);
+      setSettingsError(String(err));
+      setError(String(err));
+    }
+  }
+
+  async function deleteModel(id: string) {
+    if (modelItems.length <= 1) {
+      setSettingsNotice("");
+      setSettingsError("至少留一个模型。要换的话直接改这一条。");
+      return;
+    }
+    if (debugKind) {
+      const items = modelItems.filter((row) => row.id !== id);
+      const active = activeModelId === id ? items[0].id : activeModelId;
+      const edit = editingModelId === id ? active : editingModelId;
+      const next = items.find((row) => row.id === edit) || items[0];
+      setModelItems(items);
+      setActiveModelId(active);
+      setEditingModelId(next.id);
+      setModelForm(formFromEntry(next));
+      setKeyEpoch((n) => n + 1);
+      setSettingsError("");
+      setSettingsNotice("调试样本，未删除磁盘上的模型。");
+      return;
+    }
+    if (!info) {
+      setSettingsError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setSettingsBusy(true);
+    setSettingsError("");
+    setSettingsNotice("");
+    try {
+      const data = await rpc<ModelList>(info, "delete_model_entry", { model_id: id });
+      if (!data.ok) throw new Error(data.error || "删除模型失败。");
+      rememberModels(data, data.active);
+      setSettingsNotice(data.message || "模型已删除。");
+    } catch (err) {
+      setSettingsError(String(err));
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function saveSettings(draft: { id: string; base_url: string; model: string; api_key: string }) {
+    const { base_url, model, api_key } = settingsPayload(draft);
+    const sourceId = draft.id || editingModelId;
+    const editing = modelItems.find((row) => row.id === sourceId);
+    if (!base_url) {
+      setSettingsNotice("");
+      setSettingsError("API 地址不能为空。");
+      return;
+    }
+    if (!model) {
+      setSettingsNotice("");
+      setSettingsError("模型名不能为空。");
+      return;
+    }
+    if (!api_key && !editing?.has_key) {
+      setSettingsNotice("");
+      setSettingsError("API Key 不能为空。要沿用已有 Key，先在列表里点一条。");
+      return;
+    }
+    if (debugKind) {
+      const id = draft.id || `local-${Date.now()}`;
+      const nextItem = { id, base_url, model, has_key: true };
+      const items = draft.id
+        ? modelItems.map((row) => (row.id === draft.id ? nextItem : row))
+        : [...modelItems, nextItem];
+      const active = activeModelId || id;
+      setModelItems(items);
+      setActiveModelId(active);
+      setEditingModelId(id);
+      setModelForm({ ok: true, base_url, model, has_key: true });
+      setSettingsError("");
+      setSettingsNotice("调试样本，未写入模型。");
+      setKeyEpoch((n) => n + 1);
+      return;
+    }
+    if (!info) {
+      setSettingsError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setSettingsBusy(true);
+    setSettingsError("");
+    setSettingsNotice("");
+    try {
+      const data = await rpc<ModelList>(info, "save_model_entry", {
+        payload: { id: draft.id, base_url, model, api_key, copy_key_from: draft.id ? "" : sourceId },
+      });
+      if (!data.ok) throw new Error(data.error || "模型保存失败。");
+      const created = data.items.find((row) => !modelItems.some((old) => old.id === row.id));
+      rememberModels(data, draft.id || created?.id || data.active);
+      setSettingsNotice(data.message || "模型已保存。");
+    } catch (err) {
+      setSettingsError(String(err));
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function savePersona(text: string) {
+    const persona = text.trim();
+    if (!persona) {
+      setPersonaNotice("");
+      setPersonaError("系统提示词不能为空。");
+      return;
+    }
+    if (!personaForm) {
+      setPersonaError("系统提示词还没读到。恢复：重新打开设置。");
+      return;
+    }
+    if (debugKind) {
+      setPersonaForm({ ...personaForm, persona });
+      setPersonaError("");
+      setPersonaNotice("调试样本，未写入人设。");
+      return;
+    }
+    if (!info) {
+      setPersonaError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setSettingsBusy(true);
+    setPersonaError("");
+    setPersonaNotice("");
+    try {
+      const data = await rpc<PersonaPublic>(info, "save_persona", {
+        payload: {
+          persona,
+          max_steps: personaForm.max_steps,
+          nudge_enabled: personaForm.nudge_enabled,
+        },
+      });
+      if (!data.ok) throw new Error(data.error || "系统提示词保存失败。");
+      setPersonaForm({ ...personaForm, persona });
+      setPersonaNotice(data.message || "人设已保存。");
+    } catch (err) {
+      setPersonaError(String(err));
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function testSettings(draft: { base_url: string; model: string; api_key: string }) {
+    const { base_url, model, api_key } = settingsPayload(draft);
+    const editing = modelItems.find((row) => row.id === editingModelId);
+    if (!base_url || !model || (!api_key && !editing?.has_key)) {
+      setSettingsNotice("");
+      setSettingsError("测试前先填 API 地址、模型名和 Key。");
+      return;
+    }
+    if (debugKind) {
+      setSettingsError("");
+      setSettingsNotice("调试样本，未测试连通。");
+      return;
+    }
+    if (!info) {
+      setSettingsError("还没有连上本地后端。恢复：重启客户端。");
+      return;
+    }
+    setSettingsBusy(true);
+    setSettingsError("");
+    setSettingsNotice("");
+    try {
+      const data = await rpc<ModelPublic>(info, "test_model", {
+        payload: { id: editingModelId, base_url, model, api_key },
+      });
+      if (!data.ok) throw new Error(data.error || "连通测试失败。");
+      setSettingsNotice(data.message || "连通正常。");
+    } catch (err) {
+      setSettingsError(String(err));
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  fillDraftRef.current = (text) => {
+    historyAt.current = null;
+    draftStash.current = null;
+    setDraft(text);
+  };
+
+  function recallHistory(key: "ArrowUp" | "ArrowDown"): boolean {
+    if (busy) return false;
+    const lines = userLinesRef.current;
+    if (key === "ArrowUp") {
+      if (lines.length === 0) return false;
+      if (historyAt.current === null) {
+        draftStash.current = draftRef.current;
+        historyAt.current = lines.length;
+      }
+      if (historyAt.current <= 0) return true;
+      historyAt.current -= 1;
+      setDraft(lines[historyAt.current]);
+      return true;
+    }
+    if (historyAt.current === null) return false;
+    if (historyAt.current >= lines.length - 1) {
+      historyAt.current = null;
+      setDraft(draftStash.current ?? "");
+      draftStash.current = null;
+      return true;
+    }
+    historyAt.current += 1;
+    setDraft(lines[historyAt.current]);
+    return true;
+  }
+
+  function slashItems(): SlashItem[] {
+    if (!composer) return [];
+    if (repoPicking) return composer.github.ok ? composer.github.items : [];
+    const source =
+      slashParent === "skill"
+        ? composer.skills
+        : slashParent === "tool"
+          ? composer.cli
+          : slashParent === "doc"
+            ? docCatalog?.ok
+              ? docCatalog.items
+              : []
+            : mcpCatalog?.ok
+              ? mcpCatalog.items
+              : [];
+    return filterSlash(source, slashNeedle || "");
+  }
+
+  function pickSlash(id: string) {
+    if (!composer) return;
+    if (repoPicking) {
+      const repo = composer.github.items.find((item) => item.id === id);
+      if (!repo || !pendingRepoTool) return;
+      setPickedTools((prev) => (prev.some((item) => item.id === pendingRepoTool.id) ? prev : [...prev, pendingRepoTool]));
+      setPickedRepo(repo.id);
+      setPendingRepoTool(null);
+      setRepoPicking(false);
+      setDraft(stripSlash(draft));
+      return;
+    }
+    if (slashParent === "skill") {
+      const skill = composer.skills.find((item) => item.id === id);
+      if (!skill) return;
+      setPickedSkills((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, skill]));
+    } else if (slashParent === "doc") {
+      const doc = docCatalog?.items.find((item) => item.id === id);
+      if (!doc) return;
+      setPickedDocs((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, doc]));
+    } else if (slashParent === "mcp") {
+      const tool = mcpCatalog?.items.find((item) => item.id === id);
+      if (!tool) return;
+      setPickedMcp((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, tool]));
+    } else {
+      const tool = composer.cli.find((item) => item.id === id);
+      if (!tool) return;
+      if (NEED_REPO.has(tool.id)) {
+        setPickedTools((prev) => (prev.some((item) => item.id === tool.id) ? prev : [...prev, tool]));
+        setPendingRepoTool(tool);
+        setRepoPicking(true);
+        setDraft(stripSlash(draft));
+        return;
+      }
+      setPickedTools((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, tool]));
+    }
+    setDraft(stripSlash(draft));
+  }
+
+  function removeTool(id: string) {
+    const next = pickedTools.filter((item) => item.id !== id);
+    setPickedTools(next);
+    if (!next.some((item) => NEED_REPO.has(item.id))) setPickedRepo("");
+  }
+
+  const menuItems = slashItems();
+  const menuActive = menuItems.length ? Math.min(slashIndex, menuItems.length - 1) : 0;
+  const sideCatalog = slashParent === "doc" ? docCatalog : slashParent === "mcp" ? mcpCatalog : null;
+  const menuError =
+    composerError ||
+    (repoPicking && composer && !composer.github.ok ? composer.github.error || "仓库列表读取失败。" : "") ||
+    (!repoPicking && sideCatalog && !sideCatalog.ok ? sideCatalog.error || "读取失败。" : "") ||
+    (!repoPicking && sideCatalog?.ok && sideCatalog.error ? sideCatalog.error : "");
+  const menuLoading =
+    (!composer && !composerError) ||
+    (!repoPicking && (slashParent === "doc" || slashParent === "mcp") && !sideCatalog);
+
+  menuKeyRef.current = (ev: KeyboardEvent) => {
+    if (ev.defaultPrevented) return;
+    if (!menuOpen) return;
+    const target = ev.target as HTMLElement | null;
+    if (!target) return;
+    const draftForm = document.querySelector("[data-chat-draft]");
+    const inDraft = !!draftForm && draftForm.contains(target);
+    const inMenu = !!target.closest("[data-slash-menu]");
+    if (!inDraft && !inMenu) return;
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      setRepoPicking(false);
+      setPendingRepoTool(null);
+      setSlashDismissed(draft);
+      return;
+    }
+    if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+      ev.preventDefault();
+      setRepoPicking(false);
+      setPendingRepoTool(null);
+      const ids = SLASH_PARENTS.map((item) => item.id);
+      const at = Math.max(0, ids.indexOf(slashParent));
+      const step = ev.key === "ArrowLeft" ? -1 : 1;
+      setSlashParent(ids[(at + step + ids.length) % ids.length]);
+      return;
+    }
+    if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+      ev.preventDefault();
+      if (!menuItems.length) return;
+      const last = menuItems.length - 1;
+      const cur = Math.min(slashIndexRef.current, last);
+      const next = ev.key === "ArrowUp" ? (cur <= 0 ? 0 : cur - 1) : cur >= last ? cur : cur + 1;
+      slashIndexRef.current = next;
+      setSlashIndex(next);
+      return;
+    }
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      if (!menuItems.length) return;
+      pickSlash(menuItems[Math.min(slashIndexRef.current, menuItems.length - 1)].id);
+    }
+  };
+
   return (
     <div className="relative flex h-full overflow-hidden bg-background text-foreground" data-pane={pane}>
-      <div className="desk-bg" data-bg-motion aria-hidden="true" />
+      <div
+        className="desk-bg"
+        data-bg-motion
+        data-bg-photo={bgUrl ? "1" : "0"}
+        style={bgUrl ? ({ "--desk-bg-image": `url("${bgUrl}")` } as CSSProperties) : undefined}
+        aria-hidden="true"
+      >
+        {bgUrl ? <div className="desk-bg-scrim" data-bg-scrim /> : null}
+      </div>
       <aside className="relative z-10 corner-brackets flex w-64 shrink-0 flex-col border-r border-border bg-card/80 backdrop-blur-md">
         <div className="px-4 py-5">
           <div className="ef-overline">DESK COMPANION</div>
@@ -741,68 +2238,256 @@ export function App() {
             凯尔希
           </GlitchText>
         </div>
-        <nav className="flex gap-2 px-3">
-          <NavButton active={pane === "chat"} onClick={() => setPane("chat")} label="对话" />
-          <NavButton
-            active={pane === "board" || pane === "maa" || pane === "feishu"}
-            onClick={() => void openBoard()}
+        <nav className="mt-2 flex flex-col gap-1 px-2" data-side-nav>
+          <SideNav
+            icon="chat"
+            label="对话"
+            active={pane === "chat" && chatFace === "thread" && !noteSessionId}
+            onClick={() => {
+              setNoteSessionId(null);
+              setChatFace("thread");
+              setPane("chat");
+            }}
+          />
+          <SideNav
+            icon="memory"
+            label="记忆"
+            sub="memory"
+            active={pane === "chat" && chatFace === "memory"}
+            onClick={() => void openMemory()}
+          />
+          <SideNav
+            icon="knowledge"
+            label="知识库"
+            sub="knowledge"
+            active={pane === "chat" && chatFace === "knowledge"}
+            onClick={() => void openKnowledge()}
+          />
+          <SideNav
+            icon="board"
             label="看板"
+            active={pane === "board" || pane === "maa" || pane === "depot" || pane === "raise" || pane === "feishu"}
+            onClick={() => void openBoard()}
+          />
+          <SideNav icon="settings" label="设置" active={pane === "settings"} onClick={() => setPane("settings")} />
+          <SideNav
+            icon="pet"
+            label="唤出桌宠"
+            onClick={() => {
+              invoke("set_pet_visible", { visible: true }).catch((err: unknown) => {
+                setError(`唤出桌宠失败：${String(err)}。恢复：重启客户端。`);
+              });
+            }}
           />
         </nav>
         {pane === "chat" ? (
           <>
             <div className="mt-4 flex items-center justify-between px-4 text-xs text-muted-foreground">
               <span>会话</span>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void newSession()}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => { setChatFace("thread"); void newSession(); }}>
                 新对话
               </Button>
             </div>
-            <div className="mt-2 flex-1 overflow-y-auto px-2" data-nav="sessions">
-              {(thread?.sessions || []).map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  onClick={() => void openSession(session.id)}
-                  className={`mb-1 w-full px-3 py-2 text-left text-sm transition-colors duration-200 ${
-                    session.id === thread?.sessionId
-                      ? "bg-primary/15 text-primary"
-                      : "text-muted-foreground hover:bg-secondary"
-                  }`}
-                >
-                  <div className="truncate">{session.title || "未命名对话"}</div>
-                </button>
-              ))}
+            <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-2" data-nav="sessions">
+              {(thread?.sessions || []).map((session) => {
+                const generating = busy && session.id === thread?.sessionId;
+                const selected = !noteSessionId && session.id === thread?.sessionId;
+                return (
+                  <button
+                    key={session.id}
+                    type="button"
+                    data-session={session.id}
+                    data-session-generating={generating ? "1" : "0"}
+                    onClick={() => {
+                      setChatFace("thread");
+                      void openSession(session.id);
+                    }}
+                    className={`mb-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm transition-colors duration-200 ${
+                      selected
+                        ? "bg-primary/15 text-primary"
+                        : "text-muted-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1 truncate">{session.title || "未命名对话"}</div>
+                    {generating ? <ThinkDots /> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex items-center justify-between px-4 text-xs text-muted-foreground">
+              <span>笔记</span>
+              <Button type="button" variant="ghost" size="sm" data-new-notebook="" onClick={() => void newNotebook()}>
+                新笔记
+              </Button>
+            </div>
+            {noteListError ? <p data-notebook-error="" className="px-4 py-1 text-xs text-destructive">{noteListError}</p> : null}
+            <div className="mt-2 max-h-40 overflow-y-auto px-2 pb-3" data-nav="notebooks">
+              {noteSessions.map((session) => {
+                const selected = session.id === noteSessionId;
+                return (
+                  <button
+                    key={session.id}
+                    type="button"
+                    data-notebook={session.id}
+                    data-active={selected ? "1" : "0"}
+                    onClick={() => openNoteSession(session.id)}
+                    className={`mb-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm transition-colors duration-200 ${
+                      selected ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1 truncate">{session.title}</div>
+                    {noteBusy && selected ? <ThinkDots /> : null}
+                  </button>
+                );
+              })}
             </div>
           </>
+        ) : pane === "settings" ? (
+          <div className="flex-1" />
         ) : (
           <div className="mt-4 flex-1 overflow-y-auto px-2" data-nav="board">
-            <SideLink label="今日" sub="today" selected={pane === "board"} onClick={() => openBoard()} />
-            <SideLink label="清日常" sub="maa" selected={pane === "maa"} onClick={() => void openMaa()} />
-            <SideLink label="飞书" sub="feishu" selected={pane === "feishu"} onClick={() => void openFeishu()} />
+            <SideLink icon="today" label="今日" sub="today" selected={pane === "board"} onClick={() => openBoard()} />
+            <SideLink icon="maa" label="清日常" sub="maa" selected={pane === "maa"} onClick={() => void openMaa()} />
+            <SideLink icon="depot" label="仓库" sub="depot" selected={pane === "depot"} onClick={() => void openDepot()} />
+            <SideLink icon="raise" label="培养" sub="raise" selected={pane === "raise"} onClick={() => void openRaise()} />
+            <SideLink icon="feishu" label="飞书" sub="feishu" selected={pane === "feishu"} onClick={() => void openFeishu()} />
           </div>
         )}
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="mx-3 mt-3"
-          onClick={() => {
-            invoke("set_pet_visible", { visible: true }).catch((err: unknown) => {
-              setError(`唤出桌宠失败：${String(err)}。恢复：重启客户端。`);
-            });
-          }}
-        >
-          唤出桌宠
-        </Button>
-        <Button type="button" variant="ghost" size="sm" className="m-3" onClick={() => setDark((v) => !v)}>
-          {dark ? "浅色" : "深色"}
-        </Button>
       </aside>
       <main className="relative z-10 flex min-w-0 flex-1 flex-col">
         <AnimatePresence mode="wait">
-          {pane === "chat" ? (
+          {pane === "chat" && chatFace === "knowledge" ? (
+            <motion.section
+              key="knowledge"
+              data-chat-face="knowledge"
+              className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <KnowledgePane
+                data={knowledge}
+                catalog={knowledgeCatalog}
+                catalogError={knowledgeCatalogError}
+                busy={knowledgeBusy}
+                onDownload={(repo) => knowledgeCall("download_knowledge", { repo }).then((result) => result.ok)}
+                onDeleteModel={(repo) => knowledgeCall("delete_model", { repo }).then((result) => result.ok)}
+                onSave={(payload) => knowledgeCall("save_knowledge", { payload }).then((result) => result.ok)}
+                onAdd={(doc_id, label) => knowledgeCall("add_knowledge", { doc_id, label })}
+                onDelete={(doc_id) => knowledgeCall("delete_knowledge", { doc_id })}
+                onRebuild={() => knowledgeCall("rebuild_knowledge").then((result) => result.ok)}
+                onAsk={async (text) => {
+                  if (debugPane()) {
+                    setKnowledge((cur) => ({ ...(cur || KNOWLEDGE_FIXTURE), error: "调试页只看样本，不检索。" }));
+                    return false;
+                  }
+                  if (!info) return false;
+                  setKnowledgeBusy(true);
+                  try {
+                    const page = await rpc<{ ok?: boolean; error?: string; trace?: KnowledgePayload["trace"] }>(info, "ask_knowledge", { text });
+                    if (page.ok === false) {
+                      setKnowledge((cur) => ({ ...(cur || {}), ok: true, error: page.error }));
+                      return false;
+                    }
+                    setKnowledge((cur) => ({ ...(cur || {}), ok: true, error: "", trace: page.trace }));
+                    return true;
+                  } catch (err) {
+                    setKnowledge((cur) => ({ ...(cur || {}), error: String(err) }));
+                    return false;
+                  } finally {
+                    setKnowledgeBusy(false);
+                  }
+                }}
+              />
+            </motion.section>
+          ) : pane === "chat" && chatFace === "memory" ? (
+            <motion.section
+              key="memory"
+              data-chat-face="memory"
+              className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <MemoryPane
+                data={memory}
+                loading={memoryLoading}
+                formError={memoryFormError}
+                busy={memoryBusy}
+                onAdd={(text) => changeFact("add_fact", { text })}
+                onUpdate={(id, text) => changeFact("update_fact", { fact_id: id, text })}
+                onDelete={(id) => changeFact("delete_fact", { fact_id: id })}
+                onDrop={(role, text) => changeFact("delete_memory_turn", { role, text })}
+                onCompress={compressContext}
+              />
+            </motion.section>
+          ) : pane === "chat" && noteSessionId ? (
+            <motion.section
+              key={`note-${noteSessionId}`}
+              data-chat-face="note"
+              className="flex min-h-0 flex-1 flex-col"
+              initial={{ opacity: 0, x: 36 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -28 }}
+              transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <NoteMode
+                sessionId={noteSessionId}
+                book={{
+                  docs: noteDocs,
+                  turns: noteSessions.find((item) => item.id === noteSessionId)?.turns || [],
+                  notes: noteSessions.find((item) => item.id === noteSessionId)?.notes || [],
+                }}
+                error={noteError}
+                busy={noteBusy}
+                status={noteStatus}
+                checked={noteChecked}
+                threadRef={scroller}
+                onCheck={(id, on) => {
+                  setNoteChecked((cur) => on ? [...cur, id] : cur.filter((item) => item !== id));
+                }}
+                onSave={(index) => void saveNote(index)}
+                onDelete={(id) => void deleteNote(id)}
+                onMarkdown={(id) => void exportNote("markdown", id)}
+                onFeishu={(id) => void exportNote("feishu", id)}
+                onOpenFile={(id, name) => void manageNoteFile("open", id, name)}
+                onRevealFile={(id, name) => void manageNoteFile("reveal", id, name)}
+                onDeleteFile={(id, name) => void manageNoteFile("delete", id, name)}
+                onSummarize={(picks) => void summarizeNotes(picks)}
+                saveStatus={noteSave}
+                saveBad={noteSaveBad}
+                docUrl={noteDocUrl}
+              />
+              <div data-chat-bar="" className="border-t border-border px-6 py-4">
+                <div className="mb-2">
+                  <ModelPick modelId={activeModelId} items={modelItems} busy={busy || noteBusy} onChange={(id) => void useModel(id)} />
+                </div>
+                <SamplingBar value={sampling} onChange={setSampling} />
+                <form
+                  className="mt-3 flex gap-2"
+                  onSubmit={(ev) => {
+                    ev.preventDefault();
+                    send();
+                  }}
+                >
+                  <Input
+                    value={draft}
+                    onChange={(ev) => setDraft(ev.target.value)}
+                    placeholder="根据勾选的来源提问"
+                    className="flex-1"
+                  />
+                  <Button type="submit" variant="primary" disabled={busy || noteBusy}>
+                    发送
+                  </Button>
+                </form>
+              </div>
+            </motion.section>
+          ) : pane === "chat" ? (
             <motion.section
               key="chat"
+              data-chat-face="thread"
               className="flex min-h-0 flex-1 flex-col"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -813,39 +2498,186 @@ export function App() {
                 {debugMode ? (
                   <div className="text-xs text-muted-foreground">调试样本，未连接后端</div>
                 ) : null}
-                {(preview || thread?.items || []).map((item, idx, all) => (
-                  <Bubble
-                    key={`${item.ts || idx}-${idx}`}
-                    role={item.role}
-                    text={item.text}
-                    notes={item.notes}
-                    thinking={item.thinking}
-                    live={busy && !preview && idx === all.length - 1 && item.role === "pet"}
-                  />
+                {shownItems.map((item, idx, all) => (
+                  <Fragment key={`${item.ts || idx}-${idx}`}>
+                    {idx === compressSplit ? <ContextSplit covered={shownCovered} /> : null}
+                    <Bubble
+                      {...item}
+                      live={
+                        idx === all.length - 1 &&
+                        item.role === "pet" &&
+                        (thinkPulse || (busy && !preview))
+                      }
+                    />
+                  </Fragment>
                 ))}
+                {compressSplit === shownItems.length ? <ContextSplit covered={shownCovered} /> : null}
                 {status ? <div className="text-sm italic text-muted-foreground">{status}</div> : null}
-                {error ? <div className="text-sm text-destructive">{error}</div> : null}
+                {error ? <div data-chat-error className="text-sm text-destructive">{error}</div> : null}
               </div>
-              <div className="border-t border-border px-6 py-4">
+              <div data-chat-bar="" className="border-t border-border px-6 py-4">
+                {debugMode || thread ? (
+                  <ContextCard
+                    variant="bar"
+                    context={shownContext}
+                    verbatim={shownVerbatim}
+                    busy={busy || memoryBusy}
+                    onCompress={compressContext}
+                    leading={
+                      <>
+                        <ModelPick modelId={activeModelId} items={modelItems} busy={busy} onChange={(id) => void useModel(id)} />
+                        <button
+                          type="button"
+                          data-knowledge-toggle=""
+                          aria-pressed={useKnowledge}
+                          className={`desk-btn shrink-0 ${useKnowledge ? "desk-btn-solid" : ""}`}
+                          onClick={() => setUseKnowledge((value) => !value)}
+                        >
+                          知识库
+                        </button>
+                      </>
+                    }
+                  />
+                ) : (
+                  <ModelPick modelId={activeModelId} items={modelItems} busy={busy} onChange={(id) => void useModel(id)} />
+                )}
                 <SamplingBar value={sampling} onChange={setSampling} />
+                {pickedSkills.length || pickedTools.length || pickedDocs.length || pickedMcp.length || pickedRepo ? (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {pickedSkills.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        data-chip=""
+                        data-chip-kind="skill"
+                        data-chip-id={item.id}
+                        className="desk-btn"
+                        onClick={() => setPickedSkills((prev) => prev.filter((row) => row.id !== item.id))}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                    {pickedDocs.map((item) => (
+                      <span
+                        key={item.id}
+                        data-chip=""
+                        data-chip-kind="doc"
+                        data-chip-id={item.id}
+                        className="desk-chip"
+                      >
+                        <DocChipName id={item.id} label={item.label} />
+                        <button
+                          type="button"
+                          className="desk-btn desk-btn-danger ml-1"
+                          onClick={() => setPickedDocs((prev) => prev.filter((row) => row.id !== item.id))}
+                        >
+                          移除
+                        </button>
+                      </span>
+                    ))}
+                    {pickedMcp.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        data-chip=""
+                        data-chip-kind="mcp"
+                        data-chip-id={item.id}
+                        className="desk-btn"
+                        onClick={() => setPickedMcp((prev) => prev.filter((row) => row.id !== item.id))}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                    {pickedTools.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        data-chip=""
+                        data-chip-kind="tool"
+                        data-chip-id={item.id}
+                        className="desk-btn"
+                        onClick={() => removeTool(item.id)}
+                      >
+                        {item.label}
+                        {NEED_REPO.has(item.id) && pickedRepo ? ` · ${pickedRepo}` : ""}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <SlashMenu
+                  open={menuOpen}
+                  parent={slashParent}
+                  repoPicking={repoPicking}
+                  items={menuItems}
+                  active={menuActive}
+                  error={menuError}
+                  loading={menuLoading}
+                  onParent={(parent) => {
+                    setRepoPicking(false);
+                    setPendingRepoTool(null);
+                    setSlashParent(parent);
+                  }}
+                  onPick={pickSlash}
+                />
                 <form
                   className="flex gap-2"
+                  data-chat-draft={draft}
                   onSubmit={(ev) => {
                     ev.preventDefault();
                     send();
+                  }}
+                  onKeyDown={(ev) => {
+                    if (menuOpen) {
+                      menuKeyRef.current(ev.nativeEvent);
+                      ev.stopPropagation();
+                      return;
+                    }
+                    const target = ev.target as HTMLElement;
+                    if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") return;
+                    if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
+                    if (recallHistory(ev.key)) ev.preventDefault();
                   }}
                 >
                 <Input
                   value={draft}
                   onChange={(ev) => setDraft(ev.target.value)}
-                  placeholder="问今天干什么，或直接跟凯尔希说"
+                  placeholder="问今天干什么，或输入 / 选技能、工具、文档"
                   className="flex-1"
                 />
-                <Button type="submit" variant="primary" disabled={busy}>
+                <Button type="submit" variant="primary" disabled={busy || noteBusy}>
                   发送
                 </Button>
                 </form>
               </div>
+            </motion.section>
+          ) : pane === "depot" ? (
+            <motion.section
+              key="depot"
+              className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <DepotPane data={depot} loading={depotLoading} info={info} />
+            </motion.section>
+          ) : pane === "raise" ? (
+            <motion.section
+              key="raise"
+              className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <RaisePane
+                data={raise}
+                loading={raiseLoading}
+                formError={raiseFormError}
+                busy={raiseBusy}
+                onAdd={(operator, rank) => void addRaise(operator, rank)}
+                onRemove={(operator, rank) => void removeRaise(operator, rank)}
+              />
             </motion.section>
           ) : pane === "maa" ? (
             <motion.section
@@ -868,6 +2700,39 @@ export function App() {
                 onStart={() => void startDaily()}
                 onStop={() => void stopDaily()}
                 onAnalyze={analyzeLogs}
+              />
+            </motion.section>
+          ) : pane === "settings" ? (
+            <motion.section
+              key="settings"
+              className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <SettingsPane
+                model={modelForm}
+                models={modelItems}
+                editingId={editingModelId}
+                modelError={settingsError}
+                notice={settingsNotice}
+                persona={personaForm?.persona || ""}
+                personaError={personaError}
+                personaNotice={personaNotice}
+                busy={settingsBusy}
+                keyEpoch={keyEpoch}
+                dark={dark}
+                photo={!!bgUrl}
+                bgError={bgError}
+                onToggleTheme={() => setDark((v) => !v)}
+                onPickFile={(file) => void pickBackground(file)}
+                onClearBackground={() => clearBgRef.current()}
+                onSave={(draft) => void saveSettings(draft)}
+                onTest={(draft) => void testSettings(draft)}
+                onEdit={editModel}
+                onDelete={(id) => void deleteModel(id)}
+                onSavePersona={(text) => void savePersona(text)}
               />
             </motion.section>
           ) : pane === "feishu" ? (
@@ -920,52 +2785,247 @@ export function App() {
           )}
         </AnimatePresence>
       </main>
+      {cropSrc ? (
+        <BackgroundCrop
+          src={cropSrc}
+          error={cropError}
+          onConfirm={confirmCrop}
+          onCancel={() => {
+            setCropSrc("");
+            setCropError("");
+          }}
+          onBroken={() => {
+            setCropSrc("");
+            setCropError("");
+            setBgError("这张图打不开。恢复：换一张 png、jpg 或 webp。");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
-function NavButton(props: { active: boolean; label: string; onClick: () => void }) {
+function SideIcon(props: { name: string }) {
+  const stroke = {
+    width: 16,
+    height: 16,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.4,
+    "aria-hidden": true as const,
+    className: "shrink-0",
+  };
+  if (props.name === "chat") {
+    return (
+      <svg {...stroke}>
+        <path d="M2.5 3.5h11v7H7.5L5 13V10.5h-2.5v-7z" />
+      </svg>
+    );
+  }
+  if (props.name === "board") {
+    return (
+      <svg {...stroke}>
+        <path d="M2.5 3h11v10h-11V3zM2.5 6.5h11M6 6.5V13M10 6.5V13" />
+      </svg>
+    );
+  }
+  if (props.name === "settings") {
+    return (
+      <svg {...stroke}>
+        <circle cx="8" cy="8" r="2" />
+        <path d="M8 2.2v1.8M8 12v1.8M2.2 8H4M12 8h1.8M4.1 4.1l1.3 1.3M10.6 10.6l1.3 1.3M11.9 4.1l-1.3 1.3M5.4 10.6l-1.3 1.3" />
+      </svg>
+    );
+  }
+  if (props.name === "memory") {
+    return (
+      <svg {...stroke}>
+        <path d="M4 2.8h8v10.4H4zM6.2 5.6h3.6M6.2 8h3.6M6.2 10.4h2.2" />
+      </svg>
+    );
+  }
+  if (props.name === "knowledge") {
+    return (
+      <svg {...stroke}>
+        <path d="M8 3.4c-1.5.7-3 .7-4.6 0v8.6c1.6.7 3.1.7 4.6 0V3.4zM8 3.4c1.5.7 3 .7 4.6 0v8.6c-1.6.7-3.1.7-4.6 0V3.4z" />
+      </svg>
+    );
+  }
+  if (props.name === "pet") {
+    return (
+      <svg {...stroke}>
+        <path d="M8 13.2c-2.8 0-4.4-1.8-4.4-3.8 0-1.4.9-2.3 2-2.3.8 0 1.3.4 2.4.4s1.6-.4 2.4-.4c1.1 0 2 .9 2 2.3 0 2-1.6 3.8-4.4 3.8z" />
+        <circle cx="4.6" cy="4.4" r="1" />
+        <circle cx="8" cy="3.6" r="1" />
+        <circle cx="11.4" cy="4.4" r="1" />
+      </svg>
+    );
+  }
+  if (props.name === "today") {
+    return (
+      <svg {...stroke}>
+        <path d="M3 4.5h10v8H3v-8zM3 7h10M6 3v2.2M10 3v2.2" />
+      </svg>
+    );
+  }
+  if (props.name === "maa") {
+    return (
+      <svg {...stroke}>
+        <path d="M3 12l2.2-6 2 3.2L8.6 7 13 12" />
+      </svg>
+    );
+  }
+  if (props.name === "depot") {
+    return (
+      <svg {...stroke}>
+        <path d="M3 6.5 8 3.5 13 6.5V12.5H3V6.5zM3 6.5 8 9.5 13 6.5M8 9.5V13" />
+      </svg>
+    );
+  }
+  if (props.name === "raise") {
+    return (
+      <svg {...stroke}>
+        <path d="M3 3.5h10M3 7h10M3 10.5h6" />
+      </svg>
+    );
+  }
   return (
-    <Button type="button" size="sm" variant={props.active ? "primary" : "ghost"} onClick={props.onClick}>
-      {props.label}
-    </Button>
+    <svg {...stroke}>
+      <path d="M3.5 3h6.2L12.5 5.8V13h-9V3zM9.5 3v3H12.5" />
+    </svg>
   );
 }
 
-function SideLink(props: { label: string; sub: string; selected: boolean; onClick: () => void }) {
+function ModelPick(props: {
+  modelId: string;
+  items: ModelEntry[];
+  busy: boolean;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+      模型
+      <select
+        data-model-pick
+        value={props.modelId}
+        disabled={props.busy || props.items.length === 0}
+        className="border border-border bg-background px-2 py-1 text-sm text-foreground"
+        onChange={(ev) => props.onChange(ev.target.value)}
+      >
+        {props.items.length === 0 ? <option value="">没有模型</option> : null}
+        {props.items.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.model}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SideNav(props: { icon: string; label: string; sub?: string; active?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-side-item={props.label}
+      data-sub={props.sub}
+      data-selected={props.active ? "1" : "0"}
+      onClick={props.onClick}
+      className={`flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm ${
+        props.active ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary"
+      }`}
+    >
+      <SideIcon name={props.icon} />
+      <span data-side-label>{props.label}</span>
+    </button>
+  );
+}
+
+function SideLink(props: { icon: string; label: string; sub: string; selected: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       data-sub={props.sub}
       data-selected={props.selected ? "1" : "0"}
       onClick={props.onClick}
-      className={`mb-1 w-full px-3 py-2 text-left text-sm transition-colors duration-200 ${
+      className={`mb-1 flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors duration-200 ${
         props.selected ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary"
       }`}
     >
-      {props.label}
+      <SideIcon name={props.icon} />
+      <span>{props.label}</span>
     </button>
   );
 }
 
-function Bubble(props: { role: string; text: string; notes?: string[]; thinking?: string; live?: boolean }) {
+function ThinkDots(props: { wait?: boolean }) {
+  return (
+    <span className="think-dots" data-thinking-dots="" data-think-wait={props.wait ? "1" : "0"} aria-hidden="true">
+      <span data-thinking-dot="" />
+      <span data-thinking-dot="" />
+      <span data-thinking-dot="" />
+    </span>
+  );
+}
+
+function userShown(text: string, docs: { id: string; label: string }[]): string {
+  const names = docs.map((item) => {
+    const href = openableHref(item.id);
+    const label = item.label.split("[").join("［").split("]").join("］");
+    return href ? `[${label}](${href})` : label;
+  });
+  const head = [text, ...names].filter(Boolean).join("\n");
+  return head || "按上面的指定执行。";
+}
+
+function DocChipName(props: { id: string; label: string }) {
+  return (
+    <span className="px-2 py-1">
+      <MdLink href={props.id}>{props.label}</MdLink>
+    </span>
+  );
+}
+
+function Bubble(props: ChatItem & { live?: boolean }) {
   const mine = props.role === "user";
+  const waiting = !mine && !!props.live && !props.text && !props.thinking;
   let body: ReactNode = "…";
   if (props.text) {
-    body = mine ? props.text : <Markdown text={props.text} />;
+    body = mine ? <PlainLinks text={props.text} /> : <Markdown text={props.text} />;
+  } else if (waiting) {
+    body = <ThinkDots wait />;
+  } else if (!mine && props.thinking) {
+    body = null;
   }
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`} data-bubble data-role={props.role}>
-      <Card className={`max-w-[70%] text-sm leading-6 ${mine ? "whitespace-pre-wrap" : ""}`} selected={mine}>
+      <Card className={`min-w-0 max-w-[70%] text-sm leading-6 ${mine ? "whitespace-pre-wrap" : ""}`} selected={mine}>
         <CardBody>
         {!mine && props.thinking ? <ThinkCard text={props.thinking} live={!!props.live} /> : null}
         {!mine && props.notes && props.notes.length > 0 ? (
           <ToolCard notes={props.notes} live={!!props.live} />
         ) : null}
+        {props.knowledge ? <KnowledgeTraceView trace={props.knowledge} /> : null}
         {body}
+        {!mine ? <TurnMeta item={props} /> : null}
         </CardBody>
       </Card>
     </div>
+  );
+}
+
+function TurnMeta(props: { item: ChatItem }) {
+  const item = props.item;
+  if (typeof item.elapsed_s !== "number") return null;
+  const temperature = typeof item.temperature === "number" ? item.temperature.toFixed(1) : "";
+  const topP = typeof item.top_p === "number" ? item.top_p.toFixed(2) : "";
+  return (
+    <p data-turn-meta className="mt-2 text-xs text-muted-foreground">
+      {`用时 ${item.elapsed_s.toFixed(1)} 秒 · 输入 ${item.input_tokens ?? 0} · 输出 ${item.output_tokens ?? 0} · 合计 ${item.total_tokens ?? 0}${typeof item.react_loops === "number" ? ` · 循环 ${item.react_loops}` : ""}`}
+      <br />
+      {`${item.model || ""} · ${item.reasoning_effort || ""} · 温度 ${temperature} · top_p ${topP}`}
+    </p>
   );
 }
 
@@ -986,8 +3046,16 @@ function ThinkCard(props: { text: string; live: boolean }) {
         setOpened(ev.currentTarget.open);
       }}
     >
-      <summary>思考</summary>
-      <p className="whitespace-pre-wrap">{props.text}</p>
+      <summary>
+        思考
+        {props.live ? <ThinkDots /> : null}
+      </summary>
+      <p
+        className={`whitespace-pre-wrap think-body${props.live ? " think-body-live" : ""}`}
+        data-thinking-edge={props.live ? "1" : "0"}
+      >
+        {props.text}
+      </p>
     </details>
   );
 }

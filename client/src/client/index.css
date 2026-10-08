@@ -63,9 +63,60 @@ body {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(56px, 56px, 0); }
 }
+.desk-bg[data-bg-photo="1"]::before {
+  inset: 0;
+  background-image: var(--desk-bg-image);
+  background-size: cover;
+  background-position: center;
+  animation: none;
+}
+.desk-bg-scrim {
+  position: absolute;
+  inset: 0;
+  background: hsl(var(--background) / 0.72);
+}
 @keyframes desk-particles {
   from { transform: translate3d(0, 80px, 0); }
   to { transform: translate3d(-36px, -160px, 0); }
+}
+
+/* 模型下拉的弹出层由系统绘制。跟着 html 上的深浅色，否则深色页里列表仍是白底。 */
+html.dark {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
+}
+select[data-model-pick] option {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+/* 侧面上下拖的滚动条。不改的话深色页里仍是一条浅色长条。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.45) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.4);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.7);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* 回复 Markdown。不用 typography 插件，颜色跟 design token 走。 */
@@ -99,10 +150,60 @@ body {
   border-left: 2px solid hsl(var(--primary));
   color: hsl(var(--muted-foreground));
 }
+.md { min-width: 0; overflow-wrap: anywhere; }
+.md pre, .md pre code { overflow-wrap: normal; }
 .md-link { color: hsl(var(--primary)); }
+a.md-link {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .tool-card { margin-bottom: 0.45em; font-size: 12px; color: hsl(var(--muted-foreground)); }
 .tool-card summary { cursor: pointer; }
+.knowledge-step {
+  margin-top: 0.45rem;
+  border: 1px solid hsl(var(--border));
+  border-left-width: 3px;
+  padding: 0.2rem 0.55rem;
+  font-size: 12px;
+}
+.knowledge-step[data-knowledge-step="question"] { border-left-color: hsl(var(--muted-foreground)); }
+.knowledge-step[data-knowledge-step="candidate"] { border-left-color: hsl(var(--primary) / 0.45); }
+.knowledge-step[data-knowledge-step="kept"] { border-left-color: hsl(var(--primary)); }
+.knowledge-step summary { cursor: pointer; color: hsl(var(--foreground)); }
+.knowledge-step-body { margin-top: 0.35rem; }
 .tool-card ul { margin: 0.3em 0 0; padding-left: 1.1em; }
+.think-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 0.45em;
+  vertical-align: middle;
+}
+.think-dots span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  opacity: 0.25;
+  animation: think-dot 1.2s ease-in-out infinite;
+}
+.think-dots span:nth-child(2) { animation-delay: 0.2s; }
+.think-dots span:nth-child(3) { animation-delay: 0.4s; }
+.think-body { margin: 0.35em 0 0; }
+.think-body-live {
+  padding-left: 0.55em;
+  border-left: 2px solid hsl(var(--primary) / 0.25);
+  animation: think-edge 1.6s ease-in-out infinite;
+}
+@keyframes think-dot {
+  0%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+@keyframes think-edge {
+  0%, 100% { border-left-color: hsl(var(--primary) / 0.25); }
+  50% { border-left-color: hsl(var(--primary) / 0.85); }
+}
 .tl { margin: 0; padding: 0; list-style: none; }
 .tl li {
   position: relative;
@@ -131,3 +232,129 @@ body {
 }
 .md table { border-collapse: collapse; margin: 0.5em 0; display: block; overflow-x: auto; }
 .md th, .md td { border: 1px solid hsl(var(--border)); padding: 0.2em 0.5em; }
+
+/* 操作按钮：圆角写死，不吃 --radius（设计系统是 0）。颜色只走主题 token。 */
+.desk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border-radius: 10px;
+  border: 1px solid hsl(var(--primary) / 0.55);
+  background: hsl(var(--primary) / 0.16);
+  color: hsl(var(--primary));
+  padding: 0.3rem 0.7rem;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, filter 120ms ease;
+}
+.desk-btn:hover:not(:disabled):not(.desk-btn-solid):not(.desk-btn-danger):not(.desk-btn-danger-solid) {
+  background: hsl(var(--primary) / 0.28);
+  border-color: hsl(var(--primary));
+}
+.desk-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.desk-btn-lg {
+  padding: 0.5rem 0.9rem;
+  font-size: 14px;
+}
+.desk-btn-solid {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-weight: 650;
+}
+.desk-btn-solid:hover:not(:disabled) {
+  background: hsl(var(--primary));
+  filter: brightness(1.08);
+}
+.desk-btn-danger {
+  border-color: hsl(var(--destructive) / 0.65);
+  background: hsl(var(--destructive) / 0.12);
+  color: hsl(var(--destructive));
+  font-weight: 650;
+}
+.desk-btn-danger:hover:not(:disabled) {
+  background: hsl(var(--destructive) / 0.22);
+  border-color: hsl(var(--destructive));
+  filter: none;
+}
+.desk-btn-danger-solid {
+  background: hsl(var(--destructive));
+  border-color: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+}
+.desk-btn-danger-solid:hover:not(:disabled) {
+  background: hsl(var(--destructive));
+  filter: brightness(1.08);
+}
+.desk-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 10px;
+  border: 1px solid hsl(var(--primary) / 0.55);
+  background: hsl(var(--primary) / 0.14);
+  color: hsl(var(--primary));
+  font-size: 12px;
+}
+.desk-cite {
+  margin: 0 0.15rem;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--primary) / 0.55);
+  background: hsl(var(--primary) / 0.16);
+  color: hsl(var(--primary));
+  padding: 0 0.4rem;
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.desk-cite:hover {
+  background: hsl(var(--primary) / 0.3);
+}
+.desk-answer-theme {
+  display: inline-block;
+  border-radius: 10px;
+  background: hsl(var(--primary) / 0.2);
+  color: hsl(var(--primary));
+  padding: 0.1rem 0.45rem;
+  font-weight: 650;
+}
+/* 组件库按钮原来是切角。操作按钮改圆角，卡片切角不动。 */
+button.clip-corner {
+  clip-path: none;
+  border-radius: 10px;
+}
+button.clip-corner.bg-primary,
+button.clip-corner.bg-destructive {
+  border-color: transparent;
+}
+button.font-display.bg-transparent:not(.clip-corner) {
+  border-radius: 10px;
+  border: 1px solid hsl(var(--primary) / 0.45);
+  color: hsl(var(--foreground));
+}
+button.font-display.bg-transparent:not(.clip-corner):hover {
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.12);
+}
+button.font-display.desk-btn-danger,
+button.font-display.desk-btn-danger:hover {
+  border-color: hsl(var(--destructive) / 0.65);
+  background: hsl(var(--destructive) / 0.14);
+  color: hsl(var(--destructive));
+}
+
+.knowledge-download-listing {
+  width: 35%;
+  animation: knowledge-listing 1.2s ease-in-out infinite;
+}
+@keyframes knowledge-listing {
+  0% { transform: translateX(0); }
+  50% { transform: translateX(180%); }
+  100% { transform: translateX(0); }
+}

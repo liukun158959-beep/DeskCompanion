@@ -13,6 +13,7 @@ CLI_CHIPS = (
     ("github_status", "GitHub 状态"),
     ("github_recent", "GitHub 近况"),
     ("github_roadmap", "GitHub 路线图"),
+    ("web_search", "联网搜索"),
 )
 MAA_CHIPS = (
     ("open_game", "打开游戏"),
@@ -97,6 +98,11 @@ class BoardWorkbench:
             session_id=self.state.session_id,
             sessions=list_sessions(),
         )
+
+    def list_mcp_tools(self) -> dict:
+        from .mcp_client import list_mcp_menu
+
+        return list_mcp_menu()
 
     def list_feishu_docs(self) -> dict:
         from .feishu_docs import list_my_docx
@@ -214,7 +220,9 @@ class BoardWorkbench:
         skills = chips.get("skills") or []
         cli = chips.get("cli") or []
         github = chips.get("github") or ""
-        extra_keys = set(chips) - {"skills", "cli", "github", "maa", "retro"}
+        docs = chips.get("docs") or []
+        mcp = chips.get("mcp") or []
+        extra_keys = set(chips) - {"skills", "cli", "github", "maa", "retro", "docs", "mcp"}
         if extra_keys:
             raise RuntimeError(f"不认识的点选：{', '.join(sorted(extra_keys))}。")
         if skills and (
@@ -234,20 +242,97 @@ class BoardWorkbench:
                 raise RuntimeError(f"没有 CLI 工具 {name!r}。")
         if any(name in NEED_REPO_TOOLS for name in cli) and not str(github).strip():
             raise RuntimeError("选了 GitHub 近况或路线图时必须同时选一个已列出的仓库。")
-        if not body and not skills and not cli and not github:
+        _check_doc_picks(docs)
+        _check_mcp_picks(mcp)
+        if not body and not skills and not cli and not github and not docs and not mcp:
             raise RuntimeError("输入框是空的。")
-        if not skills and not cli and not github:
+        if not skills and not cli and not github and not docs and not mcp:
             return body
         lines = ["【本轮指定】"]
         for name in skills:
-            lines.append(f"- 必须调用 read_skill，技能名 {name.strip()}")
+            lines.append(
+                f"- 技能 {name.strip()} 的正文已附在本轮【技能正文】，按正文执行，不要再调用 read_skill。"
+            )
         for name in cli:
             lines.append(f"- 必须调用工具 {name.strip()}")
         if str(github).strip():
             lines.append(
                 f"- GitHub 仓库 {github.strip()}；github_recent / github_roadmap 必须用这个仓库"
             )
+        for doc in docs:
+            lines.append(
+                f"- 飞书文档《{_doc_title_link(doc)}》的正文已附在本轮【文档正文】，"
+                "只根据正文回答，不要编文档里没有的内容。"
+            )
+        from .mcp_client import mcp_fn_name
+
+        for item in mcp:
+            lines.append(f"- 必须调用工具 {mcp_fn_name(item['server'].strip(), item['tool'].strip())}")
         prefix = "\n".join(lines)
         if body:
             return prefix + "\n\n" + body
         return prefix + "\n\n按上面的指定执行。"
+
+
+def _doc_title_link(doc: dict) -> str:
+    """标题写成超链接。没有 http(s) 地址就只留标题，不编一个打不开的网址。"""
+    label = doc["label"].strip().replace("[", "［").replace("]", "］")
+    ident = doc["id"].strip()
+    if not _openable_doc_url(ident):
+        return label
+    href = ident.replace("(", "%28").replace(")", "%29")
+    return f"[{label}]({href})"
+
+
+def _openable_doc_url(url: str) -> bool:
+    if not url or len(url) > 2000 or any(ch.isspace() for ch in url):
+        return False
+    lower = url.lower()
+    if not (lower.startswith("https://") or lower.startswith("http://")):
+        return False
+    rest = url.split("://", 1)[1]
+    host = rest.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    return bool(host) and "@" not in host
+
+
+def _check_doc_picks(docs) -> None:
+    if not docs:
+        return
+    if type(docs) is not list:
+        raise RuntimeError("飞书文档点选必须是列表。")
+    for item in docs:
+        label = item.get("label") if isinstance(item, dict) else None
+        ident = item.get("id") if isinstance(item, dict) else None
+        if (
+            not isinstance(item, dict)
+            or set(item) - {"id", "label"}
+            or type(ident) is not str
+            or not ident.strip()
+            or any(ch.isspace() for ch in ident)
+            or type(label) is not str
+            or not label.strip()
+        ):
+            raise RuntimeError("飞书文档点选必须带文档地址和标题。")
+
+
+def _check_mcp_picks(mcp) -> None:
+    if not mcp:
+        return
+    if type(mcp) is not list:
+        raise RuntimeError("MCP 点选必须是列表。")
+    for item in mcp:
+        server = item.get("server") if isinstance(item, dict) else None
+        tool = item.get("tool") if isinstance(item, dict) else None
+        label = item.get("label") if isinstance(item, dict) else None
+        if (
+            not isinstance(item, dict)
+            or set(item) - {"server", "tool", "label"}
+            or type(server) is not str
+            or not server.strip()
+            or any(ch.isspace() for ch in server)
+            or type(tool) is not str
+            or not tool.strip()
+            or any(ch.isspace() for ch in tool)
+            or (label is not None and (type(label) is not str or not label.strip()))
+        ):
+            raise RuntimeError("MCP 点选必须带服务器名和工具名。")

@@ -28,6 +28,20 @@ def list_skills() -> list[dict]:
     return out
 
 
+def skill_turn_block(names: list) -> str:
+    """点名的技能正文。只拼进发给模型的这一轮，不写入对话记录。"""
+    if type(names) is not list or not names:
+        raise RuntimeError("技能点选必须是非空字符串列表。")
+    if any(type(name) is not str or not name.strip() for name in names):
+        raise RuntimeError("技能点选必须是非空字符串列表。")
+    parts = ["【技能正文】"]
+    for name in names:
+        snap = read_skill(name.strip())
+        parts.append(f"# {snap['id']}\n{snap['description']}\n\n{snap['body']}")
+    parts.append("以上就是技能正文，按正文执行，不要再调用 read_skill。")
+    return "\n\n".join(parts)
+
+
 def read_skill(name: str) -> dict:
     if type(name) is not str or not name.strip():
         raise RuntimeError("技能名必须是非空字符串。")

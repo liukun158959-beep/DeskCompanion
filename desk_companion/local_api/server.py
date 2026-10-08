@@ -24,14 +24,22 @@ RPC_METHODS = frozenset({
     "load_board", "delete_agenda", "delete_task", "create_agenda", "load_log_errors", "load_skills",
     "load_persona", "save_persona",
     "load_model", "save_model", "test_model",
-    "load_usage", "load_chat_log", "load_memory",
+    "load_models", "save_model_entry", "delete_model_entry", "use_model",
+    "load_usage", "load_chat_log", "load_memory", "compress_context",
+    "add_fact", "update_fact", "delete_fact", "delete_memory_turn",
     "load_feishu", "feishu_login", "feishu_logout",
-    "load_maa", "load_github", "load_skland", "sync_skland",
+    "load_maa", "load_depot", "load_raise", "add_raise", "remove_raise",
+    "load_github", "load_skland", "sync_skland",
     "save_maa_paths", "save_maa_option",
     "maa_open_game", "maa_start_daily", "maa_stop", "maa_authorize",
     "compute_farm_plan", "generate_week_review",
     "write_today_summary_doc", "write_week_review_doc",
-    "list_feishu_docs", "load_composer_options",
+    "list_feishu_docs", "list_mcp_tools", "load_composer_options",
+    "load_knowledge", "save_knowledge", "download_knowledge", "delete_model",
+    "add_knowledge", "delete_knowledge", "rebuild_knowledge", "ask_knowledge",
+    "load_notebook", "new_notebook", "save_notebook_note", "delete_notebook_note",
+    "export_notebook_markdown", "export_notebook_feishu", "summarize_notebook",
+    "open_notebook_file", "reveal_notebook_file", "delete_notebook_file",
     "new_chat_session", "switch_chat_session", "clear_chat",
     "list_automation_jobs", "save_automation_job",
     "delete_automation_job", "run_automation_job",
@@ -42,12 +50,39 @@ HOST: HeadlessApp | None = None
 
 
 def _health(connection, request):
-    # 非 WS 的普通 HTTP：/health 返回 200，其余交给 WS 握手或 404
+    # 非 WS 的普通 HTTP：/health 返回 200，物品图走 /depot-icon/，其余交给 WS 握手或 404
     if request.path == "/health":
         return connection.respond(200, "ok\n")
+    if request.path.startswith("/depot-icon/"):
+        return _depot_icon(connection, request.path)
     if request.path.startswith("/ws"):
         return None
     return connection.respond(404, "not found\n")
+
+
+def _depot_icon(connection, path: str):
+    from urllib.parse import parse_qs, urlsplit
+
+    from websockets.asyncio.server import Response
+    from websockets.datastructures import Headers
+
+    from ..depot_view import read_icon
+
+    parts = urlsplit(path)
+    if TOKEN:
+        token = parse_qs(parts.query).get("token", [""])[0]
+        if token != TOKEN:
+            return connection.respond(401, "图标请求的 token 不对。\n")
+    item_id = parts.path.removeprefix("/depot-icon/").strip("/")
+    try:
+        body = read_icon(item_id)
+    except RuntimeError as exc:
+        return connection.respond(404, f"{exc}\n")
+    headers = Headers()
+    headers["Content-Type"] = "image/png"
+    headers["Content-Length"] = str(len(body))
+    headers["Cache-Control"] = "no-store"
+    return Response(200, "OK", headers, body)
 
 
 def _dispatch(method: str, args: dict) -> dict:
@@ -84,6 +119,8 @@ async def _handler(ws):
             await ws.send(json.dumps({"type": "rpc_result", "id": msg.get("id"), "result": res}))
         elif mtype == "chat":
             await _handle_chat(ws, msg)
+        elif mtype == "notebook":
+            await _handle_notebook(ws, msg)
         else:
             await ws.send(json.dumps({"type": "error", "data": f"未知消息类型：{mtype}"}))
 
@@ -109,6 +146,12 @@ async def _handle_chat(ws, msg: dict) -> None:
 
     def run() -> None:
         try:
+            def knowledge_sink(payload: dict) -> None:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    ("knowledge", json.dumps(payload, ensure_ascii=False)),
+                )
+
             answer = HOST.run_chat(
                 str(msg.get("text", "")),
                 msg.get("chips"),
@@ -116,6 +159,9 @@ async def _handle_chat(ws, msg: dict) -> None:
                 status_sink,
                 sampling,
                 think_sink,
+                str(msg.get("model_id") or ""),
+                bool(msg.get("knowledge")),
+                knowledge_sink,
             )
             loop.call_soon_threadsafe(queue.put_nowait, ("done", answer))
         except Exception as exc:
@@ -125,6 +171,46 @@ async def _handle_chat(ws, msg: dict) -> None:
     while True:
         kind, data = await queue.get()
         await ws.send(json.dumps({"type": kind, "data": data}))
+        if kind in ("done", "error"):
+            break
+
+
+async def _handle_notebook(ws, msg: dict) -> None:
+    try:
+        sampling = parse_sampling(msg.get("sampling"))
+    except RuntimeError as exc:
+        await ws.send(json.dumps({"type": "error", "data": str(exc)}))
+        return
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def delta_sink(piece: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, ("token", piece))
+
+    def status_sink(text: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, ("status", text))
+
+    def run() -> None:
+        try:
+            found = HOST.run_notebook(
+                str(msg.get("session_id") or ""),
+                str(msg.get("text") or ""),
+                msg.get("doc_ids") if isinstance(msg.get("doc_ids"), list) else [],
+                sampling,
+                delta_sink,
+                status_sink,
+            )
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                ("done", json.dumps(found, ensure_ascii=False)),
+            )
+        except Exception as exc:
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", f"{type(exc).__name__}: {exc}"))
+
+    asyncio.get_running_loop().run_in_executor(None, run)
+    while True:
+        kind, data = await queue.get()
+        await ws.send(json.dumps({"type": kind, "data": data}, ensure_ascii=False))
         if kind in ("done", "error"):
             break
 

@@ -18,7 +18,15 @@ import win32api
 import win32con
 import win32gui
 
-from .assistant import TOOL_CONTRACT, build_agent, inject_history, list_providers, token_plugin
+from .assistant import (
+    TOOL_CONTRACT,
+    build_agent,
+    inject_history,
+    list_providers,
+    spoken_answer,
+    token_plugin,
+    with_clock,
+)
 from .automation import AutomationScheduler
 from .board_workbench import BoardWorkbench
 from .bridge import Bridge
@@ -27,11 +35,11 @@ from .maa_tools import bind_host
 from .envconf import parse_env_file, public_llm_env, write_llm_env
 from .layered import enable_dpi_aware, work_area
 from .logutil import crash, install_crash_hooks, log, mark_ready, start_os_watchdog
+from .facts import bind_turn_user
 from .memory import (
     TZ,
     append_chat,
     clear_session,
-    history_for_model,
     list_chat,
     list_sessions,
     recent_chat,
@@ -315,6 +323,9 @@ class App(BoardWorkbench):
         if self.pet is None:
             raise RuntimeError("宠物窗口还在启动，无法清空。")
         clear_session(self.state.session_id)
+        from .context_pack import drop_pack
+
+        drop_pack(self.state.session_id)
         if self.agent is not None:
             self.agent.memory.clear()
         rows = []
@@ -340,48 +351,154 @@ class App(BoardWorkbench):
         if self.agent is None:
             raise RuntimeError(self._agent_error)
 
-    def _record_usage(self, agent, run_id: str) -> None:
+    def _record_usage(self, agent, run_id: str) -> dict:
         plugin = token_plugin(agent)
         summary = plugin.get_summary(run_id)
         model = getattr(agent.llm, "model", "") or ""
         inn = int(summary.get("input_tokens") or 0)
         out = int(summary.get("output_tokens") or 0)
-        append_usage(
-            {
-                "ts": datetime.now(TZ).isoformat(timespec="seconds"),
-                "model": model,
-                "input_tokens": inn,
-                "output_tokens": out,
-                "total_tokens": inn + out,
-                "cost_cny": cost_cny(model, inn, out, self.state.model_prices),
-                "run_id": run_id,
-            }
-        )
+        row = {
+            "ts": datetime.now(TZ).isoformat(timespec="seconds"),
+            "model": model,
+            "input_tokens": inn,
+            "output_tokens": out,
+            "total_tokens": inn + out,
+            "cost_cny": cost_cny(model, inn, out, self.state.model_prices),
+            "run_id": run_id,
+        }
+        append_usage(row)
+        return row
 
     def board_chat(self) -> dict:
         try:
             sid = self.state.session_id
+            from .assistant import build_system_prompt
+            from .context_pack import context_view
+
             return {
                 "ok": True,
                 "session_id": sid,
                 "items": list_chat(sid),
                 "sessions": list_sessions(),
+                "context": context_view(sid, build_system_prompt(self.state.persona)),
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
     def board_memory(self) -> dict:
+        from .facts import FACT_LIMIT, read_facts
+
         try:
             sid = self.state.session_id
             items = list_chat(sid)
-            n = self.state.history_n
-            window = history_for_model(n, sid) if n else []
+            from .assistant import build_system_prompt
+            from .context_pack import context_view, raw_tail
+
             return {
                 "ok": True,
-                "history_n": n,
                 "total": len(items),
-                "items": window,
+                "fact_limit": FACT_LIMIT,
+                "facts": read_facts(),
+                "context": context_view(sid, build_system_prompt(self.state.persona)),
+                "items": raw_tail(sid),
             }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def board_compress_context(self) -> dict:
+        if self._agent_running:
+            return {"ok": False, "error": "凯尔希正在说话，等这句说完再压缩。"}
+        try:
+            self.engage_model()
+            self.prepare_context("", manual=True)
+            return self.board_memory()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def prepare_context(
+        self,
+        current_text: str,
+        *,
+        exclude_user: str | None = None,
+        manual: bool = False,
+    ) -> list[dict]:
+        from .assistant import build_system_prompt
+        from .context_pack import prepare_injection
+
+        if self.agent is None:
+            raise RuntimeError(self._agent_error or "还没接上模型。打开设置添加一个。")
+
+        def complete(prompt: str) -> str:
+            result = self.agent.llm.chat(
+                [
+                    {
+                        "role": "system",
+                        "content": self.state.persona + "\n\n你现在只压缩对话，不要调用工具。",
+                    },
+                    {"role": "user", "content": prompt},
+                ]
+            )
+            self._record_llm_usage(result.get("usage"), str(uuid.uuid4()))
+            message = result.get("message") or {}
+            return str(message.get("content") or "")
+
+        return prepare_injection(
+            self.state.session_id,
+            build_system_prompt(self.state.persona),
+            current_text,
+            exclude_user=exclude_user,
+            complete=complete,
+            manual=manual,
+        )
+
+    def inject_prepared(self, current_text: str, *, exclude_user: str | None = None) -> None:
+        rows = self.prepare_context(current_text, exclude_user=exclude_user)
+        inject_history(self.agent, rows, persona=self.state.persona)
+
+    def board_add_fact(self, text: str) -> dict:
+        from .facts import add_user_fact
+
+        if self._agent_running:
+            return {"ok": False, "error": "凯尔希正在说话，等这句说完再改事实。"}
+        try:
+            add_user_fact(text)
+            return self.board_memory()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def board_update_fact(self, fact_id: str, text: str) -> dict:
+        from .facts import update_user_fact
+
+        if self._agent_running:
+            return {"ok": False, "error": "凯尔希正在说话，等这句说完再改事实。"}
+        try:
+            update_user_fact(fact_id, text)
+            return self.board_memory()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def board_drop_memory_turn(self, role: str, text: str) -> dict:
+        from .memory import drop_session_turn
+
+        if self._agent_running:
+            return {"ok": False, "error": "凯尔希正在说话，等这句说完再改记忆。"}
+        try:
+            drop_session_turn(self.state.session_id, role, text)
+            from .context_pack import drop_pack_if_covered
+
+            drop_pack_if_covered(self.state.session_id, role, text)
+            return self.board_memory()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def board_delete_fact(self, fact_id: str) -> dict:
+        from .facts import delete_user_fact
+
+        if self._agent_running:
+            return {"ok": False, "error": "凯尔希正在说话，等这句说完再改事实。"}
+        try:
+            delete_user_fact(fact_id)
+            return self.board_memory()
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -414,7 +531,6 @@ class App(BoardWorkbench):
             return {
                 "ok": True,
                 "persona": self.state.persona,
-                "history_n": self.state.history_n,
                 "max_steps": self.state.max_steps,
                 "nudge_enabled": self.state.nudge_enabled,
                 "tool_contract": TOOL_CONTRACT,
@@ -431,17 +547,13 @@ class App(BoardWorkbench):
             persona = str(payload.get("persona") or "").strip()
             if not persona:
                 raise RuntimeError("人设不能为空。")
-            history_n = int(payload.get("history_n"))
             max_steps = int(payload.get("max_steps"))
-            if history_n < 0:
-                raise RuntimeError("历史条数不能为负。")
             if max_steps < 1:
                 raise RuntimeError("max_steps 至少为 1。")
             nudge = payload.get("nudge_enabled")
             if type(nudge) is not bool:
                 raise RuntimeError("主动搭话必须是 true/false。")
             self.state.persona = persona
-            self.state.history_n = history_n
             self.state.max_steps = max_steps
             self.state.nudge_enabled = nudge
             self.state.save()
@@ -468,6 +580,72 @@ class App(BoardWorkbench):
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+
+    def board_models(self) -> dict:
+        from .model_catalog import public_catalog
+
+        try:
+            return {"ok": True, **public_catalog()}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def save_model_entry(self, payload: dict) -> dict:
+        from .model_catalog import public_catalog, upsert_entry
+
+        if not isinstance(payload, dict):
+            return {"ok": False, "error": "模型保存参数必须是对象。"}
+        try:
+            if self._agent_running:
+                raise RuntimeError("凯尔希正在说话，等这句说完再保存。")
+            cat = upsert_entry(payload)
+            self._bind_active_llm()
+            return {"ok": True, "message": "模型已保存。", **public_catalog(cat)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def delete_model_entry(self, model_id: str) -> dict:
+        from .model_catalog import delete_entry, public_catalog
+
+        try:
+            if self._agent_running:
+                raise RuntimeError("凯尔希正在说话，等这句说完再删除。")
+            cat = delete_entry(model_id)
+            self._bind_active_llm()
+            return {"ok": True, "message": "模型已删除。", **public_catalog(cat)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def use_model(self, model_id: str) -> dict:
+        from .model_catalog import activate, public_catalog
+
+        try:
+            if self._agent_running:
+                raise RuntimeError("凯尔希正在说话，等这句说完再换模型。")
+            activate(model_id)
+            self._bind_active_llm()
+            return {"ok": True, "message": "已切换模型。", **public_catalog()}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def engage_model(self, model_id: str = "") -> None:
+        from .model_catalog import activate, require_active
+
+        if model_id:
+            activate(model_id)
+        else:
+            require_active()
+        if self.agent is None:
+            self.try_build_agent()
+        if self.agent is None:
+            raise RuntimeError(self._agent_error or "还没接上模型。打开设置添加一个。")
+        self._bind_active_llm()
+
+    def _bind_active_llm(self) -> None:
+        from .model_catalog import bind_llm, require_active
+
+        if self.agent is None:
+            return
+        bind_llm(self.agent.llm, require_active())
 
     def save_model(self, payload: dict) -> dict:
         if not isinstance(payload, dict):
@@ -515,7 +693,13 @@ class App(BoardWorkbench):
             model = str(payload.get("model") or "").strip()
             api_key = str(payload.get("api_key") or "").strip()
             if not api_key:
-                api_key = parse_env_file().get("ATLAS_API_KEY") or ""
+                entry_id = str(payload.get("id") or "").strip()
+                if entry_id:
+                    from .model_catalog import require_item
+
+                    api_key = require_item(entry_id)["api_key"]
+                else:
+                    api_key = parse_env_file().get("ATLAS_API_KEY") or ""
             if not api_key or not base_url or not model:
                 raise RuntimeError("测试前先填 API 地址、模型名和 Key。")
             client = OpenAI(api_key=api_key, base_url=base_url)
@@ -540,6 +724,40 @@ class App(BoardWorkbench):
     def board_maa(self) -> dict:
         try:
             return self.maa.snapshot()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def board_depot(self) -> dict:
+        from .depot_view import depot_snapshot
+
+        try:
+            data = depot_snapshot()
+            data["ok"] = True
+            return data
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def board_raise(self) -> dict:
+        from .raise_roster import snapshot
+
+        try:
+            return snapshot()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "roster": [], "lines": []}
+
+    def board_add_raise(self, operator: str, rank: str) -> dict:
+        from .raise_roster import add_target
+
+        try:
+            return add_target(operator, rank)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def board_remove_raise(self, operator: str, rank: str) -> dict:
+        from .raise_roster import remove_target
+
+        try:
+            return remove_target(operator, rank)
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -816,6 +1034,7 @@ class App(BoardWorkbench):
         if isinstance(usage, dict):
             inn = int(usage.get("prompt_tokens") or 0)
             out = int(usage.get("completion_tokens") or 0)
+        self._knowledge_usage = (inn, out)
         append_usage(
             {
                 "ts": datetime.now(TZ).isoformat(timespec="seconds"),
@@ -856,21 +1075,19 @@ class App(BoardWorkbench):
         threading.Thread(target=self._run_agent, args=(text,), daemon=True).start()
 
     def _run_agent(self, text: str) -> None:
-        if self.agent is None:
-            self.ui(lambda: self._on_agent_done("助手还没就绪，请稍后再试。", True))
+        try:
+            self.engage_model()
+        except Exception as exc:
+            self.ui(lambda: self._on_agent_done(str(exc), True))
             return
         self._agent_running = True
         run_id = str(uuid.uuid4())
         failed = False
         try:
-            inject_history(
-                self.agent,
-                self.state.history_n,
-                self.state.session_id,
-                exclude_user=text,
-            )
-            answer = str(self.agent.run(text, run_id=run_id))
-            self._record_usage(self.agent, run_id)
+            self.inject_prepared(text, exclude_user=text)
+            with bind_turn_user(text):
+                answer = spoken_answer(str(self.agent.run(with_clock(text), run_id=run_id)))
+                self._record_usage(self.agent, run_id)
         except Exception as exc:
             answer = str(exc)
             failed = True
@@ -906,22 +1123,20 @@ class App(BoardWorkbench):
         if self.state.last_daily_date == today:
             log("今日纸条已写过，跳过")
             return
-        if self.agent is None:
-            self.ui(
-                lambda: self.show_notice(
-                    self._agent_error or "还没接上模型。打开看板「模型」页填写后再看今日安排。"
-                )
-            )
+        try:
+            self.engage_model()
+        except Exception as exc:
+            self.ui(lambda: self.show_notice(str(exc)))
             return
+        self._agent_running = True
         ready = threading.Event()
         self.ui(lambda: self._begin_daily_stream(ready))
         if not ready.wait(8):
             log("今日纸条：气泡未及时开流")
-        self._agent_running = True
         run_id = str(uuid.uuid4())
         failed = False
         try:
-            inject_history(self.agent, self.state.history_n, self.state.session_id)
+            self.inject_prepared(DAILY_ASK)
             answer = str(self.agent.run(DAILY_ASK, run_id=run_id)).strip()
             if not answer:
                 raise RuntimeError("今日纸条返回空内容。")

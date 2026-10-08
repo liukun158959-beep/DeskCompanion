@@ -29,6 +29,63 @@ class Bridge:
     def list_feishu_docs(self) -> dict:
         return self._host.list_feishu_docs()
 
+    def load_knowledge(self) -> dict:
+        return self._host.board_knowledge()
+
+    def save_knowledge(self, payload: dict) -> dict:
+        return self._host.board_save_knowledge(payload)
+
+    def download_knowledge(self, repo: str) -> dict:
+        return self._host.board_download_knowledge(repo)
+
+    def delete_model(self, repo: str) -> dict:
+        return self._host.board_delete_model(repo)
+
+    def add_knowledge(self, doc_id: str, label: str) -> dict:
+        return self._host.board_add_knowledge(doc_id, label)
+
+    def delete_knowledge(self, doc_id: str) -> dict:
+        return self._host.board_delete_knowledge(doc_id)
+
+    def rebuild_knowledge(self) -> dict:
+        return self._host.board_rebuild_knowledge()
+
+    def ask_knowledge(self, text: str) -> dict:
+        return self._host.board_ask_knowledge(text)
+
+    def load_notebook(self) -> dict:
+        return self._host.board_load_notebook()
+
+    def new_notebook(self) -> dict:
+        return self._host.board_new_notebook()
+
+    def save_notebook_note(self, session_id: str, question: str, answer: str, cites: list) -> dict:
+        return self._host.board_save_notebook_note(session_id, question, answer, cites)
+
+    def delete_notebook_note(self, session_id: str, note_id: str) -> dict:
+        return self._host.board_delete_notebook_note(session_id, note_id)
+
+    def export_notebook_markdown(self, session_id: str, note_id: str) -> dict:
+        return self._host.board_export_notebook_markdown(session_id, note_id)
+
+    def export_notebook_feishu(self, session_id: str, note_id: str) -> dict:
+        return self._host.board_export_notebook_feishu(session_id, note_id)
+
+    def summarize_notebook(self, session_id: str, note_ids: list, sampling: dict) -> dict:
+        return self._host.board_summarize_notebook(session_id, note_ids, sampling)
+
+    def open_notebook_file(self, session_id: str, note_id: str, name: str) -> dict:
+        return self._host.board_open_notebook_file(session_id, note_id, name)
+
+    def reveal_notebook_file(self, session_id: str, note_id: str, name: str) -> dict:
+        return self._host.board_reveal_notebook_file(session_id, note_id, name)
+
+    def delete_notebook_file(self, session_id: str, note_id: str, name: str) -> dict:
+        return self._host.board_delete_notebook_file(session_id, note_id, name)
+
+    def list_mcp_tools(self) -> dict:
+        return self._host.list_mcp_tools()
+
     def write_week_review_doc(self, payload: dict) -> dict:
         return self._host.write_week_review_doc(payload)
 
@@ -103,6 +160,21 @@ class Bridge:
     def load_memory(self) -> dict:
         return self._host.board_memory()
 
+    def compress_context(self) -> dict:
+        return self._host.board_compress_context()
+
+    def add_fact(self, text: str) -> dict:
+        return self._host.board_add_fact(text)
+
+    def update_fact(self, fact_id: str, text: str) -> dict:
+        return self._host.board_update_fact(fact_id, text)
+
+    def delete_fact(self, fact_id: str) -> dict:
+        return self._host.board_delete_fact(fact_id)
+
+    def delete_memory_turn(self, role: str, text: str) -> dict:
+        return self._host.board_drop_memory_turn(role, text)
+
     def load_persona(self) -> dict:
         return self._host.board_persona()
 
@@ -111,6 +183,18 @@ class Bridge:
 
     def load_model(self) -> dict:
         return self._host.board_model()
+
+    def load_models(self) -> dict:
+        return self._host.board_models()
+
+    def save_model_entry(self, payload: dict) -> dict:
+        return self._host.save_model_entry(payload)
+
+    def delete_model_entry(self, model_id: str) -> dict:
+        return self._host.delete_model_entry(model_id)
+
+    def use_model(self, model_id: str) -> dict:
+        return self._host.use_model(model_id)
 
     def save_model(self, payload: dict) -> dict:
         return self._host.save_model(payload)
@@ -146,6 +230,18 @@ class Bridge:
 
     def load_maa(self) -> dict:
         return self._host.board_maa()
+
+    def load_depot(self) -> dict:
+        return self._host.board_depot()
+
+    def load_raise(self) -> dict:
+        return self._host.board_raise()
+
+    def add_raise(self, operator: str, rank: str) -> dict:
+        return self._host.board_add_raise(operator, rank)
+
+    def remove_raise(self, operator: str, rank: str) -> dict:
+        return self._host.board_remove_raise(operator, rank)
 
     def load_github(self) -> dict:
         return self._host.board_github()

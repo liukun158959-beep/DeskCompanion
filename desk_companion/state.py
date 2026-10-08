@@ -20,7 +20,6 @@ REQUIRED = (
     "click_through",
     "last_daily_date",
     "persona",
-    "history_n",
     "max_steps",
     "model_prices",
     "session_id",
@@ -57,7 +56,6 @@ class UserState:
     click_through: bool
     last_daily_date: str
     persona: str
-    history_n: int
     max_steps: int
     model_prices: dict
     session_id: str
@@ -72,7 +70,6 @@ class UserState:
             "click_through": self.click_through,
             "last_daily_date": self.last_daily_date,
             "persona": self.persona,
-            "history_n": self.history_n,
             "max_steps": self.max_steps,
             "model_prices": self.model_prices,
             "session_id": self.session_id,
@@ -95,7 +92,6 @@ def load_state(default_x: int, default_y: int) -> UserState:
             click_through=False,
             last_daily_date="",
             persona=DEFAULT_PERSONA,
-            history_n=20,
             max_steps=8,
             model_prices={},
             session_id=new_session_id(),
@@ -150,9 +146,6 @@ def load_state(default_x: int, default_y: int) -> UserState:
     persona = raw["persona"]
     if type(persona) is not str or not persona.strip():
         raise RuntimeError(f"{path} 的 persona 必须是非空字符串。改正或删掉该文件后重启。")
-    history_n = raw["history_n"]
-    if type(history_n) is not int or history_n < 0:
-        raise RuntimeError(f"{path} 的 history_n 必须是大于等于 0 的整数。改正或删掉该文件后重启。")
     max_steps = raw["max_steps"]
     if type(max_steps) is not int or max_steps < 1:
         raise RuntimeError(f"{path} 的 max_steps 必须是大于等于 1 的整数。改正或删掉该文件后重启。")
@@ -169,7 +162,6 @@ def load_state(default_x: int, default_y: int) -> UserState:
         click_through=raw["click_through"],
         last_daily_date=last_daily_date,
         persona=persona.strip(),
-        history_n=history_n,
         max_steps=max_steps,
         model_prices=model_prices,
         session_id=session_id.strip(),

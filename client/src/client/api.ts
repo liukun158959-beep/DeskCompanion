@@ -3,7 +3,29 @@ import type { Sampling } from "./sampling";
 
 export type BackendInfo = { port: number; token: string };
 
-export type ChatItem = { role: string; text: string; ts?: string; notes?: string[]; thinking?: string };
+export type ChatItem = {
+  role: string;
+  text: string;
+  ts?: string;
+  notes?: string[];
+  knowledge?: {
+    subagent: string;
+    question: string;
+    candidates: { doc: string; title: string; score: number; text: string }[];
+    kept: { doc: string; title: string; score: number; text: string }[];
+    answer?: string;
+  };
+  thinking?: string;
+  elapsed_s?: number;
+  react_loops?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  model?: string;
+  reasoning_effort?: string;
+  temperature?: number;
+  top_p?: number;
+};
 
 export type SessionItem = {
   id: string;
@@ -28,21 +50,78 @@ export type StreamHandlers = {
   onStatus: (text: string) => void;
   onDone: (answer: string) => void;
   onError: (message: string) => void;
+  onKnowledge?: (trace: ChatItem["knowledge"]) => void;
 };
+
+export type ChatChips = { skills: string[]; cli: string[]; github: string };
+
+export type NotebookDone = {
+  answer: string;
+  cites: {
+    n: number;
+    doc: string;
+    title: string;
+    text: string;
+    doc_id: string;
+    context?: string;
+  }[];
+};
+
+export function streamNotebook(
+  info: BackendInfo,
+  sessionId: string,
+  text: string,
+  docIds: string[],
+  sampling: Sampling,
+  handlers: {
+    onToken: (piece: string) => void;
+    onStatus: (text: string) => void;
+    onDone: (payload: NotebookDone) => void;
+    onError: (message: string) => void;
+  },
+): void {
+  const ws = new WebSocket(wsUrl(info));
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      type: "notebook",
+      session_id: sessionId,
+      text,
+      doc_ids: docIds,
+      sampling,
+    }));
+  };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(String(ev.data)) as { type: string; data?: string };
+    if (msg.type === "token") handlers.onToken(msg.data || "");
+    else if (msg.type === "status") handlers.onStatus(msg.data || "");
+    else if (msg.type === "done") {
+      handlers.onDone(JSON.parse(msg.data || "{}") as NotebookDone);
+      ws.close();
+    } else if (msg.type === "error") {
+      handlers.onError(msg.data || "笔记提问失败");
+      ws.close();
+    }
+  };
+  ws.onerror = () => handlers.onError("连不上本地后端。恢复：看桌宠日志后重启客户端");
+}
 
 export function streamChat(
   info: BackendInfo,
   text: string,
   sampling: Sampling,
+  chips: ChatChips,
+  modelId: string,
   handlers: StreamHandlers,
+  knowledge = false,
 ): void {
   const ws = new WebSocket(wsUrl(info));
-  ws.onopen = () => ws.send(JSON.stringify({ type: "chat", text, sampling }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "chat", text, sampling, chips, model_id: modelId, knowledge }));
   ws.onmessage = (ev) => {
     const msg = JSON.parse(String(ev.data)) as { type: string; data?: string };
     if (msg.type === "token") handlers.onToken(msg.data || "");
     else if (msg.type === "think") handlers.onThink(msg.data || "");
     else if (msg.type === "status") handlers.onStatus(msg.data || "");
+    else if (msg.type === "knowledge") handlers.onKnowledge?.(JSON.parse(msg.data || "null"));
     else if (msg.type === "done") {
       handlers.onDone(msg.data || "");
       ws.close();

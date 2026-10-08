@@ -39,7 +39,7 @@ def stamp_missing_session(session_id: str) -> None:
             _write_rows_locked(path, rows)
 
 
-def append_chat(role: str, text: str, session_id: str) -> None:
+def append_chat(role: str, text: str, session_id: str, detail: dict | None = None) -> None:
     if role not in ("user", "pet"):
         raise RuntimeError(f"对话角色只能是 user/pet，收到 {role!r}。")
     text = (text or "").strip()
@@ -47,12 +47,16 @@ def append_chat(role: str, text: str, session_id: str) -> None:
         raise RuntimeError("不能写入空对话。")
     if type(session_id) is not str or not session_id.strip():
         raise RuntimeError("写入对话需要非空 session_id。")
+    if detail is not None and role != "pet":
+        raise RuntimeError("只有回复可以附带思考和消耗。")
     rec = {
         "ts": datetime.now(TZ).isoformat(timespec="seconds"),
         "role": role,
         "text": text,
         "session_id": session_id.strip(),
     }
+    if detail is not None:
+        rec.update(_turn_detail(detail))
     line = json.dumps(rec, ensure_ascii=False) + "\n"
     path = memory_path()
     with _LOCK:
@@ -80,6 +84,41 @@ def clear_chat() -> None:
     path = memory_path()
     with _LOCK:
         if path.is_file():
+            path.unlink()
+
+
+def drop_session_turn(session_id: str, role: str, text: str) -> None:
+    """从当前线程拿掉一句。相同 role+正文的重复行一起删，避免去重后又喂回去。别的线程不动。"""
+    if type(session_id) is not str or not session_id.strip():
+        raise RuntimeError("drop_session_turn 需要非空 session_id。")
+    if role not in ("user", "pet"):
+        raise RuntimeError("只能删你或凯尔希的一句。")
+    if type(text) is not str or not text.strip():
+        raise RuntimeError("要删的句子是空的。")
+    sid = session_id.strip()
+    body = text.strip()
+    path = memory_path()
+    with _LOCK:
+        if not path.is_file():
+            raise RuntimeError("这一线程里没有这句。")
+        rows = _read_rows_locked(path)
+        kept = []
+        removed = 0
+        for rec in rows:
+            same = (
+                str(rec.get("session_id") or "") == sid
+                and str(rec.get("role") or "") == role
+                and str(rec.get("text") or "").strip() == body
+            )
+            if same:
+                removed += 1
+                continue
+            kept.append(rec)
+        if removed == 0:
+            raise RuntimeError("这一线程里没有这句。")
+        if kept:
+            _write_rows_locked(path, kept)
+        else:
             path.unlink()
 
 
@@ -178,14 +217,10 @@ def format_recent(limit: int = 20) -> str:
     return "\n".join(parts)
 
 
-def history_for_model(limit: int, session_id: str) -> list[dict]:
-    """喂给模型的窗口：当前 session 内，相同 role+正文只留最近一次。"""
-    if type(limit) is not int:
-        raise RuntimeError("history_for_model 的条数必须是整数。")
-    if limit <= 0:
-        return []
+def session_for_model(session_id: str) -> list[dict]:
+    """当前 session 去重后的全部对话。相同 role+正文只留最近一次。不按条数截断。"""
     if type(session_id) is not str or not session_id.strip():
-        raise RuntimeError("history_for_model 需要非空 session_id。")
+        raise RuntimeError("session_for_model 需要非空 session_id。")
     kept: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for rec in reversed(list_chat(session_id.strip())):
@@ -193,11 +228,71 @@ def history_for_model(limit: int, session_id: str) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        kept.append(rec)
-        if len(kept) >= limit:
-            break
+        kept.append({"role": str(rec["role"]), "text": str(rec["text"]).strip()})
     kept.reverse()
     return kept
+
+
+def _turn_detail(detail: dict) -> dict:
+    """回复上给人看的思考和消耗。思考不进入喂给模型的正文。"""
+    if not isinstance(detail, dict):
+        raise RuntimeError("回复附带信息必须是对象。")
+    elapsed = detail.get("elapsed_s")
+    if isinstance(elapsed, bool) or not isinstance(elapsed, (int, float)) or elapsed < 0:
+        raise RuntimeError("用时必须是非负数字。")
+    tokens = {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        value = detail.get(key)
+        if type(value) is not int or value < 0:
+            raise RuntimeError("token 数必须是非负整数。")
+        tokens[key] = value
+    if tokens["total_tokens"] != tokens["input_tokens"] + tokens["output_tokens"]:
+        raise RuntimeError("token 合计必须等于输入加输出。")
+    model = detail.get("model")
+    if type(model) is not str or not model.strip():
+        raise RuntimeError("这条回复没有模型名。")
+    effort = detail.get("reasoning_effort")
+    if effort not in ("low", "high", "max"):
+        raise RuntimeError("思考力度只能是 low、high、max。")
+    temperature = detail.get("temperature")
+    top_p = detail.get("top_p")
+    if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
+        raise RuntimeError("温度必须是数字。")
+    if isinstance(top_p, bool) or not isinstance(top_p, (int, float)):
+        raise RuntimeError("top_p 必须是数字。")
+    thinking = detail.get("thinking") or ""
+    if type(thinking) is not str:
+        raise RuntimeError("思考必须是字符串。")
+    notes = detail.get("notes") or []
+    if type(notes) is not list or any(type(line) is not str or not line.strip() for line in notes):
+        raise RuntimeError("工具调用记录必须是非空字符串列表。")
+    loops = detail.get("react_loops")
+    if type(loops) is not int or isinstance(loops, bool) or loops < 1:
+        raise RuntimeError("循环次数必须是大于等于 1 的整数。")
+    knowledge = detail.get("knowledge") if "knowledge" in detail else None
+    if knowledge is not None:
+        from .knowledge import check_trace
+
+        knowledge = check_trace(knowledge)
+    out = {
+        "elapsed_s": round(float(elapsed), 1),
+        "input_tokens": tokens["input_tokens"],
+        "output_tokens": tokens["output_tokens"],
+        "total_tokens": tokens["total_tokens"],
+        "model": model.strip(),
+        "reasoning_effort": effort,
+        "temperature": float(temperature),
+        "top_p": float(top_p),
+        "react_loops": loops,
+    }
+    if knowledge is not None:
+        out["knowledge"] = knowledge
+    thinking = thinking.strip()
+    if thinking:
+        out["thinking"] = thinking
+    if notes:
+        out["notes"] = [line.strip() for line in notes]
+    return out
 
 
 def _parse_line(path: Path, line: str) -> dict:
