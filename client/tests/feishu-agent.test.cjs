@@ -37,8 +37,49 @@ test('Feishu page starts and stops bot connection through the shared API', async
   assert.equal(app.button('停止接入').props.disabled, false);
   assert.ok(JSON.stringify(app.renderer.toJSON()).includes('测试用户'));
   await act(async () => app.button('停止接入').props.onClick());
-  assert.deepEqual(calls, ['load_feishu_agent', 'start_feishu_agent', 'stop_feishu_agent']);
+  assert.deepEqual(calls, ['load_feishu_agent', 'list_feishu_agent_profiles', 'start_feishu_agent', 'stop_feishu_agent']);
   assert.equal(app.button('接入飞书').props.disabled, false);
+  app.renderer.unmount();
+});
+
+const profile = { name: 'original', appId: 'cli_test', brand: 'feishu', effective: true, user: '本人' };
+const settings = { profile: 'original', auto_start: true, auto_reconnect: true, retry_min: 2, retry_max: 30 };
+test('edited connection settings persist, and unsaved changes prevent connecting', async () => {
+  const calls = [];
+  const app = mount(async (_info, method, args) => {
+    calls.push([method, args]);
+    if (method === 'list_feishu_agent_profiles') return { profiles: [profile] };
+    if (method === 'save_feishu_agent_settings') return { ...idle, settings: args };
+    return { ...idle, settings };
+  });
+  await act(async () => {});
+  const interval = app.renderer.root.findByProps({ 'aria-label': '初始重连间隔' });
+  await act(async () => interval.props.onChange({ target: { value: '5' } }));
+  assert.equal(app.button('接入飞书').props.disabled, true);
+  await act(async () => app.button('保存连接设置').props.onClick());
+  assert.equal(calls.find(([name]) => name === 'save_feishu_agent_settings')[1].retry_min, 5);
+  assert.equal(app.button('接入飞书').props.disabled, false);
+  app.renderer.unmount();
+});
+test('updating credentials clears the password even on failure and occupancy check reports errors', async () => {
+  const app = mount(async (_info, method, args) => {
+    if (method === 'list_feishu_agent_profiles') return { profiles: [profile] };
+    if (method === 'update_feishu_agent_credentials') {
+      assert.equal(args.app_secret, 'test-only-secret');
+      throw new Error('更新失败');
+    }
+    if (method === 'check_feishu_agent_connection') return { ok: false, error: '本机 App Secret 无效' };
+    return { ...idle, settings };
+  });
+  await act(async () => {});
+  const password = () => app.renderer.root.findByProps({ 'aria-label': 'App Secret' });
+  assert.equal(password().props.type, 'password');
+  await act(async () => password().props.onChange({ target: { value: 'test-only-secret' } }));
+  await act(async () => app.button('更新应用密钥').props.onClick());
+  assert.equal(password().props.value, '');
+  assert.ok(JSON.stringify(app.renderer.toJSON()).includes('更新失败'));
+  await act(async () => app.button('检查连接占用').props.onClick());
+  assert.ok(JSON.stringify(app.renderer.toJSON()).includes('本机 App Secret 无效'));
   app.renderer.unmount();
 });
 test('remote connection blocker stays visible with retry and stop actions', async () => {

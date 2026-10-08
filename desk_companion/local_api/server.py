@@ -31,6 +31,8 @@ RPC_METHODS = frozenset({
     "add_fact", "update_fact", "delete_fact", "delete_memory_turn",
     "load_feishu", "feishu_login", "feishu_logout",
     "load_feishu_agent", "start_feishu_agent", "stop_feishu_agent",
+    "list_feishu_agent_profiles", "save_feishu_agent_settings",
+    "update_feishu_agent_credentials", "check_feishu_agent_connection",
     "load_maa", "load_depot", "load_raise", "add_raise", "remove_raise",
     "load_github", "load_skland", "sync_skland",
     "save_maa_paths", "save_maa_option",
@@ -151,7 +153,9 @@ def _dispatch(method: str, args: dict) -> dict:
     if fn is None:
         return {"ok": False, "error": f"Bridge 无此方法：{method}"}
     try:
-        if method in {"load_feishu_agent", "start_feishu_agent", "stop_feishu_agent"}:
+        if method in {"load_feishu_agent", "start_feishu_agent", "stop_feishu_agent",
+                      "list_feishu_agent_profiles", "save_feishu_agent_settings",
+                      "update_feishu_agent_credentials", "check_feishu_agent_connection"}:
             result = fn(**args) if args else fn()
         else:
             # 飞书与桌面共享 Agent；数据方法不能读到临时切换中的飞书线程。

@@ -34,8 +34,8 @@ def json_data(raw: str) -> dict:
     return value.get("data", value)
 
 
-def identify() -> dict:
-    current = json_data(_run_lark(["whoami"]))
+def identify(profile: str = "") -> dict:
+    current = json_data(_run_lark((["--profile", profile] if profile else []) + ["whoami"]))
     profile = current.get("profile")
     if not isinstance(profile, str) or not profile:
         raise RuntimeError("飞书 CLI 没有配置应用，请先执行 lark-cli config init。")
@@ -160,6 +160,86 @@ class FeishuAgent:
         self._last_reply = ""
         self._inbox = None
 
+    def settings(self) -> dict:
+        config = self._config()
+        return {"profile": config.get("profile", (config.get("binding") or {}).get("profile", "")),
+                "auto_start": config.get("auto_start", True), "auto_reconnect": config.get("auto_reconnect", True),
+                "retry_min": config.get("retry_min", 2), "retry_max": config.get("retry_max", 30)}
+
+    def profiles(self) -> dict:
+        raw = json.loads(_run_lark(["profile", "list"]))
+        rows = raw.get("data", []) if isinstance(raw, dict) else raw
+        if not isinstance(rows, list):
+            raise RuntimeError("无法读取飞书应用列表。")
+        return {"ok": True, "profiles": [{key: row.get(key) for key in
+                ("name", "appId", "brand", "effective", "user")} for row in rows if isinstance(row, dict)]}
+
+    def save_settings(self, profile: str, auto_start: bool, auto_reconnect: bool,
+                      retry_min: int, retry_max: int, reset_binding: bool = False) -> dict:
+        if not isinstance(profile, str) or not profile.strip():
+            raise RuntimeError("请选择已配置的飞书应用。")
+        if any(type(value) is not bool for value in (auto_start, auto_reconnect, reset_binding)):
+            raise RuntimeError("自动连接设置必须是开关。")
+        if type(retry_min) is not int or type(retry_max) is not int or not 1 <= retry_min <= retry_max <= 300:
+            raise RuntimeError("重连间隔须为 1～300 秒的整数，最大值不能小于初始值。")
+        with self._lock:
+            self._require_stopped()
+            if profile not in [row["name"] for row in self.profiles()["profiles"]]:
+                raise RuntimeError("所选飞书应用不存在，请刷新应用列表。")
+            config = self._config()
+            if profile != self.settings()["profile"] or reset_binding:
+                self._binding = {}
+                config["binding"] = {}
+            config.update(profile=profile, auto_start=auto_start, auto_reconnect=auto_reconnect,
+                          retry_min=retry_min, retry_max=retry_max)
+            config_path().write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            self._error = ""
+            return self.status()
+
+    def _require_stopped(self):
+        if self._closing.is_set():
+            raise RuntimeError("桌宠正在退出。")
+        if (self._supervisor and self._supervisor.is_alive()) or (self._worker and self._worker.is_alive()):
+            raise RuntimeError("请先停止接入，并等待当前任务结束后再修改设置。")
+
+    def update_credentials(self, profile: str, app_secret: str) -> dict:
+        if not isinstance(app_secret, str) or not app_secret.strip() or len(app_secret) > 4096:
+            raise RuntimeError("请输入有效的 App Secret。")
+        with self._lock:
+            self._require_stopped()
+            row = next((row for row in self.profiles()["profiles"] if row["name"] == profile), None)
+            if not row:
+                raise RuntimeError("所选飞书应用不存在。")
+            try:
+                # 旧版 CLI 的无名 profile 需先获得相同的名字；选择器及默认身份保持不变。
+                _run_lark(["profile", "rename", profile, profile])
+                _run_lark(["config", "init", "--name", profile, "--app-id", row["appId"],
+                           "--brand", row["brand"], "--app-secret-stdin"], stdin=app_secret.strip() + "\n")
+            except Exception:
+                # 不向 RPC、日志或界面转发可能含密钥的子进程输出。
+                raise RuntimeError("更新应用密钥失败，请检查 CLI 配置；密钥不会显示在日志中。") from None
+            return {"ok": True, "message": "密钥已交由飞书 CLI 保存。请检查连接，再重新接入。"}
+
+    def check_connection(self, profile: str = "") -> dict:
+        selected = profile or self.settings()["profile"]
+        args = ["--profile", selected] if selected else []
+        try:
+            data = json_data(_run_lark([*args, "api", "GET", "/open-apis/event/v1/connection", "--as", "bot"]))
+            count = data.get("online_instance_cnt")
+            if type(count) is not int or count < 0:
+                raise RuntimeError("连接数无效")
+            local = json.loads(_run_lark([*args, "event", "status", "--json"]))
+            apps = local.get("apps", [])
+            running = any(row.get("running") is True for row in apps)
+            return {"ok": True, "count": count, "local_running": running,
+                    "message": f"平台在线连接：{count}；本机监听：{'运行中' if running else '未运行'}。" +
+                    ("可以尝试接入。" if count == 0 else "本机消费者可共享同一 CLI 连接。" if running else "仍有其他服务连接，请等待清除或停止原服务。"),
+                    "checked_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+        except Exception as exc:
+            invalid = "invalid_client" in str(exc) or "client secret is invalid" in str(exc).lower()
+            return {"ok": False, "error": "本机 App Secret 无效，请填写重置后的密钥并更新。" if invalid else
+                    "无法检查平台连接，请检查应用凭证、网络和 CLI 配置。"}
+
     def _config(self) -> dict:
         path = config_path()
         if not path.exists():
@@ -176,7 +256,7 @@ class FeishuAgent:
                     "connected": self._ready.is_set() and not self._stop.is_set(),
                     "error": self._error, "diagnostic": self._diagnostic, "last_reply": self._last_reply,
                     "binding": self._binding or config.get("binding", {}), "event": EVENT_KEY,
-                    "mode": "本人私聊", "config_path": str(config_path())}
+                    "mode": "本人私聊", "config_path": str(config_path()), "settings": self.settings()}
 
     def enable(self) -> dict:
         with self._lock:
@@ -186,7 +266,8 @@ class FeishuAgent:
                 return self.status()
             if self._worker and self._worker.is_alive():
                 raise RuntimeError("上次 Agent 仍在结束当前任务，请稍后再接入。")
-            identity = identify()
+            profile = self.settings()["profile"]
+            identity = identify(profile) if profile else identify()
             if self._closing.is_set():
                 raise RuntimeError("桌宠正在退出，不能启动飞书连接。")
             previous = self._config().get("binding") or {}
@@ -198,12 +279,14 @@ class FeishuAgent:
             return self.status()
 
     def _save(self, enabled: bool):
-        config_path().write_text(json.dumps({"enabled": enabled, "binding": self._binding}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        config = self._config()
+        config.update(enabled=enabled, binding=self._binding)
+        config_path().write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def autostart(self):
         try:
             config = self._config()
-            if config.get("enabled") is True:
+            if config.get("enabled") is True and config.get("auto_start", True) is True:
                 # 再验证绑定身份。后台执行，不阻塞客户端启动动画。
                 self.enable()
         except Exception as exc:
@@ -253,7 +336,8 @@ class FeishuAgent:
         return self.status()
 
     def _consume(self):
-        delay = 2
+        settings = self.settings()
+        delay = settings["retry_min"]
         try:
             while not self._stop.is_set() and not self._closing.is_set():
                 self._ready.clear()
@@ -290,6 +374,7 @@ class FeishuAgent:
                 for pipe in (process.stdin, process.stdout, process.stderr):
                     if pipe and not pipe.closed:
                         pipe.close()
+                was_ready = self._ready.is_set()
                 self._ready.clear()
                 with self._lock:
                     self._process = None
@@ -300,12 +385,19 @@ class FeishuAgent:
                         self._state = "error"
                         self._error = self._error or "飞书监听无法启动，请检查机器人权限、事件订阅和长连接占用。"
                     return
+                if not settings["auto_reconnect"]:
+                    with self._lock:
+                        self._state = "error"
+                        self._error = self._error or "飞书连接中断，自动重连已关闭，请手动重新接入。"
+                    return
+                if was_ready:
+                    delay = settings["retry_min"]
                 with self._lock:
                     self._state = "reconnecting"
                     self._error = self._error or "飞书连接中断，正在重连。"
                 if self._stop.wait(delay):
                     return
-                delay = min(delay * 2, 30)
+                delay = min(delay * 2, settings["retry_max"])
         except Exception as exc:
             self._ready.clear()
             with self._lock:

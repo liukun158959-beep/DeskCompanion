@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 from atlas.testing import FakeLLM
 from desk_companion import assistant, memory, logutil
-from desk_companion.feishu_agent import EVENT_KEY, FeishuAgent, Inbox, accepted, chunks
+from desk_companion.feishu_agent import EVENT_KEY, FeishuAgent, Inbox, accepted, chunks, identify
 from desk_companion.local_api.host import HeadlessApp
 from desk_companion.local_api import server
 
@@ -232,6 +232,96 @@ class FeishuAgentTests(unittest.TestCase):
                 reader.join(3)
         self.assertTrue(read_done.is_set())
         self.assertEqual(result["result"]["session_id"], desktop)
+
+    def test_settings_persist_without_switching_default_profile_and_rebind_is_explicit(self):
+        self.gateway._save(False)
+        profiles = {"ok": True, "profiles": [{"name": "dedicated"}, {"name": "test-profile"}]}
+        with patch.object(self.gateway, "profiles", return_value=profiles), patch("desk_companion.feishu_agent._run_lark") as cli:
+            result = self.gateway.save_settings("dedicated", False, False, 5, 60)
+            cli.assert_not_called()
+        self.assertEqual(result["binding"], {})
+        fresh = FeishuAgent(self.host)
+        self.assertEqual(fresh.settings(), {"profile": "dedicated", "auto_start": False,
+            "auto_reconnect": False, "retry_min": 5, "retry_max": 60})
+        fresh._binding = BINDING.copy()
+        fresh._save(True)
+        self.assertEqual(fresh.settings()["retry_max"], 60)
+        with patch.object(fresh, "enable") as enable:
+            fresh.autostart()
+            enable.assert_not_called()
+
+    def test_invalid_settings_and_changes_while_listening_are_rejected(self):
+        for low, high in ((0, 30), (30, 2), (2, 301), (True, 30), (2.5, 30)):
+            with self.assertRaises(RuntimeError):
+                self.gateway.save_settings("test-profile", True, True, low, high)
+        self.gateway._supervisor = Mock()
+        self.gateway._supervisor.is_alive.return_value = True
+        with self.assertRaisesRegex(RuntimeError, "先停止"):
+            self.gateway.save_settings("test-profile", True, True, 2, 30)
+        self.gateway._supervisor = None
+
+    def test_credential_update_uses_stdin_same_named_profile_and_redacts_errors(self):
+        profiles = {"profiles": [{"name": "test-profile", "appId": "test-app", "brand": "feishu"}]}
+        with patch.object(self.gateway, "profiles", return_value=profiles), \
+             patch("desk_companion.feishu_agent._run_lark", return_value="{}") as cli:
+            self.assertTrue(self.gateway.update_credentials("test-profile", "test-only-secret")["ok"])
+            args, kwargs = cli.call_args
+            self.assertNotIn("test-only-secret", args[0])
+            self.assertEqual(kwargs["stdin"], "test-only-secret\n")
+            self.assertIn("--name", args[0])
+            self.assertNotIn("--use", args[0])
+        with patch.object(self.gateway, "profiles", return_value=profiles), \
+             patch("desk_companion.feishu_agent._run_lark", side_effect=RuntimeError("test-only-secret")):
+            with self.assertRaises(RuntimeError) as failure:
+                self.gateway.update_credentials("test-profile", "test-only-secret")
+            self.assertNotIn("test-only-secret", str(failure.exception))
+        self.assertFalse((self.root / "feishu_agent.json").exists())
+
+    def test_connection_check_distinguishes_remote_occupancy_and_invalid_credentials(self):
+        for count, running in ((0, False), (1, False), (1, True)):
+            replies = [json.dumps({"ok": True, "data": {"online_instance_cnt": count}}),
+                       json.dumps({"apps": [{"running": running}]})]
+            with patch("desk_companion.feishu_agent._run_lark", side_effect=replies) as cli:
+                result = self.gateway.check_connection("test-profile")
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["count"], count)
+                self.assertEqual(result["local_running"], running)
+                self.assertEqual(cli.call_args_list[0].args[0][:2], ["--profile", "test-profile"])
+        with patch("desk_companion.feishu_agent._run_lark", side_effect=RuntimeError("invalid_client test-only-secret")):
+            result = self.gateway.check_connection("test-profile")
+            self.assertFalse(result["ok"])
+            self.assertIn("App Secret 无效", result["error"])
+            self.assertNotIn("test-only-secret", result["error"])
+
+    def test_identity_uses_selected_profile_and_not_the_global_default(self):
+        values = [{"profile": "dedicated", "appId": "test-app"}, {"appId": "test-app", "identities": {
+            "bot": {"available": True, "verified": True}, "user": {"available": True, "openId": "ou_owner"}}}]
+        with patch("desk_companion.feishu_agent._run_lark", side_effect=[json.dumps(row) for row in values]) as cli:
+            self.assertEqual(identify("dedicated")["profile"], "dedicated")
+            self.assertTrue(all(call.args[0][:2] == ["--profile", "dedicated"] for call in cli.call_args_list))
+
+    def test_network_retry_uses_saved_interval_and_can_be_disabled(self):
+        stub = self.root / "network_exit.py"
+        stub.write_text("import sys\nsys.exit(4)\n", encoding="utf-8")
+        for reconnect in (True, False):
+            with self.subTest(reconnect=reconnect):
+                gateway = FeishuAgent(self.host)
+                (self.root / "feishu_agent.json").write_text(json.dumps({"profile": "test-profile",
+                    "auto_reconnect": reconnect, "retry_min": 7, "retry_max": 60}), encoding="utf-8")
+                with patch("desk_companion.feishu_agent.identify", return_value=BINDING.copy()), \
+                     patch("desk_companion.feishu_agent._lark_cmd", return_value=[sys.executable, str(stub)]), \
+                     patch.object(gateway._stop, "wait", return_value=True) as wait:
+                    try:
+                        gateway.enable()
+                        gateway._supervisor.join(3)
+                        self.assertFalse(gateway._supervisor.is_alive())
+                        if reconnect:
+                            wait.assert_called_once_with(7)
+                        else:
+                            wait.assert_not_called()
+                            self.assertIn("自动重连已关闭", gateway.status()["error"])
+                    finally:
+                        gateway.stop(False)
 
 
 if __name__ == "__main__":

@@ -32,6 +32,18 @@ class Bridge:
     def stop_feishu_agent(self) -> dict:
         return self._host.feishu_agent.stop()
 
+    def list_feishu_agent_profiles(self) -> dict:
+        return self._host.feishu_agent.profiles()
+
+    def save_feishu_agent_settings(self, **settings) -> dict:
+        return self._host.feishu_agent.save_settings(**settings)
+
+    def update_feishu_agent_credentials(self, profile: str, app_secret: str) -> dict:
+        return self._host.feishu_agent.update_credentials(profile, app_secret)
+
+    def check_feishu_agent_connection(self, profile: str = "") -> dict:
+        return self._host.feishu_agent.check_connection(profile)
+
     def send_chat(self, text: str) -> None:
         self._host.ui(lambda: self._host.send_chat(text))
 

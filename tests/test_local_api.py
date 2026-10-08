@@ -56,6 +56,18 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(message["result"]["ok"])
         self.assertTrue(message["result"]["result"]["ok"])
 
+    async def test_feishu_settings_rpc_reports_invalid_secret_without_echoing_it(self):
+        with patch("desk_companion.feishu_agent._run_lark", side_effect=RuntimeError("invalid_client test-only-secret")):
+            async with connect(self.url, proxy=None) as ws:
+                await ws.send(json.dumps({"type": "rpc", "id": "feishu-check",
+                    "method": "check_feishu_agent_connection", "args": {"profile": "test-profile"}}))
+                raw = await asyncio.wait_for(ws.recv(), 5)
+                message = json.loads(raw)
+        self.assertTrue(message["result"]["ok"])
+        self.assertFalse(message["result"]["result"]["ok"])
+        self.assertIn("App Secret 无效", message["result"]["result"]["error"])
+        self.assertNotIn("test-only-secret", raw)
+
     async def test_shutdown_requires_exact_authorization_and_only_signals_the_server(self):
         shutdown = asyncio.Event()
         async def request(auth):
