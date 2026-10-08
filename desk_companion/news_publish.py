@@ -1,15 +1,13 @@
 """飞书发布阶段：确定目标、图片、每日文档、逐条记录及幂等群卡片。"""
 from __future__ import annotations
 import json
-import os
 import shutil
 import time
-from collections import Counter
 from html import escape
 from pathlib import Path
 
 from .feishu_tools import _run_lark
-from .news import FIELDS, digest, phase, runs_root
+from .news import FIELDS, digest, display_title, phase, runs_root
 from .paths import data_root
 
 
@@ -92,42 +90,23 @@ def cover_path(run):
 
 
 def render_cover(run):
-    """自绘技术要点图，图中文字来自已核实摘要，无来源图片版权或下载依赖。"""
-    from PIL import Image, ImageDraw, ImageFont
-    path = cover_path(run)
-    font_path = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/msyh.ttc"
-    if not font_path.exists():
-        font_path = Path(__file__).parent / "ui/fonts/ZCOOLKuaiLe-Regular.ttf"
-    font = lambda size: ImageFont.truetype(str(font_path), size)
-    image = Image.new("RGB", (1200, 640), "#0b1628")
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((30, 30, 1170, 610), 24, fill="#14253f")
-    draw.text((62, 52), "AI / AGENT  ·  工程日报", font=font(40), fill="#edf4ff")
-    draw.text((65, 112), run["day"] + "  |  官方来源核实 · 实践建议", font=font(23), fill="#adc5e7")
-    categories = Counter(r["category"] for r in run["report"]["items"])
-    colors = ("#70c9ff", "#84dfc7", "#b8abff")
-    y = 180
-    for index, (name, count) in enumerate(categories.items()):
-        draw.text((66, y), name[:14], font=font(24), fill="#d8e7ff")
-        draw.rounded_rectangle((470, y + 5, 470 + count * 95, y + 27), 8, fill=colors[index % 5])
-        draw.text((1000, y), f"{count} 条", font=font(22), fill="#d8e7ff")
-        y += 48
-    draw.line((66, 468, 1130, 468), fill="#355071", width=2)
-    draw.text((66, 493), f"精选 {len(run['report']['items'])} 条  /  核实 {run['report']['candidate_count']} 个来源", font=font(25), fill="#edf4ff")
-    draw.text((66, 544), "类别分布按本期重点统计，原始链接与局限见每日文档", font=font(22), fill="#adc5e7")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(path)
-    return path
+    from .news_poster import render_cover as poster
+    return poster(run)
 
 
 def document_xml(run, image_relative):
     e = lambda text: escape(str(text), quote=True)
     report = run["report"]
     blocks = [f"<title>{e(doc_title(run))}</title>", f"<p><b>{e(report['lead'])}</b></p>",
-              f'<img path="@./{e(image_relative)}" caption="本期精选技术类别分布，自绘统计图"/>',
+              f'<img path="@./{e(image_relative)}" caption="本期重点海报；背景为原创科技视觉，文字来自本期资料"/>',
               f"<p>核实 {report['candidate_count']} 个官方来源。摘要依据网页正文，实践建议需在项目中验证；未标注日期的来源不代表今日发布。</p>"]
     for item in report["items"]:
-        blocks += [f'<h1 seq="auto">{e(item["title"])}</h1>', f"<p>{e(item['summary'])}</p>",
+        blocks += [f'<h1 seq="auto">{e(display_title(item))}</h1>',
+                   f"<p><b>{e(item.get('company', ''))} · {e(item['category'])}</b></p>",
+                   f"<p>{e(item.get('detail') or item['summary'])}</p>"]
+        if item.get("key_points"):
+            blocks += ["<p><b>技术要点</b></p>", "<ul>" + "".join(f"<li>{e(p)}</li>" for p in item["key_points"]) + "</ul>"]
+        blocks += [
                    f"<p><b>实践建议：</b>{e(item['value'])}</p>",
                    f"<p><b>局限：</b>{e(item['caution'] or '尚未在桌宠项目中验证。')}</p>",
                    f"<p>发布时间：{e(item['published'] if item['date_verified'] else '来源未标注可核实日期')}</p>",
@@ -172,8 +151,8 @@ def create_document(run, target, save, emit):
         raise PublishError("上次文档创建结果尚未确认，当前查重无匹配；未重复创建，请稍后核实。")
     decision = {"audience": "桌面 Agent 开发者", "reader_task": "判断本期前沿技术是否值得在桌宠中试用，并查看官方证据与局限",
                 "genre_contract": "none", "adapter": "none", "presentation_mode": "rich",
-                "visual_plan": {"reason": "以类别统计图概览本期重点，其余正文解释事实、实践价值和来源",
-                                "blocks": [{"type": "img", "min_count": 1, "purpose": "概览本期精选技术的类别分布"}]}}
+                "visual_plan": {"reason": "以海报呈现本期五项重点，正文展开技术机制、实践价值和来源",
+                                "blocks": [{"type": "img", "min_count": 1, "purpose": "突出本期主线及五项技术动向"}]}}
     draft = cli(cfg, ["docs", "+script", "--command", "init-draft", "--presentation-decision", json.dumps(decision, ensure_ascii=False)])
     root = data_root().resolve()
     workspace = (root / draft["workspace"]).resolve()
@@ -245,7 +224,7 @@ def ensure_record(run, item, token, save, emit):
     pending = run["receipts"].setdefault("records_pending", [])
     if key in pending:
         raise PublishError("上次记录写入结果尚未确认，当前查重无匹配；未重复写入，请稍后核实。")
-    fields = {"资讯ID": key, "日期": run["day"], "标题": item["title"], "类别": item["category"], "摘要": item["summary"],
+    fields = {"资讯ID": key, "日期": run["day"], "标题": display_title(item), "类别": item["category"], "摘要": item["summary"],
               "实践价值": item["value"] + "\n局限：" + item["caution"], "来源链接": item["url"],
               "发布时间": item["published"] if item["date_verified"] else "未标注可核实日期", "每日文档": run["doc_url"], "状态": "已归档"}
     pending.append(key)
@@ -282,13 +261,11 @@ def news_card(run, image_key):
     def row(elements, background="default"):
         return {"tag": "column_set", "flex_mode": "none", "columns": [column(elements, background)]}
     report = run["report"]
-    lead = report["items"][0]
-    first = [{"tag": "img", "img_key": image_key, "alt": {"tag": "plain_text", "content": "本期重点技术类别分布"}, "scale_type": "fit_horizontal"},
-             {**text("**" + safe(report["lead"]) + "**"), "text_size": "heading-3"},
-             text(f"**1. {safe(lead['title'])}**\n{safe(lead['summary'])}\n实践：{safe(lead['value'])}\n[官方来源]({lead['url']})")]
+    first = [{"tag": "img", "img_key": image_key, "alt": {"tag": "plain_text", "content": "本期大厂开源与技术动向海报"}, "scale_type": "fit_horizontal"},
+             {**text("**" + safe(report["lead"]) + "**"), "text_size": "heading-3"}]
     others = []
-    for index, item in enumerate(report["items"][1:], 2):
-        others.append(text(f"**{index}. {safe(item['title'])}**\n{safe(item['summary'])}\n实践：{safe(item['value'])}\n[官方来源]({item['url']})"))
+    for index, item in enumerate(report["items"], 1):
+        others.append(text(f"**{index}. {safe(display_title(item))}**\n{safe(item['summary'][:80])}"))
     links = [{"tag": "button", "text": {"tag": "plain_text", "content": title}, "type": kind,
               "behaviors": [{"type": "open_url", "default_url": url}]} for title, kind, url in
              (("阅读每日文档", "primary_filled", run["doc_url"]), ("打开资讯表", "default", run["settings"]["base_url"]))]
@@ -310,7 +287,7 @@ def publish(run, save, emit, *, send_group=True):
     save(status="publishing", error="")
     image = render_cover(run)
     if not run.get("doc_id"):
-        emit("status", "正在创建本期知识库文档，写入技术摘要与类别图。")
+        emit("status", "正在创建本期知识库文档，写入技术详解与海报。")
         create_document(run, target, save, emit)
     if not run["receipts"].get("doc_verified"):
         result = phase(emit, "tool", "news_verify_document", lambda: cli(cfg, ["docs", "+fetch", "--doc", run["doc_id"], "--doc-format", "xml", "--detail", "simple"]))
@@ -324,7 +301,7 @@ def publish(run, save, emit, *, send_group=True):
         ensure_record(run, item, target["base_token"], save, emit)
     if send_group and cfg["chat_id"] and not run.get("message_id"):
         if not run["receipts"].get("image_key"):
-            emit("status", "正在上传本期技术类别图。")
+            emit("status", "正在上传本期资讯海报。")
             key = phase(emit, "write", "news_upload_image", lambda: cli(cfg, ["im", "images", "create", "--data", '{"image_type":"message"}',
                 "--file", "image=./" + image.resolve().relative_to(data_root().resolve()).as_posix()], identity="bot"))["image_key"]
             run["receipts"]["image_key"] = key

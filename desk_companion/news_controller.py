@@ -41,6 +41,6 @@ def start(host, *, publish=False, run_id="", job_id="", seconds=900, attempt=0, 
                 return {"ok": True, "task_id": task["id"], "run_id": rid}
         task_id = manager.submit("AI/Agent 工程日报 · " + day + ("（发布）" if publish else "（预览）"), "news-" + news.digest(cfg), "automation",
             source={"workflow": "ai_news", "run_id": rid, "job_id": job_id, "attempt": attempt},
-            task_limits={"call_timeout": min(90, seconds), "task_timeout": seconds}, workflow="ai_news",
+            task_limits={"call_timeout": min(120, seconds), "task_timeout": seconds}, workflow="ai_news",
             news_settings=cfg, news_day=day, news_run_id=rid, news_publish=publish, news_send_group=send_group)
     return {"ok": True, "task_id": task_id, "run_id": rid}

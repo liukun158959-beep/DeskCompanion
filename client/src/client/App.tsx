@@ -82,10 +82,10 @@ import {
   type PersonaPublic,
 } from "./settings";
 
-type Pane = "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise";
+type Pane = "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise" | "automation" | "monitor";
 
 const debugKind = debugPane();
-const boardDebug = debugKind === "board" || debugKind === "maa" || debugKind === "feishu" || debugKind === "depot" || debugKind === "raise";
+const boardDebug = debugKind === "board" || debugKind === "maa" || debugKind === "feishu" || debugKind === "depot" || debugKind === "raise" || debugKind === "automation" || debugKind === "monitor";
 
 type Thread = {
   sessionId: string;
@@ -121,7 +121,9 @@ export function App() {
   const applyBgRef = useRef<(url: string) => void>(() => {});
   const clearBgRef = useRef<() => void>(() => {});
   const [pane, setPane] = useState<Pane>(
-    debugKind === "maa"
+    debugKind === "automation" || debugKind === "monitor"
+      ? debugKind
+      : debugKind === "maa"
       ? "maa"
       : debugKind === "depot"
         ? "depot"
@@ -2297,7 +2299,7 @@ export function App() {
           <SideNav
             icon="board"
             label="看板"
-            active={pane === "board" || pane === "maa" || pane === "depot" || pane === "raise" || pane === "feishu"}
+            active={pane === "board" || pane === "maa" || pane === "depot" || pane === "raise" || pane === "feishu" || pane === "automation" || pane === "monitor"}
             onClick={() => void openBoard()}
           />
           <SideNav icon="settings" label="设置" active={pane === "settings"} onClick={() => setPane("settings")} />
@@ -2382,6 +2384,8 @@ export function App() {
             <SideLink icon="depot" label="仓库" sub="depot" selected={pane === "depot"} onClick={() => void openDepot()} />
             <SideLink icon="raise" label="培养" sub="raise" selected={pane === "raise"} onClick={() => void openRaise()} />
             <SideLink icon="feishu" label="飞书" sub="feishu" selected={pane === "feishu"} onClick={() => void openFeishu()} />
+            <SideLink icon="today" label="定时任务" sub="automation" selected={pane === "automation"} onClick={() => setPane("automation")} />
+            <SideLink icon="board" label="聊天监控台" sub="monitor" selected={pane === "monitor"} onClick={() => setPane("monitor")} />
           </div>
         )}
       </aside>
@@ -2789,7 +2793,19 @@ export function App() {
                 onLogout={() => void logoutFeishu()}
               />
               <FeishuAgentPane info={info} debug={boardClock !== null} />
+            </motion.section>
+          ) : pane === "automation" ? (
+            <motion.section key="automation" data-page="automation" className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <h1 className="text-2xl font-semibold">定时任务</h1>
+              <p className="mt-2 text-sm text-muted-foreground">管理每日资讯、运行计划和执行记录。</p>
               <AutomationPane info={info} debug={boardClock !== null} />
+            </motion.section>
+          ) : pane === "monitor" ? (
+            <motion.section key="monitor" data-page="monitor" className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <h1 className="text-2xl font-semibold">聊天监控台</h1>
+              <p className="mt-2 text-sm text-muted-foreground">查看桌面与飞书会话的执行过程，停止任务或继续聊天。</p>
               <AgentMonitor info={info} debug={boardClock !== null} />
             </motion.section>
           ) : (

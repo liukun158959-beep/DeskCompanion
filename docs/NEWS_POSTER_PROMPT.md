@@ -1,0 +1,7 @@
+# 资讯海报视觉素材
+
+使用内置 image_gen 生成原创背景，保存于 `desk_companion/ui/news-poster-v1.png`。每日海报由应用将当期核实后的中文标题、公司和五项重点排版到背景上，不依赖每日在线图像生成。背景不代表真实设备或性能证据。
+
+最终生成提示词：
+
+Use case: ads-marketing. Asset type: reusable landscape 16:9 backdrop for a daily Chinese AI open-source technology news poster, inspired by high-production YouTube/Bilibili frontier technology thumbnails, original artwork. Primary request: a striking premium cinematic 3D scene representing open-source AI and agent systems. Subject: on the right 40% an enormous luminous cyan glass neural processor, connected to two floating modular compute chips with violet energy traces and open branching code-like geometry, dramatically tilted perspective, micro circuit details, strong rim light. Composition: left 60% is a very dark smooth midnight-navy negative space for dynamically added large Chinese headlines; subtle horizontal architectural lines, restrained glow near the right, lower 20% remains very dark for five news labels. Lighting: high contrast, crisp cyan and electric violet, polished reflective glass, bold cinematic edge lighting, dramatic depth. The scene should feel like a serious major technology release, eye-catching at thumbnail size, not a boring dashboard or empty chart. Constraints: absolutely no text, no letters, no numbers, no logos, no brand marks, no people, no robot faces, no fake benchmark numbers, no UI panels. Opaque background, clean uncluttered 16:9 composition, no noisy texture in text-safe left and bottom areas.

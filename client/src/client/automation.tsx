@@ -4,7 +4,7 @@ import { Markdown } from "./Markdown";
 
 type Settings = { profile: string; wiki_url: string; chat_id: string; base_url: string; base_token: string; table_id: string;
   topics: string[]; lookback_days: number; highlights: number };
-type Report = { lead: string; candidate_count: number; items: { title: string; url: string; category: string; summary: string; value: string; caution: string; published: string; date_verified: boolean }[] };
+type Report = { lead: string; candidate_count: number; items: { title: string; title_zh?: string; company?: string; url: string; category: string; summary: string; detail?: string; key_points?: string[]; value: string; caution: string; published: string; date_verified: boolean }[] };
 type Run = { id: string; day: string; status: string; error: string; doc_url?: string; report?: Report; warnings?: string[]; cover_ready?: boolean };
 type Job = { id?: string; name: string; action: string; enabled: boolean; cadence: string; weekdays: number[]; hour: number; minute: number; doc: string;
   schedule_text?: string; last_result?: string; last_error?: string; last_task_id?: string };
@@ -81,15 +81,15 @@ export function AutomationPane({ info, debug = false }: { info: BackendInfo | nu
   const inputClass = "mt-1 block w-full rounded-lg bg-secondary px-3 py-2 text-sm text-foreground";
   const buttonClass = "rounded-lg border border-border px-3 py-2 text-sm hover:bg-secondary disabled:opacity-40";
   return <section className="mt-8 rounded-xl border border-border bg-card/60 p-5" data-testid="automation-pane">
-    <h2 className="text-lg font-semibold">每日资讯与定时任务</h2>
-    <p className="mt-2 text-sm text-muted-foreground">每天筛选 3～5 条 AI/Agent 工程重点，附官方来源和实践建议，归档到知识库与资讯表，再向机器人所在群发送图文卡片。桌宠需保持运行。</p>
+    <h2 className="text-lg font-semibold">大厂开源与技术动向</h2>
+    <p className="mt-2 text-sm text-muted-foreground">每天精选 5 条国内外大厂的 AI 开源项目与技术动向。群卡片简述，知识库文档展开技术要点、实践价值和局限，英文标题附中文译名。桌宠需保持运行。</p>
     {form && <details className="mt-4" open={!form.wiki_url || !form.base_url}>
       <summary className="cursor-pointer text-sm font-medium">采集主题和飞书位置</summary>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {([['profile', '飞书 CLI 应用名称'], ['wiki_url', '知识库父页面链接'], ['chat_id', '推送群会话 ID（留空则只归档）'], ['base_url', '资讯多维表格链接'], ['table_id', '资讯数据表 ID']] as const).map(([key, label]) =>
           <label className="text-sm" key={key}>{label}<input className={inputClass} value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} /></label>)}
         <label className="text-sm">来源时间范围（天）<input className={inputClass} type="number" min={1} max={14} value={form.lookback_days} onChange={e => setForm({ ...form, lookback_days: Number(e.target.value) })} /></label>
-        <label className="text-sm">每日重点条数<select className={inputClass} value={form.highlights} onChange={e => setForm({ ...form, highlights: Number(e.target.value) })}>{[3,4,5].map(n => <option key={n} value={n}>{n} 条</option>)}</select></label>
+        <p className="text-sm self-center">每日重点：固定 5 条，国内与海外兼顾。</p>
         <label className="text-sm md:col-span-2">采集主题（每行一个，最多 4 个）<textarea className={inputClass} rows={4} value={form.topics.join('\n')} onChange={e => setForm({ ...form, topics: e.target.value.split('\n') })} /></label>
       </div>
       <div className="mt-3 flex gap-2"><button className={buttonClass} disabled={busy || debug} onClick={() => void call("save_news_settings", { payload: form })}>保存资讯设置</button>
@@ -106,10 +106,13 @@ export function AutomationPane({ info, debug = false }: { info: BackendInfo | nu
       {runs.map(r => <option key={r.id} value={r.id}>{r.day} · {states[r.status] || r.status} · {r.id.slice(0,8)}</option>)}</select></label></div>}
     {task && <p className="mt-3 text-sm">当前任务：{states[task.state] || task.state}{task.error ? ` · ${task.error}` : ""}</p>}
     {run?.report && <div className="mt-4 rounded-lg bg-secondary/60 p-4">
-      {run.cover_ready && info && <img className="mb-4 w-full rounded-lg" src={`http://127.0.0.1:${info.port}/news-cover/${run.id}?token=${encodeURIComponent(info.token)}`} alt="本期精选技术的类别分布统计图" />}
+      {run.cover_ready && info && <img className="mb-4 w-full rounded-lg" src={`http://127.0.0.1:${info.port}/news-cover/${run.id}?token=${encodeURIComponent(info.token)}`} alt="本期大厂开源与技术动向海报" />}
       <p className="font-medium">{run.report.lead}</p><p className="mt-1 text-xs text-muted-foreground">核实 {run.report.candidate_count} 个官方来源。实践建议需要项目内验证。</p>
       {run.report.items.map((item, index) => <div key={item.url} className="mt-4 border-t border-border pt-3">
-        <Markdown text={`**${index+1}. ${item.title}**\n\n${item.summary}\n\n实践建议：${item.value}\n\n局限：${item.caution || '尚未在本项目验证。'}\n\n发布时间：${item.date_verified ? item.published : '来源未标注可核实日期'}\n\n[官方来源](${item.url})`} />
+        <Markdown text={`**${index+1}. ${item.title}${item.title_zh && item.title_zh !== item.title ? `（${item.title_zh}）` : ''}**\n\n${item.summary}`} />
+        <details className="mt-2 text-sm"><summary className="cursor-pointer text-primary">查看详细说明与实践建议</summary>
+          <Markdown text={`${item.detail || item.summary}\n\n${(item.key_points || []).map(p => `- ${p}`).join('\n')}\n\n实践建议：${item.value}\n\n局限：${item.caution || '尚未在本项目验证。'}\n\n发布时间：${item.date_verified ? item.published : '来源未标注可核实日期'}\n\n[官方来源](${item.url})`} />
+        </details>
       </div>)}
       {run.doc_url && <Markdown text={`[打开每日文档](${run.doc_url})`} />}
       {!!run.warnings?.length && <details className="mt-3 text-xs text-muted-foreground"><summary>采集缺口（{run.warnings.length}）</summary>{run.warnings.map((w,i) => <p key={i} className="mt-1">{w}</p>)}</details>}

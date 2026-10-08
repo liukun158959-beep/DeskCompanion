@@ -20,10 +20,13 @@ def fixture():
     cfg = {**news.DEFAULTS, "profile": "test", "wiki_url": "https://example.feishu.cn/wiki/testwiki",
            "base_url": "https://example.feishu.cn/base/testbase", "base_token": "testbase", "table_id": "tbltest", "chat_id": "oc_test"}
     day = "2026-10-08"
-    items = [{"id": news.digest(str(i)), "title": f"官方技术 {i}", "url": f"https://github.com/example/project{i}",
-              "summary": "已核实功能", "value": "建议先测试", "caution": "尚未在项目验证", "category": "Agent 工程", "published": day, "date_verified": True} for i in range(3)]
+    companies = ["阿里", "腾讯", "Google", "Microsoft", "NVIDIA"]
+    items = [{"id": news.digest(str(i)), "title": f"Official Project {i}", "title_zh": f"官方技术 {i}", "url": f"https://github.com/example/project{i}",
+              "summary": "已核实功能", "detail": "此处详细解释官方发布内容、技术机制与适用场景。"*8, "key_points": ["可核实机制", "适用场景"],
+              "company": companies[i], "region": news.COMPANIES[companies[i]], "value": "建议先测试", "caution": "尚未在项目验证",
+              "category": "Agent 工程", "published": day, "date_verified": True} for i in range(5)]
     return {"id": news.run_id_for(day, cfg), "day": day, "settings": cfg, "receipts": {}, "warnings": [],
-            "status": "draft", "report": {"lead": "三项工具能力值得试用", "items": items, "candidate_count": 12}}
+            "status": "draft", "report": {"lead": "五项工具能力值得试用", "cover_title": "大厂开源五项进展", "items": items, "candidate_count": 12}}
 
 
 class NewsTests(unittest.TestCase):
@@ -36,10 +39,10 @@ class NewsTests(unittest.TestCase):
 
     def test_unknown_links_duplicate_sources_and_private_urls_are_rejected(self):
         candidates = [{"id": "known", "title": "官方说明", "url": "https://github.com/example/repo", "published": "", "date_verified": False}]
-        value = {"lead": "重点", "items": [{"source_id": "invented", "category": "工程", "summary": "编造", "value": "测试"}] * 3}
+        value = {"lead": "重点", "items": [{"source_id": "invented", "category": "工程", "summary": "编造", "value": "测试"}] * 5}
         with self.assertRaises(ValueError):
             news.validate_report(value, candidates, 5)
-        value["items"] = [{"source_id": "known", "category": "工程", "summary": "功能", "value": "测试"}] * 3
+        value["items"] = [{"source_id": "known", "category": "工程", "summary": "功能", "value": "测试"}] * 5
         with self.assertRaises(ValueError):
             news.validate_report(value, candidates, 5)
         for url in ("https://localhost/test", "http://github.com/test", "https://github.com.evil.invalid/test", "https://user:pass@github.com/test", "https://github.com:8080/test"):
@@ -50,13 +53,13 @@ class NewsTests(unittest.TestCase):
         run = fixture()
         events = []
         request = {"news_settings": run["settings"], "news_day": run["day"], "news_run_id": run["id"], "news_publish": False}
-        with patch.object(news, "collect", return_value=([{"id": "source"}] * 3, ["某来源不可读"])), \
+        with patch.object(news, "collect", return_value=([{"id": "source"}] * 5, ["某来源不可读"])), \
              patch.object(news, "summarize", return_value=run["report"]), patch.object(news_publish, "publish") as publish:
             news.execute(request, lambda kind, data: events.append((kind, data)))
         publish.assert_not_called()
         saved = news.load_run(run["id"])
         self.assertEqual(saved["status"], "draft")
-        self.assertEqual(len(saved["candidates"]), 3)
+        self.assertEqual(len(saved["candidates"]), 5)
         self.assertEqual(events[-1][0], "result")
 
     def test_failed_collection_keeps_diagnostics_without_publishing(self):
@@ -70,9 +73,77 @@ class NewsTests(unittest.TestCase):
         self.assertEqual(saved["status"], "failed")
         self.assertEqual(saved["candidates"], [{"id": "one"}])
 
+    def test_five_translated_items_have_separate_briefs_and_details(self):
+        r = fixture()
+        value = {"lead": r["report"]["lead"], "cover_title": r["report"]["cover_title"],
+                 "items": [{**i, "source_id": i["id"]} for i in r["report"]["items"]]}
+        result = news.validate_report(value, r["report"]["items"], 5)
+        self.assertEqual(len(result["items"]), 5)
+        self.assertIn("（官方技术 0）", news.display_title(result["items"][0]))
+        self.assertGreater(len(result["items"][0]["detail"]), len(result["items"][0]["summary"]))
+        for field, bad in (("title_zh", "English only"), ("detail", "太短")):
+            old = value["items"][0][field]
+            value["items"][0][field] = bad
+            with self.assertRaises(ValueError):
+                news.validate_report(value, r["report"]["items"], 5)
+            value["items"][0][field] = old
+        value["items"].pop()
+        with self.assertRaises(ValueError):
+            news.validate_report(value, r["report"]["items"], 5)
+
+    def test_company_identity_is_official_and_repository_pages_are_deduplicated(self):
+        self.assertEqual(news.company_for("https://github.com/QwenLM/Qwen3"), "阿里")
+        self.assertEqual(news.company_for("https://github.com/google-deepmind/project"), "Google")
+        self.assertFalse(news.company_for("https://github.com/random-person/qwen-mirror"))
+        self.assertFalse(news.company_for("https://arxiv.org/html/test", "University Abstract We compare Microsoft models"))
+        self.assertEqual(news.project_key("https://github.com/QwenLM/Qwen3/releases"), news.project_key("https://github.com/QwenLM/Qwen3/blob/main/README.md"))
+        self.assertEqual(news.repository_source("https://github.com/QwenLM/Qwen3/discussions/123"),
+                         ("https://github.com/QwenLM/Qwen3", "QwenLM/Qwen3"))
+
+    def test_github_rate_limit_falls_back_to_same_official_readme_without_guessing_date(self):
+        from urllib.error import HTTPError
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b"# Official README\nVerified implementation"
+        opener = Mock()
+        opener.open.side_effect = [HTTPError("api", 403, "rate limit", {}, None), response,
+                                    HTTPError("api", 403, "rate limit", {}, None)]
+        with patch.object(news.urllib.request, "build_opener", return_value=opener):
+            result = news.fetch_source("https://github.com/NVIDIA/OpenShell")
+        self.assertIn("Verified implementation", result["text"])
+        self.assertEqual(result["published"], "")
+        self.assertEqual(opener.open.call_args_list[1].args[0].full_url,
+                         "https://raw.githubusercontent.com/NVIDIA/OpenShell/HEAD/README.md")
+
+    def test_invalid_summary_is_repaired_once_and_remains_validated(self):
+        r = fixture()
+        correct = {"lead": r["report"]["lead"], "cover_title": r["report"]["cover_title"],
+                   "items": [{**i, "source_id": i["id"]} for i in r["report"]["items"]]}
+        broken = {**correct}
+        broken.pop("cover_title")
+        responses = [{"message": {"content": json.dumps(value)}} for value in (broken, correct)]
+        client = Mock()
+        client.chat.side_effect = responses
+        events = []
+        with patch("atlas.LLM", return_value=client), patch("desk_companion.model_catalog.require_active",
+                return_value={"api_key": "test", "base_url": "https://example.invalid/v1", "model": "test"}):
+            result = news.summarize(r["day"], r["settings"], r["report"]["items"], lambda k, d: events.append((k, d)))
+        self.assertEqual(len(result["items"]), 5)
+        self.assertEqual(client.chat.call_count, 2)
+        self.assertTrue(any(k == "status" and "修正一次" in d for k, d in events))
+
+    def test_default_topics_migrate_without_changing_publication_targets(self):
+        cfg = {**fixture()["settings"], "topics": news.LEGACY_TOPICS, "highlights": 3}
+        news.atomic_json(news.settings_path(), cfg)
+        migrated = news.load_settings()
+        self.assertEqual(migrated["topics"], news.DEFAULTS["topics"])
+        self.assertEqual(migrated["highlights"], 5)
+        self.assertEqual(migrated["chat_id"], cfg["chat_id"])
+
     def test_search_index_date_is_not_treated_as_verified_publication(self):
         cfg = {**news.DEFAULTS, "topics": ["Agent"]}
-        payload = {"results": [{"title": "Official", "link": "https://github.com/example/repo", "published_date": "2026-10-08"}]}
+        payload = {"results": [{"title": "Official", "link": "https://github.com/microsoft/repo", "published_date": "2026-10-08"}]}
         with patch("desk_companion.envconf.require_llm_env", return_value={"ATLAS_BASE_URL": "https://example.invalid/v1", "ATLAS_API_KEY": "test"}), \
              patch("desk_companion.web_search._post", return_value=payload), \
              patch("desk_companion.web_search.format_search"), \
@@ -211,15 +282,17 @@ class NewsTests(unittest.TestCase):
         card = news_publish.news_card(run, "img_v3_test")
         self.assertEqual(card["schema"], "2.0")
         self.assertEqual(len(card["body"]["elements"]), 3)
-        raw = json.dumps(card)
+        raw = json.dumps(card, ensure_ascii=False)
         self.assertIn("img_v3_test", raw)
         self.assertIn(run["doc_url"], raw)
         for item in run["report"]["items"]:
-            self.assertIn(item["url"], raw)
+            self.assertIn(item["url"], news_publish.document_xml(run, "sample.png"))
+            self.assertIn(item["title_zh"], raw)
+            self.assertNotIn(item["detail"], raw)
         image = news_publish.render_cover(run)
         from PIL import Image
         with Image.open(image) as img:
-            self.assertEqual(img.size, (1200, 640))
+            self.assertEqual(img.size, (1440, 810))
 
         def check(elements):
             for element in elements:
