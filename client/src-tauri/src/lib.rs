@@ -98,6 +98,74 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// 只打开 http/https。走 ShellExecute，不经过 cmd，避免链接里的符号被当成命令。
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    let url = clean_http_url(&url)?;
+    #[cfg(windows)]
+    {
+        let op = wide("open");
+        let file = wide(&url);
+        let code = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                file.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+            )
+        };
+        if code <= 32 {
+            return Err(format!("打不开链接（{code}）。恢复：复制地址到浏览器打开。"));
+        }
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Err("只在 Windows 上打开链接。".into())
+    }
+}
+
+fn clean_http_url(raw: &str) -> Result<String, String> {
+    let url = raw.trim();
+    if url.len() > 2000 {
+        return Err("链接太长。恢复：复制地址到浏览器打开。".into());
+    }
+    if url.chars().any(|ch| ch.is_whitespace()) {
+        return Err("链接里不能有空白。".into());
+    }
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+        return Err("只打开 http 或 https 链接。".into());
+    }
+    let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or("");
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if host.is_empty() || host.contains('@') {
+        return Err("这个地址不能打开。恢复：复制到浏览器。".into());
+    }
+    Ok(url.to_string())
+}
+
+#[cfg(windows)]
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+#[link(name = "shell32")]
+extern "system" {
+    fn ShellExecuteW(
+        hwnd: *mut std::ffi::c_void,
+        lp_operation: *const u16,
+        lp_file: *const u16,
+        lp_parameters: *const u16,
+        lp_directory: *const u16,
+        n_show_cmd: i32,
+    ) -> isize;
+}
+
 fn pick_free_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("无法分配端口");
     listener.local_addr().expect("读端口失败").port()
@@ -204,6 +272,7 @@ pub fn run() {
             nudge_pet,
             show_main,
             open_today,
+            open_link,
             quit_app
         ])
         .build(tauri::generate_context!())
