@@ -268,6 +268,11 @@ def _save(session_id: str, summary: str, covered: list[dict]) -> dict:
 
 
 def _read_session(session_id: str) -> dict | None:
+    with _PACK_LOCK:
+        return _read_session_locked(session_id)
+
+
+def _read_session_locked(session_id: str) -> dict | None:
     if type(session_id) is not str or not session_id.strip():
         raise RuntimeError("压缩记录需要非空 session_id。")
     path = pack_path()
@@ -315,6 +320,15 @@ def _check_pack(item, path: Path) -> dict:
 
 
 def _write_session(session_id: str, pack: dict | None) -> None:
+    with _PACK_LOCK:
+        _write_session_locked(session_id, pack)
+
+
+from .resource_lock import ResourceLock
+_PACK_LOCK = ResourceLock("context-pack")
+
+
+def _write_session_locked(session_id: str, pack: dict | None) -> None:
     path = pack_path()
     sessions: dict = {}
     if path.is_file():
@@ -330,10 +344,12 @@ def _write_session(session_id: str, pack: dict | None) -> None:
         if path.is_file():
             path.unlink()
         return
-    path.write_text(
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(
         json.dumps({"sessions": sessions}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    temporary.replace(path)
 
 
 def _read_all(path: Path) -> dict:

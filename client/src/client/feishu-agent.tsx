@@ -6,6 +6,7 @@ import { rpc, type BackendInfo } from "./api";
 export type FeishuAgentStatus = {
   ok: boolean; enabled: boolean; connected: boolean; state: string;
   error: string; diagnostic: string; last_reply: string;
+  menu_connected?: boolean; menu_error?: string;
   binding: { app_id?: string; app_name?: string; owner_name?: string; owner_id?: string };
   settings?: Settings;
 };
@@ -115,6 +116,8 @@ export function FeishuAgentPane({ info, debug = false }: { info: BackendInfo | n
       仅接受绑定的登录用户；桌宠需要保持运行，聊天历史与桌面当前对话分开保存。
     </p>
     <p className="mt-4 text-sm" data-feishu-agent-state>{STATES[snap?.state || "stopped"] || "读取状态中"}</p>
+    {snap?.connected && <p className="mt-2 text-xs text-white/50">记忆菜单：{snap.menu_connected ? "已监听" : "等待连接"}。菜单动作需配置为 memory_request_from_feishu，订阅 application.bot.menu_v6 后发布应用。</p>}
+    {snap?.menu_error && <p role="alert" className="mt-2 text-sm text-amber-300">{snap.menu_error}</p>}
     {snap?.binding?.app_id ? <p className="mt-2 text-sm text-muted-foreground">
       应用：{snap.binding.app_name || snap.binding.app_id}<br />
       允许私聊：{snap.binding.owner_name || snap.binding.owner_id}

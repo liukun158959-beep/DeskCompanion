@@ -33,6 +33,8 @@ class HeadlessApp(App):
 
     @property
     def tasks(self):
+        if self._tasks is not None:
+            return self._tasks
         with self.turn_lock:
             if self._tasks is None:
                 from ..tasks import TaskManager
@@ -70,6 +72,7 @@ class HeadlessApp(App):
         model_id: str = "",
         knowledge: bool = False,
         knowledge_sink: Callable[[dict], None] | None = None,
+        resume_note: str = "",
     ) -> str:
         """无头流式对话：复用 _compose_turn + agent.run + 流式 sink，不碰窗口。
 
@@ -97,6 +100,8 @@ class HeadlessApp(App):
             from ..feishu_docs import doc_turn_block
 
             model_message = model_message + "\n\n" + doc_turn_block(doc_picks)
+        if resume_note:
+            model_message += resume_note
         thoughts: list[str] = []
         notes: list[str] = []
 

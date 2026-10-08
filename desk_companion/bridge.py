@@ -42,8 +42,9 @@ class Bridge:
         if type(send_back) is not bool:
             raise ValueError("发送回飞书须为开关。")
         if send_back:
-            raise ValueError("发送回飞书尚未就绪，请先在本地续聊。")
-        found = self._host.tasks.resume(task_id, text, send_back=send_back)
+            found = self._host.feishu_agent.continue_task(task_id, text)
+        else:
+            found = self._host.tasks.resume(task_id, text, send_back=False)
         self._host._focused_task = found
         return {"ok": True, "task_id": found}
 

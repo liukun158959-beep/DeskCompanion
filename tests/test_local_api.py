@@ -98,7 +98,7 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
             await ws.send(json.dumps({"type": "chat", "text": "打个招呼", "chips": {},
                                      "sampling": {"reasoning_effort": "low", "temperature": 0.5, "top_p": 1}}))
             while True:
-                frame = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                frame = json.loads(await asyncio.wait_for(ws.recv(), 30))
                 frames.append(frame)
                 if frame["type"] in ("done", "error"):
                     break

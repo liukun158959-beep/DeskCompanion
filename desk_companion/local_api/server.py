@@ -160,9 +160,17 @@ def _dispatch(method: str, args: dict) -> dict:
                       "update_feishu_agent_credentials", "check_feishu_agent_connection"}:
             result = fn(**args) if args else fn()
         else:
-            # 飞书与桌面共享 Agent；数据方法不能读到临时切换中的飞书线程。
+            # 桌面数据操作仍串行；Agent 的共享写入也与界面修改互斥。
             with HOST.turn_lock:
-                result = fn(**args) if args else fn()
+                mutating = {"add_fact", "update_fact", "delete_fact", "delete_memory_turn", "clear_chat",
+                            "save_maa_paths", "save_maa_option", "maa_open_game", "maa_start_daily", "maa_stop",
+                            "write_today_summary_doc", "write_week_review_doc", "export_notebook_feishu", "compress_context"}
+                if method in mutating:
+                    from ..resource_lock import WRITES
+                    with WRITES:
+                        result = fn(**args) if args else fn()
+                else:
+                    result = fn(**args) if args else fn()
         return {"ok": True, "result": result}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -205,6 +213,7 @@ async def _handle_chat(ws, msg: dict) -> None:
         return
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
+    session_id = HOST.state.session_id
 
     def delta_sink(piece: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, ("token", piece))
@@ -228,7 +237,7 @@ async def _handle_chat(ws, msg: dict) -> None:
                     if kind == "knowledge":
                         data = json.dumps(data, ensure_ascii=False)
                     loop.call_soon_threadsafe(queue.put_nowait, (kind, data))
-            task_id = HOST.tasks.submit(str(msg.get("text", "")), HOST.state.session_id,
+            task_id = HOST.tasks.submit(str(msg.get("text", "")), session_id,
                                         chips=msg.get("chips"), sampling=sampling,
                                         model_id=str(msg.get("model_id") or ""), knowledge=bool(msg.get("knowledge")),
                                         callback=callback)

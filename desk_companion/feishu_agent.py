@@ -16,8 +16,9 @@ from .feishu_tools import CREATE_NO_WINDOW, _lark_cmd, _run_lark
 from .paths import data_root
 
 EVENT_KEY = "im.message.receive_v1"
+MENU_EVENT = "application.bot.menu_v6"
 HELP = ("我是桌宠 Agent，使用本机配置的模型、技能和工具。\n"
-        "直接发送问题即可。\n/help 帮助\n/new 新对话（保留旧历史）\n/status 接入状态\n"
+        "直接发送问题即可。\n/help 帮助\n/new 新对话（保留旧历史）\n/status 接入状态\n/memory 当前记忆（无需模型）\n"
         "/skills 技能列表\n/skill 技能名 问题\n/kb 问题：使用知识库\n"
         "/mcps MCP 工具列表\n/mcp 服务器名/工具名 问题\n"
         "当前只接收绑定用户的私聊文本或富文本；桌宠必须保持运行。")
@@ -62,6 +63,22 @@ class Inbox:
                        "kind TEXT, state TEXT, answer TEXT DEFAULT '', sent INTEGER DEFAULT 0, attempts INTEGER DEFAULT 0, "
                        "updated REAL, PRIMARY KEY(app,id))")
             db.execute("CREATE TABLE IF NOT EXISTS sessions (key TEXT PRIMARY KEY, id TEXT)")
+            columns = {r[1] for r in db.execute("PRAGMA table_info(messages)")}
+            for name, definition in {"task_id": "TEXT DEFAULT ''", "card_id": "TEXT DEFAULT ''", "reply_id": "TEXT DEFAULT ''",
+                                     "card_seq": "INTEGER DEFAULT 0", "card_done": "INTEGER DEFAULT 0"}.items():
+                if name not in columns:
+                    db.execute(f"ALTER TABLE messages ADD COLUMN {name} {definition}")
+
+    def get(self, app, message_id):
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM messages WHERE app=? AND id=?", (app, message_id)).fetchone()
+            return dict(row) if row else None
+
+    def menu(self, app, event_id, owner):
+        with self.connect() as db:
+            found = db.execute("INSERT OR IGNORE INTO messages(app,id,chat,sender,content,kind,state,updated) "
+                               "VALUES(?,?,'',?,'','memory','menu_sending',?)", (app, "menu-" + event_id, owner, time.time()))
+            return found.rowcount == 1
 
     @contextmanager
     def connect(self):
@@ -82,6 +99,7 @@ class Inbox:
 
     def recover(self, app: str):
         with self.connect() as db:
+            db.execute("UPDATE messages SET state='menu_pending' WHERE app=? AND state='menu_sending'", (app,))
             # 飞书回复 uuid 的去重窗口只有一小时，超过后不再自动重试不确定的发送。
             db.execute("UPDATE messages SET state='failed' WHERE app=? AND state='answered' AND updated<?",
                        (app, time.time() - 3600))
@@ -94,14 +112,14 @@ class Inbox:
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE messages SET state='expired' WHERE app=? AND state='queued' AND updated<?",
                        (app, time.time() - 600))
-            row = db.execute("SELECT * FROM messages WHERE app=? AND state IN ('queued','answered') "
+            row = db.execute("SELECT * FROM messages WHERE app=? AND state IN ('queued','answered','menu_pending') "
                              "ORDER BY rowid LIMIT 1", (app,)).fetchone()
-            if row and row["state"] == "queued":
+            if row and row["state"] in {"queued", "menu_pending"}:
                 db.execute("UPDATE messages SET state='running', updated=? WHERE app=? AND id=?", (time.time(), app, row["id"]))
             return dict(row) if row else None
 
     def update(self, app: str, message_id: str, **values):
-        allowed = {"state", "answer", "sent", "attempts"}
+        allowed = {"state", "answer", "sent", "attempts", "task_id", "card_id", "reply_id", "card_seq", "card_done"}
         if set(values) - allowed:
             raise ValueError("非法消息状态字段。")
         values["updated"] = time.time()
@@ -151,6 +169,10 @@ class FeishuAgent:
         self._ready = threading.Event()
         self._wake = threading.Event()
         self._process = None
+        self._menu_process = None
+        self._menu_thread = None
+        self._menu_ready = False
+        self._menu_error = ""
         self._supervisor = None
         self._worker = None
         self._binding = {}
@@ -199,7 +221,7 @@ class FeishuAgent:
     def _require_stopped(self):
         if self._closing.is_set():
             raise RuntimeError("桌宠正在退出。")
-        if (self._supervisor and self._supervisor.is_alive()) or (self._worker and self._worker.is_alive()):
+        if (self._supervisor and self._supervisor.is_alive()) or (self._worker and self._worker.is_alive()) or (self._menu_thread and self._menu_thread.is_alive()):
             raise RuntimeError("请先停止接入，并等待当前任务结束后再修改设置。")
 
     def update_credentials(self, profile: str, app_secret: str) -> dict:
@@ -263,7 +285,8 @@ class FeishuAgent:
                     "connected": self._ready.is_set() and not self._stop.is_set(),
                     "error": self._error, "diagnostic": self._diagnostic, "last_reply": self._last_reply,
                     "binding": self._binding or config.get("binding", {}), "event": EVENT_KEY,
-                    "mode": "本人私聊", "config_path": str(config_path()), "settings": self.settings()}
+                    "mode": "本人私聊", "config_path": str(config_path()), "settings": self.settings(),
+                    "menu_connected": self._menu_ready, "menu_error": self._menu_error}
 
     def enable(self) -> dict:
         with self._lock:
@@ -308,10 +331,41 @@ class FeishuAgent:
         self._state = "connecting"
         self._inbox = Inbox(data_root() / "memory" / "feishu_agent.sqlite3")
         self._inbox.recover(self._binding["app_id"])
+        self._recover_task_answers()
         self._supervisor = threading.Thread(target=self._consume, daemon=True, name="feishu-listener")
         self._worker = threading.Thread(target=self._work, daemon=True, name="feishu-agent")
         self._supervisor.start()
         self._worker.start()
+        self._menu_thread = threading.Thread(target=self._consume_menu, daemon=True, name="feishu-menu")
+        self._menu_thread.start()
+        self._recover_continuations()
+
+    def _recover_task_answers(self):
+        from .local_api.host import HeadlessApp
+        from .tasks import TERMINAL
+        if not isinstance(self.host, HeadlessApp):
+            return
+        with self._inbox.connect() as db:
+            rows = [dict(r) for r in db.execute("SELECT * FROM messages WHERE app=? AND state='answered' AND task_id<>''",
+                                                (self._binding["app_id"],))]
+        for row in rows:
+            try:
+                task = self.host.tasks.get(row["task_id"], False)
+            except ValueError:
+                continue
+            if task["state"] in TERMINAL:
+                answer = task["answer"] if task["state"] == "succeeded" else task["error"] + "\n\n" + task["answer"]
+                self._inbox.update(row["app"], row["id"], answer=answer)
+
+    def _recover_continuations(self):
+        from .local_api.host import HeadlessApp
+        if not isinstance(self.host, HeadlessApp):
+            return
+        for task in self.host.tasks.list("feishu")["items"]:
+            source = task["source"]
+            if source.get("parent_task") and source.get("send_back") and source.get("delivery_state") != "sent" and time.time() - task["created"] <= 3600:
+                if source.get("app_id") == self._binding["app_id"] and source.get("owner_id") == self._binding["owner_id"]:
+                    threading.Thread(target=self._deliver_continuation, args=(task["id"],), daemon=True).start()
 
     def stop(self, disable=True) -> dict:
         if not disable:
@@ -330,6 +384,17 @@ class FeishuAgent:
                 except (OSError, ValueError):
                     pass
             self._state = "stopped"
+            menu = self._menu_process
+            if menu and menu.stdin:
+                try:
+                    menu.stdin.close()
+                except (OSError, ValueError):
+                    pass
+        if menu:
+            try:
+                menu.wait(timeout=4)
+            except subprocess.TimeoutExpired:
+                self._menu_error = "记忆菜单监听尚未退出，请检查 CLI 事件状态。"
         if process:
             try:
                 process.wait(timeout=4)
@@ -340,7 +405,112 @@ class FeishuAgent:
                     self._error = "飞书监听尚未退出，请在 CLI 检查当前应用的 event status。"
         if self._supervisor and self._supervisor is not threading.current_thread():
             self._supervisor.join(timeout=1)
+        if self._menu_thread and self._menu_thread is not threading.current_thread():
+            self._menu_thread.join(timeout=1)
         return self.status()
+
+    def _consume_menu(self):
+        # 与聊天 consumer 共用 CLI bus；不会建立第二条平台长连接。
+        settings = self.settings()
+        delay = settings["retry_min"]
+        while not self._stop.is_set():
+            if not self._ready.wait(.2):
+                if self._supervisor and not self._supervisor.is_alive():
+                    return
+                continue
+            try:
+                command = [*_lark_cmd(), "--profile", self._binding["profile"], "event", "consume", MENU_EVENT, "--as", "bot"]
+                with self._lock:
+                    if self._stop.is_set():
+                        return
+                    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        text=True, encoding="utf-8", errors="replace", cwd=str(data_root()),
+                        creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0)
+                    self._menu_process = process
+                def stderr():
+                    for line in process.stderr:
+                        if line.strip() == f"[event] ready event_key={MENU_EVENT}":
+                            self._menu_ready = True
+                            self._menu_error = ""
+                        elif '"ok": false' in line or '"error"' in line:
+                            self._menu_error = "记忆菜单监听不可用，请检查 application.bot.menu_v6 订阅并发布应用。"
+                reader = threading.Thread(target=stderr, daemon=True)
+                reader.start()
+                for line in process.stdout:
+                    if self._stop.is_set():
+                        break
+                    try:
+                        self.process_menu(json.loads(line))
+                    except Exception:
+                        self._menu_error = "记忆卡片发送未完成，请检查卡片权限；也可发送 /memory 查看。"
+                process.wait()
+                if self._menu_ready:
+                    delay = settings["retry_min"]
+                reader.join(1)
+                for pipe in (process.stdin, process.stdout, process.stderr):
+                    if not pipe.closed:
+                        pipe.close()
+            except Exception:
+                self._menu_error = "记忆菜单连接中断，请检查事件订阅和飞书 CLI。"
+            finally:
+                self._menu_process = None
+                self._menu_ready = False
+            if not settings["auto_reconnect"] or self._stop.wait(delay):
+                return
+            delay = min(delay * 2, settings["retry_max"])
+
+    def process_menu(self, event):
+        if not isinstance(event, dict) or event.get("type") != MENU_EVENT or event.get("event_key") != "memory_request_from_feishu":
+            return False
+        if event.get("app_id") != self._binding["app_id"] or (event.get("operator_open_id") or event.get("operator_id")) != self._binding["owner_id"]:
+            return False
+        try:
+            age = time.time() - int(event["timestamp"]) / 1000
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not -60 <= age <= 600 or not isinstance(event.get("event_id"), str) or not event["event_id"]:
+            return False
+        if not self._inbox.menu(self._binding["app_id"], event["event_id"], self._binding["owner_id"]):
+            return False
+        row = self._inbox.get(self._binding["app_id"], "menu-" + event["event_id"])
+        try:
+            self._send_memory(row)
+        except Exception:
+            self._inbox.update(row["app"], row["id"], state="menu_pending")
+            self._wake.set()
+            raise
+        return True
+
+    def _memory_session(self):
+        with self._inbox.connect() as db:
+            latest = db.execute("SELECT chat FROM messages WHERE app=? AND sender=? AND chat<>'' ORDER BY updated DESC LIMIT 1",
+                                (self._binding["app_id"], self._binding["owner_id"])).fetchone()
+        return self._inbox.session(self._binding["app_id"], latest[0], self._binding["owner_id"]) if latest else self.host.state.session_id
+
+    def _send_memory(self, row):
+        from .feishu_cards import CardReply, memory_pages, card
+        pages = json.loads(row["answer"]) if row["answer"] else memory_pages(self._memory_session())
+        if not row["answer"]:
+            self._inbox.update(row["app"], row["id"], answer=json.dumps(pages, ensure_ascii=False))
+        sender = CardReply(self._binding["profile"], row["id"], self._binding["owner_id"], row["id"])
+        for index in range(row["sent"], len(pages)):
+            title = f"凯尔希 · 当前记忆（{index + 1}/{len(pages)}）"
+            payload = card(title, "仅本人可查看 · 已保存的事实与摘要", pages[index] + "\n\n完整聊天记录：桌宠主窗口 → 飞书 → 聊天任务监控台。")
+            try:
+                sender.send(payload, "interactive", sender._key(f"memory-{index}"))
+            except Exception:
+                # Card 2.0 失败重试相同请求，仍失败才退到简单 1.0；不丢掉内容。
+                for retry in range(2):
+                    try:
+                        sender.send(payload, "interactive", sender._key(f"memory-{index}"))
+                        break
+                    except Exception:
+                        if retry == 1:
+                            sender.send({"header": {"title": {"tag": "plain_text", "content": title}},
+                                         "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": pages[index]}}]},
+                                        "interactive", sender._key(f"memory-fallback-{index}"))
+            self._inbox.update(row["app"], row["id"], sent=index + 1)
+        self._inbox.update(row["app"], row["id"], state="sent")
 
     def _consume(self):
         settings = self.settings()
@@ -474,6 +644,9 @@ class FeishuAgent:
                     return
 
     def process_message(self, row: dict):
+        if row["kind"] == "memory" or row["content"].strip() in {"/memory", "记忆"}:
+            self._send_memory(row)
+            return
         if row["state"] == "queued":
             try:
                 answer = self._answer(row)
@@ -485,6 +658,10 @@ class FeishuAgent:
             self._inbox.update(row["app"], row["id"], answer=answer, state="answered")
         else:
             answer = row["answer"]
+        fresh = self._inbox.get(row["app"], row["id"])
+        if fresh.get("card_id"):
+            self._finish_card(fresh, answer)
+            return
         parts = chunks(answer)
         for index in range(row["sent"], len(parts)):
             if self._stop.is_set():
@@ -499,6 +676,118 @@ class FeishuAgent:
         self._inbox.update(row["app"], row["id"], state="sent")
         with self._lock:
             self._last_reply = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _run_agent(self, row, text, sid, chips, knowledge):
+        from .feishu_cards import CardReply
+        source = {"message_id": row["id"], "app_id": row["app"], "profile": self._binding["profile"],
+                  "owner_id": row["sender"], "chat_id": row["chat"], "send_back": True}
+        task_id = self.host.tasks.submit(text, sid, "feishu", source=source, chips=chips, knowledge=knowledge)
+        self._inbox.update(row["app"], row["id"], task_id=task_id)
+        persist = lambda **kw: self._inbox.update(row["app"], row["id"], **kw)
+        sender = CardReply(self._binding["profile"], row["id"], row["sender"], row["app"] + row["id"], persist=persist)
+        streaming = True
+        try:
+            sender.start()
+        except Exception:
+            streaming = False
+            self._diagnostic = "流式卡片不可用，已改为普通回复；请在应用后台开通并发布 cardkit:card:write。"
+            try:
+                sender.send({"text": "博士，已收到。任务正在后台处理，可在桌宠监控台查看或停止。"}, "text", sender._key("ack"))
+            except Exception:
+                pass
+        last, next_update = None, 0
+        from .tasks import TERMINAL
+        while True:
+            task = self.host.tasks.get(task_id)
+            if task["state"] in TERMINAL:
+                return task["answer"] if task["state"] == "succeeded" else task["error"] + ("\n\n**已生成的部分内容**\n" + task["answer"] if task["answer"] else "")
+            status = next((e["data"] for e in reversed(task["events"]) if e["kind"] == "status"), "正在处理")
+            value = (status, task["answer"])
+            if streaming and value != last and time.monotonic() >= next_update:
+                try:
+                    sender.update(*value)
+                    last = value
+                except Exception:
+                    self._diagnostic = "卡片更新暂时失败；任务继续执行，完成后会补全回复。"
+                next_update = time.monotonic() + 2
+            if self._stop.wait(.3):
+                # 连接停止不重跑 Agent；任务仍可在监控台停止或继续。
+                return "飞书连接已停止，任务进度保留在桌宠监控台。"
+
+    def _finish_card(self, row, answer):
+        from .feishu_cards import CardReply
+        persist = lambda **kw: self._inbox.update(row["app"], row["id"], **kw)
+        sender = CardReply(self._binding["profile"], row["id"], row["sender"], row["app"] + row["id"], row, persist)
+        task = self.host.tasks.get(row["task_id"], False) if row["task_id"] else None
+        failed = bool(task and task["state"] != "succeeded")
+        if not row["card_done"]:
+            try:
+                sender.start()
+                sender.finish("博士，任务已完成。" if not failed else "博士，任务已中断，以下内容已保留。", answer, failed)
+            except Exception:
+                try:
+                    sender.finish("博士，任务已完成。" if not failed else "博士，任务已中断，以下内容已保留。", answer, failed)
+                except Exception:
+                    from .feishu_cards import preview
+                    sender.send({"header": {"title": {"tag": "plain_text", "content": "凯尔希 · 任务回复"}},
+                                 "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": preview(answer)}}]},
+                                "interactive", sender._key("final-fallback"))
+            self._inbox.update(row["app"], row["id"], card_done=1)
+        # 超长答案不截断：卡片展示预览，原文按幂等键补充分段。
+        if len(answer.encode("utf-8")) > 22000:
+            for index, part in enumerate(chunks(answer)):
+                if index < row["sent"]:
+                    continue
+                sender.send({"text": part}, "text", sender._key(f"overflow-{index}"))
+                self._inbox.update(row["app"], row["id"], sent=index + 1)
+        self._inbox.update(row["app"], row["id"], state="sent")
+        self._last_reply = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def continue_task(self, task_id, text):
+        previous = self.host.tasks.get(task_id)
+        source = previous["source"]
+        identity = self._binding or self._config().get("binding", {})
+        if not source.get("message_id") or source.get("owner_id") != identity.get("owner_id") or source.get("app_id") != identity.get("app_id"):
+            raise ValueError("此任务没有当前绑定的原飞书私聊，无法发送回去。")
+        new_id = self.host.tasks.resume(task_id, text, send_back=True)
+        # 发送授权来自监控台本次显式勾选；只发送到原来的本人私聊。
+        threading.Thread(target=self._deliver_continuation, args=(new_id,), daemon=True).start()
+        return new_id
+
+    def _deliver_continuation(self, task_id):
+        from .feishu_cards import CardReply
+        from .tasks import TERMINAL
+        source = self.host.tasks.get(task_id, False)["source"]
+        persist = lambda **kw: self.host.tasks.update_source(task_id, **kw)
+        sender = CardReply(source["profile"], source["message_id"], source["owner_id"], "continue-" + task_id, source, persist)
+        try:
+            sender.start(status="博士，正在继续这段对话。")
+            latest, next_update = None, 0
+            while True:
+                task = self.host.tasks.get(task_id)
+                if task["state"] in TERMINAL:
+                    break
+                if self._closing.is_set():
+                    return
+                status = next((e["data"] for e in reversed(task["events"]) if e["kind"] == "status"), "继续处理")
+                value = (status, task["answer"])
+                if value != latest and time.monotonic() >= next_update:
+                    sender.update(*value)
+                    latest, next_update = value, time.monotonic() + 2
+                time.sleep(.3)
+            answer = task["answer"] if task["state"] == "succeeded" else task["error"] + "\n\n" + task["answer"]
+            sender.finish("续聊完成" if task["state"] == "succeeded" else "续聊中断，保留进度", answer, task["state"] != "succeeded")
+            if len(answer.encode("utf-8")) > 22000:
+                for i, part in enumerate(chunks(answer)):
+                    if i < source.get("sent", 0):
+                        continue
+                    sender.send({"text": part}, "text", sender._key(f"overflow-{i}"))
+                    persist(sent=i + 1)
+            persist(delivery_state="sent")
+            self.host.tasks.event(task_id, "delivery", "已回复原飞书私聊。")
+        except Exception:
+            persist(delivery_state="failed")
+            self.host.tasks.event(task_id, "delivery_error", "发送回飞书失败，答案仍保留在本地，请检查机器人连接和卡片权限。")
 
     def _answer(self, row: dict) -> str:
         if row["kind"] not in ("text", "post"):
@@ -548,4 +837,7 @@ class FeishuAgent:
         elif command.startswith("/"):
             return HELP
         sid = self._inbox.session(row["app"], row["chat"], row["sender"])
+        from .local_api.host import HeadlessApp
+        if isinstance(self.host, HeadlessApp):
+            return self._run_agent(row, text, sid, chips, knowledge)
         return self.host.run_channel_chat(text, sid, chips, knowledge)

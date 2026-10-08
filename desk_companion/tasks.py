@@ -106,6 +106,15 @@ class TaskManager:
             db.execute("UPDATE tasks SET " + ",".join(f"{k}=?" for k in values) + " WHERE id=?", (*values.values(), task_id))
             db.commit()
 
+    def update_source(self, task_id, **values):
+        with self.cv:
+            with self.db() as db:
+                row = db.execute("SELECT source FROM tasks WHERE id=?", (task_id,)).fetchone()
+                source = {**json.loads(row[0]), **values}
+                db.execute("UPDATE tasks SET source=? WHERE id=?", (json.dumps(source), task_id))
+                db.commit()
+        return source
+
     def event(self, task_id, kind, data):
         # 思考仅流到当前窗口，不保存进监控台，不转发到飞书。
         if kind != "think":
@@ -200,13 +209,16 @@ class TaskManager:
                             from . import maa_tools
                             from .resource_lock import WRITES
                             with WRITES:
+                                if control["cancel"].is_set():
+                                    return
                                 result = getattr(maa_tools, data["name"])(data["args"])
                             process.stdin.write(json.dumps({"result": result}) + "\n")
                             process.stdin.flush()
                         elif kind == "result":
                             outcome["answer"] = str(data)
                         elif kind == "failure":
-                            outcome["error"] = str(data)
+                            outcome["error"] = data.get("message", "任务失败") if isinstance(data, dict) else str(data)
+                            outcome["timed_out"] = isinstance(data, dict) and "Timeout" in data.get("type", "")
                         else:
                             if kind in ("llm_start", "tool_start"):
                                 phase["deadline"] = time.monotonic() + request["limits"]["call_timeout"]
@@ -234,6 +246,7 @@ class TaskManager:
                     self.event(task_id, "status", "博士，当前调用还未返回。我会保留进度，到时限后停止等待。")
                     waiting_note = float("inf")
             if reason:
+                control["cancel"].set()
                 tree.close()
                 reader.join(2)
                 message = "博士，任务已停止。" if reason == "cancelled" else "博士，调用达到时限，已停止等待。"
@@ -242,7 +255,7 @@ class TaskManager:
             elif "answer" in outcome:
                 self.finish(task_id, "succeeded", answer=outcome["answer"])
             else:
-                self.finish(task_id, "failed", outcome.get("error", "任务进程意外退出，请检查模型配置。"))
+                self.finish(task_id, "timed_out" if outcome.get("timed_out") else "failed", outcome.get("error", "任务进程意外退出，请检查模型配置。"))
                 self._save_partial(row, "failed")
         except Exception:
             self.finish(task_id, "failed", "无法启动独立任务，请检查后端日志或重启桌宠。")
@@ -274,10 +287,11 @@ class TaskManager:
             request = json.loads(db.execute("SELECT request FROM tasks WHERE id=?", (task_id,)).fetchone()[0])
         for key in ("text", "session_id", "limits"):
             request.pop(key, None)
-        completed = {e["data"].get("fingerprint") for e in previous["events"] if e["kind"] == "tool_end"
-                     and e["data"].get("status") in {"success", "idempotency_hit"} and not e["data"].get("read_only", True)}
+        completed = {e["data"].get("fingerprint") for e in previous["events"] if e["kind"] in {"tool_start", "tool_end"}
+                     and not e["data"].get("read_only", True)}
         request["completed_writes"] = list(set(request.get("completed_writes", [])) | (completed - {None}))
-        return self.submit(text, previous["session"], previous["channel"], source={**previous["source"], "parent_task": task_id,
+        source = {k: v for k, v in previous["source"].items() if k not in {"card_id", "reply_id", "card_seq", "sent", "delivery_state"}}
+        return self.submit(text, previous["session"], previous["channel"], source={**source, "parent_task": task_id,
                            "send_back": send_back}, callback=callback, resume_note=note, **{k:v for k,v in request.items() if k != "resume_note"})
 
     def shutdown(self):

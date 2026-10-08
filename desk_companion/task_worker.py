@@ -25,13 +25,10 @@ def main():
 
         class Progress(BasePlugin):
             name = "task_progress"
-            def on_llm_before_call(self, **kw):
-                emit("llm_start", {"turn": kw["turn_idx"], "model": kw["model"]})
-                emit("status", "博士，正在分析问题。" if kw["turn_idx"] == 0 else "博士，正在核对工具结果并整理回答。")
-            def on_llm_after_call(self, **kw):
-                emit("llm_end", {"turn": kw["turn_idx"], "duration_ms": kw["duration_ms"]})
             def on_tool_before_call(self, **kw):
-                emit("tool_start", {"tool": kw["tool_name"], "step": kw["step_id"]})
+                emit("tool_start", {"tool": kw["tool_name"], "step": kw["step_id"],
+                                    "fingerprint": fingerprint(kw["tool_name"], kw["input"]),
+                                    "read_only": host.agent.tools.get(kw["tool_name"]).isReadOnly})
             def on_tool_after_call(self, **kw):
                 emit("tool_end", {"tool": kw["tool_name"], "step": kw["step_id"],
                                   "status": kw["status"], "duration_ms": kw["duration_ms"],
@@ -51,6 +48,20 @@ def main():
             host.agent = build_agent(host)
             bind_llm(host.agent.llm, require_item(model_id) if model_id else require_active())
             host.agent.llm.client = host.agent.llm.client.with_options(timeout=request["limits"]["call_timeout"], max_retries=0)
+            original_chat = host.agent.llm.chat
+            count = 0
+            def chat(*args, **kwargs):
+                nonlocal count
+                import time
+                started = time.monotonic()
+                count += 1
+                emit("llm_start", {"turn": count, "model": host.agent.llm.model})
+                emit("status", "博士，正在分析问题。" if count == 1 else "博士，正在核对已有资料并整理回答。")
+                try:
+                    return original_chat(*args, **kwargs)
+                finally:
+                    emit("llm_end", {"turn": count, "duration_ms": int((time.monotonic()-started)*1000)})
+            host.agent.llm.chat = chat
             host.agent.terminator = MaxSteps(host.state.max_steps) | Timeout(request["limits"]["task_timeout"] * 1000)
             host.agent.runtime.terminator = host.agent.terminator
             host.agent.plugin_manager.register(Progress())
@@ -61,7 +72,7 @@ def main():
             def execute(name, arguments):
                 args = json.loads(arguments) if isinstance(arguments, str) else arguments
                 if fingerprint(name, args) in request.get("completed_writes", []):
-                    return "该操作在前次任务中已经完成。为避免重复写入，本次不再执行；请查询确认原结果。"
+                    return "该写入在前次任务中已经尝试过，本次不再重复执行；请查询确认原结果，再下达新的操作。"
                 if name in maa:
                     # 游戏控制留在主进程；任务完成不会终止已开始的 MAA 后台作业。
                     emit("maa", {"name": name, "args": args})
@@ -74,14 +85,11 @@ def main():
             host.agent.tools.execute = execute
 
         host.engage_model = engage
-        if request.get("resume_note"):
-            compose = host._compose_turn
-            host._compose_turn = lambda text, picked: compose(text, picked) + request["resume_note"]
         try:
             answer = host.run_chat(request["text"], request.get("chips"), lambda x: emit("token", x),
                                    lambda x: emit("status", x), parse_sampling(request.get("sampling")),
                                    lambda x: emit("think", x), request.get("model_id", ""), bool(request.get("knowledge")),
-                                   lambda x: emit("knowledge", x))
+                                   lambda x: emit("knowledge", x), resume_note=request.get("resume_note", ""))
             result = getattr(host.agent, "last_result", None)
             if getattr(result, "status", "") == "aborted" or answer.startswith("Agent 终止："):
                 emit("failure", "Agent 达到步骤或时间上限。已保留进度，请查看任务时间线。")
@@ -89,7 +97,8 @@ def main():
                 emit("result", answer)
         except Exception as exc:
             # 不通过网络泄露地址、凭证或堆栈，监控台给出可操作的类型。
-            emit("failure", "任务处理失败（" + type(exc).__name__ + "），请检查模型、工具权限或网络。")
+            name = type(exc).__name__
+            emit("failure", {"type": name, "message": "任务处理失败（" + name + "），请检查模型、工具权限或网络。"})
 
 
 if __name__ == "__main__":

@@ -15,12 +15,19 @@ def build(host):
     def query(messages, tools):
         (data_root() / "seen.json").write_text(__import__('json').dumps(messages, ensure_ascii=False), "utf-8")
         return {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1", "type": "function",
-                "function": {"name": "channel_lookup", "arguments": "{}"}}]}
+                "function": {"name": "channel_write" if "写入测试" in messages[-1].get("content", "") else "channel_lookup", "arguments": "{}"}}]}
     def lookup(args):
         (data_root() / "tool_called").write_text("1", "utf-8")
         return "离线工具结果"
     agent.tools.register(name="channel_lookup", description="离线查询", parameters={"type":"object","properties":{}},
                          func=lookup, isReadOnly=True)
+    def write(args):
+        path = data_root() / "write_count"
+        value = int(path.read_text("utf-8")) if path.exists() else 0
+        path.write_text(str(value + 1), "utf-8")
+        return "已完成测试写入"
+    agent.tools.register(name="channel_write", description="离线写入测试", parameters={"type":"object","properties":{}},
+                         func=write, retry_max=0)
     agent.llm = FakeLLM([query, "本地流式回归正常。"])
     agent.llm.client = SimpleNamespace(with_options=lambda **kw: SimpleNamespace())
     return agent
