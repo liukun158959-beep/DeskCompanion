@@ -49,6 +49,18 @@ class Bridge:
         from .video import load_settings
         return {"ok": True, "settings": load_settings()}
 
+    def load_video_login(self) -> dict:
+        from .video_login import status
+        return status()
+
+    def save_video_login(self, platform: str, cookies: list) -> dict:
+        from .video_login import save
+        return save(platform, cookies)
+
+    def clear_video_login(self, platform: str) -> dict:
+        from .video_login import clear
+        return clear(platform)
+
     def list_video_tasks(self) -> dict:
         from .video_controller import snapshot
         return snapshot(self._host)

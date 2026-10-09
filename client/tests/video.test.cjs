@@ -7,12 +7,12 @@ const ts = require('typescript');
 const React = require('react');
 const { act, create } = require('react-test-renderer');
 
-function load(rpc) {
+function load(rpc, invoke = async () => {}) {
   const filename = path.resolve(__dirname, '../src/client/video.tsx');
   const mod = new Module(filename, module);
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const original = mod.require.bind(mod);
-  mod.require = id => id === './api' ? { rpc } : id === './Markdown' ? {
+  mod.require = id => id === '@tauri-apps/api/core' ? { invoke } : id === './api' ? { rpc } : id === './Markdown' ? {
     MdLink: props => React.createElement('a', { href: props.href }, props.children),
     Markdown: props => React.createElement('p', null, props.text) } : original(id);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS,
@@ -20,6 +20,50 @@ function load(rpc) {
   return mod.exports;
 }
 global.window = { setInterval: () => 1, clearInterval() {} };
+
+test('video login opens dedicated window, explicitly captures login and clears both stores', async () => {
+  const calls = [];
+  const cookies = [{ domain: '.bilibili.com', name: 'SESSDATA', value: 'private' }];
+  const rows = [{ platform: 'Bilibili', state: 'missing' }, { platform: 'YouTube', state: 'missing' }];
+  const rpc = async (_, method, args) => {
+    calls.push([method, args]);
+    if (method === 'load_video_settings') return { settings: { proxy: 'http://127.0.0.1:7890', cookie_file: '' } };
+    if (method === 'save_video_login') rows[0].state = 'saved';
+    if (method === 'clear_video_login') rows[0].state = 'missing';
+    return { items: rows.map(row => ({ ...row })) };
+  };
+  const invoke = async (command, args) => { calls.push([command, args]); return cookies; };
+  const { VideoLogin } = load(rpc, invoke);
+  let renderer;
+  const url = 'https://www.bilibili.com/video/BV1ojfDBSEPv';
+  await act(async () => { renderer = create(React.createElement(VideoLogin, { info: { port: 1 }, url })); });
+  const button = title => renderer.root.findAllByType('button').find(node => node.children.join('') === title);
+  await act(async () => button('登录 / 查看视频').props.onClick());
+  assert.deepEqual(calls.at(-1), ['open_video_login', { platform: 'Bilibili', url, proxy: 'http://127.0.0.1:7890' }]);
+  assert.equal(calls.filter(call => call[0] === 'capture_video_login').length, 0);
+  await act(async () => button('使用此登录态').props.onClick());
+  assert.deepEqual(calls.at(-2), ['capture_video_login', { platform: 'Bilibili' }]);
+  assert.deepEqual(calls.at(-1), ['save_video_login', { platform: 'Bilibili', cookies }]);
+  assert.ok(JSON.stringify(renderer.toJSON()).includes('已保存登录态'));
+  assert.ok(!JSON.stringify(renderer.toJSON()).includes('private'));
+  await act(async () => button('清除登录态').props.onClick());
+  assert.deepEqual(calls.at(-2), ['clear_video_login_window', { platform: 'Bilibili' }]);
+  assert.deepEqual(calls.at(-1), ['clear_video_login', { platform: 'Bilibili' }]);
+  act(() => renderer.unmount());
+});
+
+test('video login capture errors never save or claim a usable login', async () => {
+  const calls = [];
+  const rpc = async (_, method) => { calls.push(method); return { items: [] }; };
+  const { VideoLogin } = load(rpc, async () => { throw new Error('请先登录'); });
+  let renderer;
+  await act(async () => { renderer = create(React.createElement(VideoLogin, { info: { port: 1 } })); });
+  const button = renderer.root.findAllByType('button').find(node => node.children.join('') === '使用此登录态');
+  await act(async () => button.props.onClick());
+  assert.ok(JSON.stringify(renderer.toJSON()).includes('请先登录'));
+  assert.ok(!calls.includes('save_video_login'));
+  act(() => renderer.unmount());
+});
 
 test('video settings wait for existing values before save and keep optional network fields', async () => {
   const calls = [];
@@ -62,6 +106,7 @@ test('dedicated video page submits separate jobs, follows selected context and l
     if (method === 'get_agent_task') return { task: args.task_id === 'old' ? old : next };
     if (method === 'list_task_videos') return { items: [] };
     if (method === 'load_video_settings') return { settings: { proxy: '', cookie_file: '' } };
+    if (method === 'load_video_login') return { items: [] };
     if (method === 'start_video_task') { rows = [next, old]; return { ok: true, task_id: 'new' }; }
     if (method === 'cancel_agent_task') { next.state = 'cancelled'; return { ok: true, task: next }; }
     if (method === 'continue_video_task') return { ok: true, task_id: 'new' };

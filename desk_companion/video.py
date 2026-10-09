@@ -219,6 +219,9 @@ def _read_video(session, url, refresh=False, on_status=None):
     path = source_path(session, source_id)
     # 完整成功来源复用 7 天；缺字幕/受限制的来源只缓存 5 分钟，设置变化立即失效。
     cfg = load_settings()
+    if not cfg.get("cookie_file"):
+        from .video_login import cookies
+        cfg["cookie_rows"] = cookies(platform)
     config_key = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
     cached = json.loads(path.read_text("utf-8")) if path.exists() else None
     ttl = 7 * 86400 if cached and cached.get("subtitle_status") == "available" else 300

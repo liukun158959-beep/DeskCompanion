@@ -168,6 +168,25 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(child["source"]["workflow"], "video")
         self.assertFalse(child["source"]["send_back"])
 
+    async def test_video_login_rpc_roundtrip_returns_only_safe_status_and_validates_platform(self):
+        async def rpc(method, args=None):
+            async with connect(self.url, proxy=None) as ws:
+                await ws.send(json.dumps({"type": "rpc", "id": method, "method": method, "args": args or {}}))
+                return json.loads(await asyncio.wait_for(ws.recv(), 10))["result"]
+        from tests.test_video_login import cookie
+        saved = await rpc("save_video_login", {"platform": "Bilibili", "cookies": [cookie()]})
+        self.assertTrue(saved["ok"], saved)
+        self.assertEqual(saved["result"]["items"][0]["state"], "saved")
+        self.assertNotIn("test-private-cookie", json.dumps(saved))
+        loaded = await rpc("load_video_login")
+        self.assertEqual(loaded["result"]["items"][0]["state"], "saved")
+        self.assertNotIn("encrypted", json.dumps(loaded))
+        invalid = await rpc("save_video_login", {"platform": "Bilibili", "cookies": [cookie("evil.test")]})
+        self.assertFalse(invalid["ok"])
+        self.assertNotIn("test-private-cookie", json.dumps(invalid))
+        cleared = await rpc("clear_video_login", {"platform": "Bilibili"})
+        self.assertEqual(cleared["result"]["items"][0]["state"], "missing")
+
 
 if __name__ == "__main__":
     unittest.main()

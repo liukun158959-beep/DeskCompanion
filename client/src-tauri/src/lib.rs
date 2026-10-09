@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{Emitter, Manager, PhysicalPosition};
+mod video_login;
+use video_login::{open_video_login, capture_video_login, clear_video_login_window};
 
 #[derive(Clone, serde::Serialize)]
 struct BackendInfo {
@@ -325,7 +327,16 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(|invoke| {
+            // Remote platform pages must never obtain backend tokens or invoke app commands.
+            if !matches!(invoke.message.webview_ref().label(), "main" | "pet") {
+                invoke.resolver.reject("视频网页不能调用本地助手。");
+                return true;
+            }
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+            open_video_login,
+            capture_video_login,
+            clear_video_login_window,
             set_hit_regions,
             set_pet_menu_region,
             backend_info,
@@ -336,7 +347,9 @@ pub fn run() {
             open_today,
             open_link,
             quit_app
-        ])
+        ];
+            handler(invoke)
+        })
         .build(tauri::generate_context!())
         .expect("构建 Tauri 应用失败")
         .run(|app, event| {

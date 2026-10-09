@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { rpc, type BackendInfo } from "./api";
 import { Markdown, MdLink } from "./Markdown";
+import { invoke } from "@tauri-apps/api/core";
 
 type VideoEvent = { seq: number; kind: string; ts: number; data: string | { tool?: string; status?: string } };
 type VideoTask = { id: string; channel: string; text: string; state: string; answer: string; error: string;
@@ -70,6 +71,7 @@ export function VideoPane({ info, debug = false }: { info: BackendInfo | null; d
       <p className="mt-3 text-sm text-muted-foreground">读取标题、简介、章节和实际字幕，生成带时间点的中文总结。没有取得字幕时会说明原因与覆盖范围。</p>
       <p className="mt-1 text-xs text-muted-foreground">每个新链接使用独立会话。切换页面后任务继续执行，可在此查看结果、追问并保存到飞书。</p>
     </section>
+    <VideoLogin info={info} debug={debug} url={url.trim() || detail?.source.video_url || ""} />
     <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)]">
       <section className="rounded-2xl border border-border bg-card/70 p-4" aria-label="视频任务历史">
         <h2 className="font-medium">读取记录</h2>
@@ -111,6 +113,66 @@ export function VideoPane({ info, debug = false }: { info: BackendInfo | null; d
 }
 
 type Settings = { proxy: string; cookie_file: string };
+
+type LoginState = { platform: string; state: "missing" | "saved" | "expired" | "error"; saved_at?: number; error?: string };
+export function VideoLogin({ info, debug = false, url = "" }: { info: BackendInfo | null; debug?: boolean; url?: string }) {
+  const [items, setItems] = useState<LoginState[]>([]);
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const live = useRef(false);
+  useEffect(() => {
+    live.current = true;
+    if (info && !debug) rpc<{ items: LoginState[] }>(info, "load_video_login").then(result => {
+      if (live.current) { setItems(result.items); setLoaded(true); }
+    }).catch(err => { if (live.current) setMessage(String(err)); });
+    return () => { live.current = false; };
+  }, [info, debug]);
+  async function action(platform: string, kind: "open" | "save" | "clear") {
+    if (!info || debug || busy || !loaded) return;
+    setBusy(platform); setMessage("");
+    try {
+      if (kind === "open") {
+        const value = await rpc<{ settings: Settings }>(info, "load_video_settings");
+        await invoke("open_video_login", { platform, url, proxy: value.settings.proxy });
+        if (live.current) setMessage("在打开的平台页面完成登录，保持窗口打开，回到这里点击「使用此登录态」。可以在该窗口浏览视频。");
+      } else {
+        let result: { items: LoginState[] };
+        if (kind === "save") {
+          const cookies = await invoke<unknown[]>("capture_video_login", { platform });
+          result = await rpc(info, "save_video_login", { platform, cookies });
+        } else {
+          await invoke("clear_video_login_window", { platform });
+          result = await rpc(info, "clear_video_login", { platform });
+        }
+        if (live.current) {
+          setItems(result.items);
+          setMessage(kind === "save" ? "登录态已加密保存在本机，视频页、桌面对话和飞书任务下次读取即可复用。可在原任务追问「重新获取这个视频」。" : "已清除该平台的读取登录态与专用窗口浏览数据。");
+        }
+      }
+    } catch (err) { if (live.current) setMessage(String(err)); }
+    finally { if (live.current) setBusy(""); }
+  }
+  return <section aria-label="视频平台登录" className="rounded-2xl border border-border bg-card/70 p-5">
+    <h2 className="font-medium">平台登录与视频浏览</h2>
+    <p className="mt-2 text-sm text-muted-foreground">先打开登录窗口 → 在平台页面登录 → 返回点击「使用此登录态」。专用窗口保持登录，重启后仍可使用；平台要求重新登录时更新登录态。</p>
+    <div className="mt-4 grid gap-3 md:grid-cols-2">{["Bilibili", "YouTube"].map(platform => {
+      const item = items.find(row => row.platform === platform);
+      const state = item?.state;
+      return <div key={platform} className="rounded-lg border border-border p-4">
+        <p className="text-sm font-medium">{platform} · {!loaded ? "读取状态中…" : state === "saved" ? "已保存登录态" : state === "expired" ? "登录态已过期" : state === "error" ? "登录态不可用" : "尚未保存登录态"}</p>
+        {item?.saved_at && <p className="mt-1 text-xs text-muted-foreground">保存于 {new Date(item.saved_at * 1000).toLocaleString()}，有效性以平台读取结果为准。</p>}
+        {item?.error && <p className="mt-1 text-sm text-destructive">{item.error}</p>}
+        <div className="mt-3 flex flex-wrap gap-2">{([
+          ["open", "登录 / 查看视频"], ["save", "使用此登录态"], ["clear", "清除登录态"],
+        ] as const).map(([kind, title]) => <button key={kind} className="rounded bg-secondary px-3 py-2 text-sm disabled:opacity-40"
+          disabled={!info || debug || !loaded || !!busy} onClick={() => void action(platform, kind)}>{title}</button>)}</div>
+      </div>;
+    })}</div>
+    <p className="mt-3 text-xs text-muted-foreground">登录数据只供本机读取，不发送给模型或飞书。登录成功仍可能遇到平台限流；YouTube 若拒绝内嵌登录，可在下方配置自己导出的字幕登录文件。手动登录文件优先于此处保存的登录态。</p>
+    {message && <p className="mt-3 text-sm" role="status">{message}</p>}
+  </section>;
+}
 type Source = { source_id: string; title: string; author: string; url: string; platform: string;
   subtitle_notice: string; subtitle_language: string; segment_count: number; truncated: boolean;
   chapters: { title: string; start: number }[]; export_state?: string; document_url?: string };
