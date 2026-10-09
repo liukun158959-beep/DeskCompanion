@@ -38,9 +38,15 @@ test('video login opens dedicated window, explicitly captures login and clears b
   const url = 'https://www.bilibili.com/video/BV1ojfDBSEPv';
   await act(async () => { renderer = create(React.createElement(VideoLogin, { info: { port: 1 }, url })); });
   const button = title => renderer.root.findAllByType('button').find(node => node.children.join('') === title);
-  await act(async () => button('登录 / 查看视频').props.onClick());
-  assert.deepEqual(calls.at(-1), ['open_video_login', { platform: 'Bilibili', url, proxy: 'http://127.0.0.1:7890' }]);
+  await act(async () => button('登录 / 扫码').props.onClick());
+  assert.deepEqual(calls.at(-1), ['open_video_login', { platform: 'Bilibili', url, proxy: 'http://127.0.0.1:7890', purpose: 'login' }]);
   assert.equal(calls.filter(call => call[0] === 'capture_video_login').length, 0);
+  await act(async () => button('查看视频').props.onClick());
+  assert.equal(calls.at(-1)[1].purpose, 'video');
+  assert.ok(!calls.some(call => call[0] === 'clear_video_login'));
+  await act(async () => button('登录 / 扫码').props.onClick());
+  assert.equal(calls.at(-1)[1].purpose, 'login');
+  assert.ok(!calls.some(call => call[0] === 'clear_video_login_window'));
   await act(async () => button('使用此登录态').props.onClick());
   assert.deepEqual(calls.at(-2), ['capture_video_login', { platform: 'Bilibili' }]);
   assert.deepEqual(calls.at(-1), ['save_video_login', { platform: 'Bilibili', cookies }]);

@@ -128,14 +128,14 @@ export function VideoLogin({ info, debug = false, url = "" }: { info: BackendInf
     }).catch(err => { if (live.current) setMessage(String(err)); });
     return () => { live.current = false; };
   }, [info, debug]);
-  async function action(platform: string, kind: "open" | "save" | "clear") {
+  async function action(platform: string, kind: "open" | "view" | "save" | "clear") {
     if (!info || debug || busy || !loaded) return;
     setBusy(platform); setMessage("");
     try {
-      if (kind === "open") {
+      if (kind === "open" || kind === "view") {
         const value = await rpc<{ settings: Settings }>(info, "load_video_settings");
-        await invoke("open_video_login", { platform, url, proxy: value.settings.proxy });
-        if (live.current) setMessage("在打开的平台页面完成登录，保持窗口打开，回到这里点击「使用此登录态」。可以在该窗口浏览视频。");
+        await invoke("open_video_login", { platform, url, proxy: value.settings.proxy, purpose: kind === "open" ? "login" : "video" });
+        if (live.current) setMessage(kind === "open" ? "已打开官方登录页。B 站建议用手机 App 扫码登录；短信验证卡住时可再次点击「登录 / 扫码」重新打开页面，已有登录数据会保留。登录后保持窗口打开，返回点击「使用此登录态」。" : "已打开平台视频页面，沿用专用窗口登录态。");
       } else {
         let result: { items: LoginState[] };
         if (kind === "save") {
@@ -155,7 +155,8 @@ export function VideoLogin({ info, debug = false, url = "" }: { info: BackendInf
   }
   return <section aria-label="视频平台登录" className="rounded-2xl border border-border bg-card/70 p-5">
     <h2 className="font-medium">平台登录与视频浏览</h2>
-    <p className="mt-2 text-sm text-muted-foreground">先打开登录窗口 → 在平台页面登录 → 返回点击「使用此登录态」。专用窗口保持登录，重启后仍可使用；平台要求重新登录时更新登录态。</p>
+    <p className="mt-2 text-sm text-muted-foreground">先点击「登录 / 扫码」→ 在官方账号页登录 → 返回点击「使用此登录态」。再点击「查看视频」浏览原链接。专用窗口保持登录，重启后仍可使用。</p>
+    <p className="mt-1 text-xs text-muted-foreground">B 站短信人机验证一直等待时，建议切换手机 App 扫码；也可再次点击「登录 / 扫码」重开官方页面，不需要清除登录数据。</p>
     <div className="mt-4 grid gap-3 md:grid-cols-2">{["Bilibili", "YouTube"].map(platform => {
       const item = items.find(row => row.platform === platform);
       const state = item?.state;
@@ -164,7 +165,7 @@ export function VideoLogin({ info, debug = false, url = "" }: { info: BackendInf
         {item?.saved_at && <p className="mt-1 text-xs text-muted-foreground">保存于 {new Date(item.saved_at * 1000).toLocaleString()}，有效性以平台读取结果为准。</p>}
         {item?.error && <p className="mt-1 text-sm text-destructive">{item.error}</p>}
         <div className="mt-3 flex flex-wrap gap-2">{([
-          ["open", "登录 / 查看视频"], ["save", "使用此登录态"], ["clear", "清除登录态"],
+          ["open", "登录 / 扫码"], ["view", "查看视频"], ["save", "使用此登录态"], ["clear", "清除登录态"],
         ] as const).map(([kind, title]) => <button key={kind} className="rounded bg-secondary px-3 py-2 text-sm disabled:opacity-40"
           disabled={!info || debug || !loaded || !!busy} onClick={() => void action(platform, kind)}>{title}</button>)}</div>
       </div>;
