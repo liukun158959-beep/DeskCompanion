@@ -12,9 +12,10 @@ from .paths import data_root
 
 
 class PublishError(RuntimeError):
-    def __init__(self, message, *, confirmed=False):
+    def __init__(self, message, *, confirmed=False, retryable=None):
         super().__init__(message)
         self.confirmed = confirmed
+        self.retryable = retryable
 
 
 def platform_error(value):
@@ -25,11 +26,14 @@ def platform_error(value):
         return PublishError("飞书操作未确认成功，请检查平台诊断。")
     code = error.get("code")
     if code == 230099:
-        return PublishError("飞书卡片格式校验未通过，未发送群消息。", confirmed=True)
-    confirmed = error.get("type") in {"validation", "auth"} or (
+        return PublishError("飞书卡片格式校验未通过，未发送群消息。", confirmed=True, retryable=False)
+    confirmed = error.get("type") in {"validation", "auth", "authentication", "authorization", "config"} or (
         error.get("type") == "api" and isinstance(code, int) and code > 0 and code not in {500, 502, 503, 504})
     subtype = str(error.get("subtype", ""))[:60]
-    return PublishError("飞书操作未成功（" + subtype + "），请检查权限和推送位置。", confirmed=confirmed)
+    if subtype in {"transport", "timeout", "network"} and not confirmed:
+        return PublishError("飞书网络请求未完成（" + subtype + "），已保留发布回执，可稍后恢复。", retryable=True)
+    return PublishError("飞书操作未成功（" + subtype + "），请检查权限和推送位置。",
+                        confirmed=confirmed, retryable=not confirmed)
 
 
 def cli(cfg, args, *, identity="user", stdin=None, timeout=60):
@@ -59,7 +63,8 @@ def cli(cfg, args, *, identity="user", stdin=None, timeout=60):
         text = str(exc).lower()
         auth = any(x in text for x in ("scope", "permission", "unauthorized", "invalid_client", "forbidden"))
         raise PublishError("飞书授权或权限未通过，请在飞书页检查。" if auth else
-                           "飞书请求结果未确认，请检查网络；已保存的回执会用于恢复。", confirmed=auth) from None
+                           "飞书请求结果未确认，请检查网络；已保存的回执会用于恢复。",
+                           confirmed=auth, retryable=not auth) from None
 
 
 def validate_targets(cfg):

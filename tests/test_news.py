@@ -79,6 +79,8 @@ class NewsTests(unittest.TestCase):
                  "items": [{**i, "source_id": i["id"]} for i in r["report"]["items"]]}
         result = news.validate_report(value, r["report"]["items"], 5)
         self.assertEqual(len(result["items"]), 5)
+        self.assertEqual(result["cover_title"], value["cover_title"])
+        self.assertFalse(result["cover_title_fallback"])
         self.assertIn("（官方技术 0）", news.display_title(result["items"][0]))
         self.assertGreater(len(result["items"][0]["detail"]), len(result["items"][0]["summary"]))
         for field, bad in (("title_zh", "English only"), ("detail", "太短")):
@@ -121,7 +123,7 @@ class NewsTests(unittest.TestCase):
         correct = {"lead": r["report"]["lead"], "cover_title": r["report"]["cover_title"],
                    "items": [{**i, "source_id": i["id"]} for i in r["report"]["items"]]}
         broken = {**correct}
-        broken.pop("cover_title")
+        broken.pop("lead")
         responses = [{"message": {"content": json.dumps(value)}} for value in (broken, correct)]
         client = Mock()
         client.chat.side_effect = responses
@@ -132,6 +134,51 @@ class NewsTests(unittest.TestCase):
         self.assertEqual(len(result["items"]), 5)
         self.assertEqual(client.chat.call_count, 2)
         self.assertTrue(any(k == "status" and "修正一次" in d for k, d in events))
+
+    def test_cover_layout_errors_use_neutral_title_without_another_model_call(self):
+        r = fixture()
+        value = {"lead": r["report"]["lead"],
+                 "items": [{**i, "source_id": i["id"]} for i in r["report"]["items"]]}
+        client = Mock()
+        with patch("atlas.LLM", return_value=client), patch("desk_companion.model_catalog.require_active",
+                return_value={"api_key": "test", "base_url": "https://example.invalid/v1", "model": "test"}):
+            for bad in (None, "", "   ", 42, "很长的海报标题" * 5):
+                with self.subTest(title=bad):
+                    client.reset_mock()
+                    client.chat.return_value = {"message": {"content": json.dumps({**value, "cover_title": bad})}}
+                    result = news.summarize(r["day"], r["settings"], r["report"]["items"], lambda *_: None)
+                    self.assertEqual(result["cover_title"], "大厂 AI/Agent 技术动向")
+                    self.assertTrue(result["cover_title_fallback"])
+                    self.assertEqual(client.chat.call_count, 1)
+                    self.assertEqual(len(result["items"]), 5)
+
+    def test_content_errors_remain_blocking_but_retryable_and_never_publish(self):
+        r = fixture()
+        request = {"news_settings": r["settings"], "news_day": r["day"],
+                   "news_run_id": r["id"], "news_publish": True}
+        errors = [(news.ReportValidationError("摘要缺少英文标题的中文翻译，未发布。"), True),
+                  (news.ReportValidationError("技术摘要缺少有效字段，未发布。"), True),
+                  (news.ReportValidationError("摘要引用了未知或重复来源，未发布。"), True),
+                  (json.JSONDecodeError("bad", "", 0), True),
+                  (news_publish.platform_error({"ok": False, "error": {"type": "network", "subtype": "transport"}}), True),
+                  (news_publish.platform_error({"ok": False, "error": {"type": "auth", "subtype": "token_missing"}}), False),
+                  (news_publish.platform_error({"ok": False, "error": {"type": "authorization", "subtype": "missing_scope"}}), False),
+                  (RuntimeError("飞书缺少权限。"), False),
+                  (RuntimeError("上次发送尚未确认，请核实回执。"), False)]
+        for error, retryable in errors:
+            with self.subTest(error=str(error)), \
+                 patch.object(news, "collect", return_value=(r["report"]["items"], [])), \
+                 patch.object(news, "summarize", side_effect=error), \
+                 patch.object(news_publish, "publish") as publish:
+                news.execute(request, lambda *_: None)
+                saved = news.load_run(r["id"])
+                self.assertEqual(saved["status"], "failed")
+                self.assertEqual(saved["retryable"], retryable)
+                if isinstance(error, news.ReportValidationError):
+                    self.assertEqual(saved["error"], str(error))
+                self.assertFalse(saved.get("report"))
+                self.assertEqual(saved["receipts"], {})
+                publish.assert_not_called()
 
     def test_default_topics_migrate_without_changing_publication_targets(self):
         cfg = {**fixture()["settings"], "topics": news.LEGACY_TOPICS, "highlights": 3}
@@ -310,6 +357,7 @@ class NewsTests(unittest.TestCase):
             with self.assertRaises(news_publish.PublishError) as caught:
                 news_publish.cli(fixture()["settings"], ["im", "+messages-send"])
         self.assertTrue(caught.exception.confirmed)
+        self.assertFalse(caught.exception.retryable)
         self.assertIn("卡片格式", str(caught.exception))
         self.assertNotIn("must-not-be-shown", str(caught.exception))
 

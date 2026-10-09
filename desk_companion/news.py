@@ -383,26 +383,30 @@ def summarize(day, cfg, candidates, emit):
                 "格式检查失败：" + reason + "。请根据同一批官方来源返回完整修正后的严格 JSON，保留所有必需字段，包括 lead、cover_title、items。"}]
 
 
+class ReportValidationError(ValueError):
+    """模型输出不符合资讯内容要求，可在剩余预算内修正或重试。"""
+
+
 def validate_report(value, candidates, limit):
     if not isinstance(value, dict) or not isinstance(value.get("items"), list) or len(value["items"]) != 5:
-        raise ValueError("摘要未提供 5 条可核实重点，未发布。")
+        raise ReportValidationError("摘要未提供 5 条可核实重点，未发布。")
     index = {r["id"]: r for r in candidates}
     items, used, projects = [], set(), set()
     for item in value["items"]:
         sid = item.get("source_id") if isinstance(item, dict) else None
         if sid not in index or sid in used:
-            raise ValueError("摘要引用了未知或重复来源，未发布。")
+            raise ReportValidationError("摘要引用了未知或重复来源，未发布。")
         used.add(sid)
         row = index[sid]
         project = project_key(row["url"])
         if project in projects:
-            raise ValueError("摘要重复报道了同一项目，未发布。")
+            raise ReportValidationError("摘要重复报道了同一项目，未发布。")
         projects.add(project)
         clean = {}
         for key, size in (("title_zh", 180), ("category", 30), ("summary", 80), ("detail", 1600), ("value", 450), ("caution", 300)):
             content = item.get(key, "")
             if not isinstance(content, str) or (key in {"category", "summary", "detail", "value"} and not content.strip()):
-                raise ValueError("技术摘要缺少有效字段，未发布。")
+                raise ReportValidationError("技术摘要缺少有效字段，未发布。")
             clean[key] = content.strip()[:size]
             if key == "summary":
                 clean[key] = brief_text(content.strip(), size)
@@ -410,28 +414,31 @@ def validate_report(value, candidates, limit):
         if isinstance(label, str):
             clean["poster_label"] = label.strip()[:26]
         if re.search(r"[A-Za-z]{2}", row["title"]) and not re.search(r"[\u4e00-\u9fff]", clean["title_zh"]):
-            raise ValueError("摘要缺少英文标题的中文翻译，未发布。")
+            raise ReportValidationError("摘要缺少英文标题的中文翻译，未发布。")
         if len(clean["detail"]) < 100 or clean["detail"] == clean["summary"]:
-            raise ValueError("摘要缺少足够详细的文档说明，未发布。")
+            raise ReportValidationError("摘要缺少足够详细的文档说明，未发布。")
         points = item.get("key_points")
         if not isinstance(points, list) or not 2 <= len(points) <= 4 or any(not isinstance(p, str) or not p.strip() for p in points):
-            raise ValueError("摘要缺少可核实技术要点，未发布。")
+            raise ReportValidationError("摘要缺少可核实技术要点，未发布。")
         clean["key_points"] = [p.strip()[:250] for p in points]
         items.append({**clean, **{k: row[k] for k in ("id", "title", "url", "published", "date_verified")}})
         items[-1].update(company=row.get("company", ""), region=row.get("region", ""))
     lead = value.get("lead")
     if not isinstance(lead, str) or not lead.strip():
-        raise ValueError("日报缺少重点结论。")
+        raise ReportValidationError("日报缺少重点结论。")
     title = value.get("cover_title")
-    if not isinstance(title, str) or not title.strip() or len(title.strip()) > 20:
-        raise ValueError("日报缺少简洁的海报标题。")
+    fallback = not isinstance(title, str) or not title.strip() or len(title.strip()) > 20
+    if fallback:
+        # 排版字段不影响内容可信度；不用截断产生语义不完整的标题。
+        title = "大厂 AI/Agent 技术动向"
     available = Counter(r.get("region") for r in candidates)
     selected = Counter(r.get("region") for r in items)
     if all(available[region] >= 2 for region in ("国内", "海外")) and any(selected[region] < 2 for region in ("国内", "海外")):
-        raise ValueError("摘要未同时覆盖国内与海外重点，未发布。")
+        raise ReportValidationError("摘要未同时覆盖国内与海外重点，未发布。")
     if len({r.get("company") for r in candidates if r.get("company")}) >= 3 and len({r.get("company") for r in items if r.get("company")}) < 3:
-        raise ValueError("摘要未覆盖足够不同的公司，未发布。")
-    return {"lead": lead.strip()[:300], "cover_title": title.strip(), "items": items, "candidate_count": len(candidates), "edition": EDITION}
+        raise ReportValidationError("摘要未覆盖足够不同的公司，未发布。")
+    return {"lead": lead.strip()[:300], "cover_title": title.strip(), "cover_title_fallback": fallback,
+            "items": items, "candidate_count": len(candidates), "edition": EDITION}
 
 
 def markdown_report(run):
@@ -471,6 +478,8 @@ def execute(request, emit):
                 raise RuntimeError("可核实的大厂来源不足 5 条，已保留采集记录，未生成或发布资讯。")
             report = summarize(day, cfg, candidates, emit)
             save(report=report, status="draft", error="")
+            if report.get("cover_title_fallback"):
+                emit("status", "海报标题格式异常，已使用中性备用标题；资讯内容与来源检查已通过。")
         from .news_publish import render_cover
         emit("status", "正在制作突出本期技术重点的资讯海报。")
         phase(emit, "write", "news_render_cover", lambda: render_cover(run))
@@ -483,7 +492,9 @@ def execute(request, emit):
     except Exception as exc:
         # 不转发 CLI 原始错误及凭证；可恢复阶段保留已保存的回执。
         message = str(exc)
-        retryable = not any(s in message.lower() for s in ("permission", "unauthorized", "invalid_client", "scope", "certificate", "未提供", "未知", "标识", "缺少", "授权", "权限", "预检", "尚未确认", "未核实完整"))
-        public = message if message.startswith(("可核实", "摘要", "日报", "飞书", "文档", "上次", "资讯表", "知识库", "数据表", "来源")) else "资讯任务未完成，请查看时间线、来源缺口和飞书位置检查结果。"
+        retryable = getattr(exc, "retryable", None)
+        if retryable is None:
+            retryable = isinstance(exc, (ReportValidationError, json.JSONDecodeError)) or not any(s in message.lower() for s in ("permission", "unauthorized", "invalid_client", "scope", "certificate", "未提供", "未知", "标识", "缺少", "授权", "权限", "预检", "尚未确认", "未核实完整"))
+        public = message if isinstance(exc, ReportValidationError) or message.startswith(("可核实", "摘要", "日报", "飞书", "文档", "上次", "资讯表", "知识库", "数据表", "来源")) else "资讯任务未完成，请查看时间线、来源缺口和飞书位置检查结果。"
         save(status="failed", error=public[:300], retryable=retryable)
         emit("failure", run["error"])
