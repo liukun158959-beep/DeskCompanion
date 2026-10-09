@@ -40,6 +40,14 @@ class VideoPageTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 video_controller.start(self.host, url)
         self.assertEqual(len(self.host.tasks.list()["items"]), before)
+        self.host.tasks.cancel(first)
+        with self.assertRaises(ValueError):
+            video_controller.continue_task(self.host, first, "   ")
+        retried = video_controller.continue_task(self.host, first, "重新读取")["task_id"]
+        task = self.host.tasks.get(retried)
+        self.assertEqual(task["session"], rows[0]["session"])
+        self.assertIn(rows[0]["source"]["video_url"], task["text"])
+        self.assertIn("重新读取", task["text"])
 
     def test_legacy_video_activity_is_included_without_unrelated_session_messages(self):
         manager = self.host.tasks

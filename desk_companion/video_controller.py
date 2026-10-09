@@ -29,9 +29,16 @@ def start(host, url):
 
 
 def continue_task(host, task_id, text):
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("请填写有效追问。")
     # 新工作区和既有视频任务均可追问，普通聊天不能被伪装成视频记录。
     if task_id not in task_ids(host.tasks):
         raise ValueError("请选择已有的视频任务。")
+    parent = host.tasks.get(task_id, False)
+    original = parent["source"].get("video_url")
+    if original:
+        # 排队时取消或模型调用前失败，原链接还没有写入聊天历史。
+        text = "当前会话原视频：" + original + "\n\n用户追问：" + text
     found = host.tasks.resume(task_id, text, send_back=False)
     host.tasks.update_source(found, workflow="video")
     host._focused_task = found
