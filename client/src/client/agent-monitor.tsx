@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { rpc, type BackendInfo, type ChatItem } from "./api";
 import { Markdown } from "./Markdown";
-import { TaskVideos, VideoSettings } from "./video";
+import { TaskVideos } from "./video";
 
 type Settings = { parallel: number; call_timeout: number; task_timeout: number; pet_progress: boolean };
 type Event = { seq: number; kind: string; ts: number; data: string | { tool?: string; status?: string; duration_ms?: number } };
@@ -76,16 +76,15 @@ export function AgentMonitor({ info, debug = false }: { info: BackendInfo | null
       </div>
       <p className="mt-2 text-xs text-white/40">新设置应用于之后的任务。共享写入工具会排队，查询可并行。</p>
     </details>
-    <VideoSettings info={info} debug={debug} />
     <label className="mt-4 block text-sm">查看范围 <select className="ml-2 rounded bg-[#202329] p-2" value={channel}
-      onChange={e => { setChannel(e.target.value); select(""); setDetail(null); }}><option value="feishu">飞书聊天</option><option value="">全部任务</option><option value="desktop">桌面对话</option></select></label>
+      onChange={e => { setChannel(e.target.value); select(""); setDetail(null); }}><option value="feishu">飞书聊天</option><option value="">全部任务</option><option value="desktop">桌面对话</option><option value="video">视频读取</option></select></label>
     <div className="mt-4 grid gap-5 lg:grid-cols-[240px_1fr]">
       <div className="max-h-[560px] overflow-auto space-y-2">
         {!tasks.length && <p className="text-sm text-white/40">暂时没有任务。新的飞书问题会出现在这里。</p>}
         {tasks.map(t => <button key={t.id} className={`block w-full rounded-lg border p-3 text-left ${detail?.id === t.id ? "border-yellow-300/60 bg-white/10" : "border-white/10"}`}
           onClick={() => { select(t.id); setText(""); setSendBack(false); }}>
           <span className="block truncate text-sm">{t.text}</span>
-          <span className="mt-1 block text-xs text-white/50">{STATES[t.state] || t.state} · {t.elapsed} 秒 · {t.channel === "feishu" ? "飞书" : "桌面"}</span>
+          <span className="mt-1 block text-xs text-white/50">{STATES[t.state] || t.state} · {t.elapsed} 秒 · {({ feishu: "飞书", desktop: "桌面", automation: "定时任务", video: "视频" } as Record<string, string>)[t.channel] || t.channel}</span>
           <span className="block text-xs text-white/30">{new Date(t.created * 1000).toLocaleString()}</span>
         </button>)}
       </div>

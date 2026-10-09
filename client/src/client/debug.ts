@@ -396,7 +396,7 @@ function knowledgeStepSnap(root: ParentNode): { step: string; open: string; labe
   }));
 }
 
-export function debugPane(): "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise" | "memory" | "knowledge" | "note" | "automation" | "monitor" | null {
+export function debugPane(): "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise" | "memory" | "knowledge" | "note" | "automation" | "monitor" | "video" | null {
   if (!import.meta.env.DEV) return null;
   const value = new URLSearchParams(location.search).get("debug");
   if (value === "1" || value === "chat") return "chat";
@@ -406,6 +406,7 @@ export function debugPane(): "chat" | "board" | "maa" | "feishu" | "settings" | 
   if (value === "feishu") return "feishu";
   if (value === "automation") return "automation";
   if (value === "monitor") return "monitor";
+  if (value === "video") return "video";
   if (value === "settings") return "settings";
   if (value === "depot") return "depot";
   if (value === "raise") return "raise";

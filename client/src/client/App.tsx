@@ -36,6 +36,7 @@ import { FeishuPane, feishuLoggedIn, feishuWaiting, type FeishuSnap } from "./fe
 import { FeishuAgentPane } from "./feishu-agent";
 import { AgentMonitor } from "./agent-monitor";
 import { AutomationPane } from "./automation";
+import { VideoPane } from "./video";
 import { matchRules, parseRules, type Analysis, type MaaRule } from "./maa-rules";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
 import { Markdown, MdLink, openableHref, PlainLinks } from "./Markdown";
@@ -83,10 +84,10 @@ import {
   type PersonaPublic,
 } from "./settings";
 
-type Pane = "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise" | "automation" | "monitor";
+type Pane = "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise" | "automation" | "monitor" | "video";
 
 const debugKind = debugPane();
-const boardDebug = debugKind === "board" || debugKind === "maa" || debugKind === "feishu" || debugKind === "depot" || debugKind === "raise" || debugKind === "automation" || debugKind === "monitor";
+const boardDebug = debugKind === "board" || debugKind === "maa" || debugKind === "feishu" || debugKind === "depot" || debugKind === "raise" || debugKind === "automation" || debugKind === "monitor" || debugKind === "video";
 
 type Thread = {
   sessionId: string;
@@ -123,7 +124,7 @@ export function App() {
   const applyBgRef = useRef<(url: string) => void>(() => {});
   const clearBgRef = useRef<() => void>(() => {});
   const [pane, setPane] = useState<Pane>(
-    debugKind === "automation" || debugKind === "monitor"
+    debugKind === "automation" || debugKind === "monitor" || debugKind === "video"
       ? debugKind
       : debugKind === "maa"
       ? "maa"
@@ -2306,7 +2307,7 @@ export function App() {
           <SideNav
             icon="board"
             label="看板"
-            active={pane === "board" || pane === "maa" || pane === "depot" || pane === "raise" || pane === "feishu" || pane === "automation" || pane === "monitor"}
+            active={pane === "board" || pane === "maa" || pane === "depot" || pane === "raise" || pane === "feishu" || pane === "automation" || pane === "monitor" || pane === "video"}
             onClick={() => void openBoard()}
           />
           <SideNav icon="settings" label="设置" active={pane === "settings"} onClick={() => setPane("settings")} />
@@ -2393,6 +2394,7 @@ export function App() {
             <SideLink icon="feishu" label="飞书" sub="feishu" selected={pane === "feishu"} onClick={() => void openFeishu()} />
             <SideLink icon="today" label="定时任务" sub="automation" selected={pane === "automation"} onClick={() => setPane("automation")} />
             <SideLink icon="board" label="聊天监控台" sub="monitor" selected={pane === "monitor"} onClick={() => setPane("monitor")} />
+            <SideLink icon="video" label="视频读取" sub="video" selected={pane === "video"} onClick={() => setPane("video")} />
           </div>
         )}
       </aside>
@@ -2809,6 +2811,13 @@ export function App() {
               <p className="mt-2 text-sm text-muted-foreground">管理每日资讯、运行计划和执行记录。</p>
               <AutomationPane info={info} debug={boardClock !== null} />
             </motion.section>
+          ) : pane === "video" ? (
+            <motion.section key="video" data-page="video" className="flex-1 overflow-y-auto px-8 py-6"
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <h1 className="text-2xl font-semibold">视频读取</h1>
+              <p className="mt-2 text-sm text-muted-foreground">从实际视频资料中提炼要点，查看出处并整理笔记。</p>
+              <VideoPane info={info} debug={boardClock !== null} />
+            </motion.section>
           ) : pane === "monitor" ? (
             <motion.section key="monitor" data-page="monitor" className="flex-1 overflow-y-auto px-8 py-6"
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -2880,6 +2889,9 @@ function SideIcon(props: { name: string }) {
     "aria-hidden": true as const,
     className: "shrink-0",
   };
+  if (props.name === "video") {
+    return <svg {...stroke}><rect x="2" y="3" width="12" height="10" rx="2" /><path d="m6.5 5.5 4 2.5-4 2.5z" /></svg>;
+  }
   if (props.name === "chat") {
     return (
       <svg {...stroke}>

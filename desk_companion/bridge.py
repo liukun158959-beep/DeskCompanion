@@ -49,6 +49,18 @@ class Bridge:
         from .video import load_settings
         return {"ok": True, "settings": load_settings()}
 
+    def list_video_tasks(self) -> dict:
+        from .video_controller import snapshot
+        return snapshot(self._host)
+
+    def start_video_task(self, url: str) -> dict:
+        from .video_controller import start
+        return start(self._host, url)
+
+    def continue_video_task(self, task_id: str, text: str) -> dict:
+        from .video_controller import continue_task
+        return continue_task(self._host, task_id, text)
+
     def save_video_settings(self, proxy: str = "", cookie_file: str = "") -> dict:
         from .video import save_settings
         return save_settings(proxy, cookie_file)

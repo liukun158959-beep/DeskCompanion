@@ -147,5 +147,27 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(memory.list_chat(self.host.state.session_id), [])
 
 
+    async def test_video_page_rpc_runs_independent_tasks_and_continues_after_disconnect(self):
+        original = self.host.state.session_id
+        async def rpc(method, args=None):
+            async with connect(self.url, proxy=None) as ws:
+                await ws.send(json.dumps({"type": "rpc", "id": method, "method": method, "args": args or {}}))
+                envelope = json.loads(await asyncio.wait_for(ws.recv(), 30))["result"]
+                self.assertTrue(envelope["ok"], envelope)
+                return envelope["result"]
+        started = await rpc("start_video_task", {"url": "https://youtu.be/abcdefghijk"})
+        task_id = started["task_id"]
+        # 提交连接关闭后，独立 worker 仍执行；原桌面会话不被切换。
+        finished = await asyncio.wait_for(asyncio.to_thread(self.host.tasks.wait, task_id), 30)
+        self.assertEqual(finished["state"], "succeeded")
+        self.assertEqual(self.host.state.session_id, original)
+        self.assertEqual([row["id"] for row in (await rpc("list_video_tasks"))["items"]], [task_id])
+        followup = await rpc("continue_video_task", {"task_id": task_id, "text": "继续解释"})
+        child = self.host.tasks.get(followup["task_id"])
+        self.assertEqual(child["session"], finished["session"])
+        self.assertEqual(child["source"]["workflow"], "video")
+        self.assertFalse(child["source"]["send_back"])
+
+
 if __name__ == "__main__":
     unittest.main()
