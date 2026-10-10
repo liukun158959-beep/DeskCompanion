@@ -137,25 +137,39 @@ export function rpc<T>(
   info: BackendInfo,
   method: string,
   args: Record<string, unknown> = {},
+  options: { timeoutMs?: number } = {},
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl(info));
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function finish(error?: Error, result?: T) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ws.close();
+      if (error) reject(error); else resolve(result as T);
+    }
+    if (options.timeoutMs) timer = setTimeout(() => finish(new Error("调用超时，已停止等待；操作可能仍在执行，请先核查结果。")), options.timeoutMs);
     ws.onopen = () => {
+      if (settled) return;
       ws.send(JSON.stringify({ type: "rpc", id: method, method, args }));
     };
     ws.onmessage = (ev) => {
-      const msg = JSON.parse(String(ev.data)) as {
-        type: string;
-        result?: RpcEnvelope<T>;
-        data?: string;
-      };
-      ws.close();
-      if (msg.type === "rpc_result" && msg.result?.ok) {
-        resolve(msg.result.result as T);
-        return;
-      }
-      reject(new Error(msg.result?.error || msg.data || "RPC 失败"));
+      try {
+        const msg = JSON.parse(String(ev.data)) as {
+          type: string;
+          result?: RpcEnvelope<T>;
+          data?: string;
+        };
+        if (msg.type === "rpc_result" && msg.result?.ok) {
+          finish(undefined, msg.result.result as T);
+          return;
+        }
+        finish(new Error(msg.result?.error || msg.data || "RPC 失败"));
+      } catch { finish(new Error("本地后端返回了无法解析的结果，请查看日志。")); }
     };
-    ws.onerror = () => reject(new Error("连不上本地后端。恢复：看知行日志后重启客户端"));
+    ws.onerror = () => finish(new Error("连不上本地后端。恢复：看知行日志后重启客户端"));
+    ws.onclose = () => finish(new Error("连接已断开，尚未收到操作结果；请先核查是否已执行。"));
   });
 }

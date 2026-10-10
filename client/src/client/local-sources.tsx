@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { rpc, type BackendInfo } from "./api";
+import { LoadingText } from "./loading-text";
 
 export type LocalSource = { id: string; kind: "file" | "folder"; name: string; path: string; relative?: string;
   chars: number; lines?: number; files?: LocalSource[]; skipped?: number; errors?: { name: string; error: string }[] };
 type Result = { ok: boolean; sources: LocalSource[]; errors: { name: string; error: string }[]; error?: string };
 
-export function LocalSourcesDialog({ info, initialKind, debug, onClose, onAttach, onIndex }: {
+export function LocalSourcesDialog({ info, initialKind, debug, onClose, onAttach, onIndex, onPreview, onMinimizedChange }: {
   info: BackendInfo | null; initialKind: "file" | "folder"; debug?: boolean;
   onClose: () => void; onAttach: (sources: LocalSource[]) => void;
   onIndex: (source: LocalSource) => Promise<{ ok: boolean; error: string }>;
+  onPreview?: (source: LocalSource) => void;
+  onMinimizedChange?: (minimized: boolean) => void;
 }) {
   const [sources, setSources] = useState<LocalSource[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -20,6 +23,7 @@ export function LocalSourcesDialog({ info, initialKind, debug, onClose, onAttach
   const [kind, setKind] = useState(initialKind);
   const [preview, setPreview] = useState<{ id: string; name: string; text: string; next_offset: number | null; chars: number } | null>(null);
   const [minimized, setMinimized] = useState(false);
+  useEffect(() => { onMinimizedChange?.(minimized); }, [minimized, onMinimizedChange]);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const alive = useRef(true);
   const serial = useRef(0);
@@ -76,6 +80,7 @@ export function LocalSourcesDialog({ info, initialKind, debug, onClose, onAttach
     setSelected(ids => enabled ? [...new Set([...ids.filter(id => source.kind === "file" ? !sources.some(s => s.kind === "folder" && s.id === id && s.files?.some(f => f.id === source.id)) : !(source.files || []).some(f => f.id === id)), source.id])] : ids.filter(id => id !== source.id));
   }
   async function show(source: LocalSource, more = false) {
+    if (!more && onPreview) { onPreview(source); setMinimized(true); return; }
     if (!info || busy) return;
     setBusy(true); setError("");
     const operation = ++serial.current;
@@ -158,7 +163,7 @@ export function LocalSourcesDialog({ info, initialKind, debug, onClose, onAttach
       {note && <p role="status" className="my-2 text-sm">{note}</p>}
       <div className="mt-4 flex flex-wrap items-center gap-2"><button className="desk-btn desk-btn-solid" disabled={busy || !chosen.length || chosen.length > 50} onClick={() => onAttach(chosen)}>附到对话（{chosen.length}）</button>
         <button className="desk-btn" disabled={busy || !chosen.length} onClick={() => void index()}>加入知识库</button>{busy && <button className="desk-menu-item text-xs" onClick={stop}>停止等待</button>}</div>
-      {busy && <p role="status" className="mt-2 text-xs text-muted-foreground">正在处理… 可收起或关闭，聊天和 Agent 仍可使用。</p>}
+      {busy && <p role="status" className="mt-2 text-xs text-muted-foreground"><LoadingText text="正在处理…" /> 可收起或关闭，聊天和 Agent 仍可使用。</p>}
       </div>
     </section>;
 }

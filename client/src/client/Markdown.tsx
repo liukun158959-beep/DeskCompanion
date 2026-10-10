@@ -1,4 +1,3 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useState, type ReactNode } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
@@ -21,8 +20,7 @@ export function openableHref(href: string | undefined): string | null {
 }
 
 async function openExternal(url: string): Promise<void> {
-  if (!isTauri()) return;
-  await invoke("open_link", { url });
+  window.dispatchEvent(new CustomEvent("desk-open-preview", { detail: { kind: "web", url } }));
 }
 
 export function MdLink(props: { href?: string; children?: ReactNode }) {

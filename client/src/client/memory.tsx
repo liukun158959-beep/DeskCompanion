@@ -386,18 +386,19 @@ export function ContextCard(props: {
         data-context-over={context.over ? "1" : "0"}
         className="mb-2 text-sm"
       >
-        <div className="flex items-center gap-3">
+        <div className="composer-toolbar">
           {props.leading}
           <button
             type="button"
             data-context-toggle=""
             aria-expanded={opened}
-            className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground"
+            title={hint}
+            className="desk-menu-item"
             onClick={() => setOpened((value) => !value)}
           >
-            {hint}
+            上下文 · {Math.round(context.estimate / Math.max(1, triggerCap(context)) * 100)}%{context.over ? " · 待压缩" : ""} ⌄
           </button>
-          <button
+          {opened && <button
             type="button"
             data-context-compress=""
             disabled={props.busy}
@@ -405,9 +406,9 @@ export function ContextCard(props: {
             onClick={() => void props.onCompress()}
           >
             压缩更早的对话
-          </button>
+          </button>}
         </div>
-        <ContextMeter context={context} />
+        {opened && <><p className="mt-2 text-xs text-muted-foreground">{hint}</p><ContextMeter context={context} /></>}
         {opened ? (
           <ContextBody
             context={context}

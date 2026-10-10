@@ -1,6 +1,8 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type Ref } from "react";
 import { motion } from "framer-motion";
 import { Markdown } from "./Markdown";
+import { previewQuote } from "./side-workspace";
+import { LoadingText } from "./loading-text";
 
 export type NoteCite = {
   n: number;
@@ -59,6 +61,10 @@ export type NotebookPage = {
 };
 
 const columnEase = [0.22, 1, 0.36, 1] as const;
+function savedTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
 export function NoteMode(props: {
   sessionId: string;
@@ -88,9 +94,13 @@ export function NoteMode(props: {
   const boardRef = useRef<HTMLDivElement>(null);
   const [sourceW, setSourceW] = useState(224);
   const [notesW, setNotesW] = useState(256);
-  const [openAnswers, setOpenAnswers] = useState<string[]>([]);
+  const [readerId, setReaderId] = useState<string | null>(null);
+  const [batch, setBatch] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmFile, setConfirmFile] = useState<string | null>(null);
   const [pickedAnswers, setPickedAnswers] = useState<string[]>([]);
   const picked = notes.filter((note) => pickedAnswers.includes(note.id));
+  const reader = notes.find(note => note.id === readerId) || null;
 
   function dragColumn(side: "source" | "notes", ev: ReactPointerEvent<HTMLButtonElement>) {
     ev.preventDefault();
@@ -126,7 +136,8 @@ export function NoteMode(props: {
   }
 
   return (
-    <div ref={boardRef} className="flex min-h-0 flex-1" data-note-board="" data-note-session={props.sessionId}>
+    <div ref={boardRef} className="note-board min-h-0 flex-1" data-note-board="" data-note-session={props.sessionId}
+      style={{ gridTemplateColumns: `${sourceW}px 6px minmax(0,1fr) 6px ${notesW}px` }}>
       <motion.aside
         className="shrink-0 overflow-y-auto border-r border-border px-3 py-4"
         style={{ width: sourceW }}
@@ -174,13 +185,26 @@ export function NoteMode(props: {
         transition={{ duration: 0.38, delay: 0.05, ease: columnEase }}
       >
         <div ref={props.threadRef} className="flex-1 space-y-3 overflow-y-auto px-6 py-4" data-note-thread="">
+          {reader ? <article className="note-reader" data-note-reader={reader.id}>
+            <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs text-muted-foreground" title={reader.saved}>已存笔记 · {savedTime(reader.saved)}</p><h1 className="mt-2 text-xl">{reader.question}</h1></div>
+              <details className="note-more"><summary>更多 ⌄</summary><div><button className="desk-menu-item" disabled={props.busy} onClick={() => props.onMarkdown(reader.id)}>导出 Markdown</button><button className="desk-menu-item" disabled={props.busy} onClick={() => props.onFeishu(reader.id)}>保存到飞书文档</button><button className="desk-menu-item text-destructive" disabled={props.busy} onClick={() => setConfirmDelete(reader.id)}>删除笔记</button></div></details></div>
+            <button className="desk-menu-item my-3" onClick={() => setReaderId(null)}>← 返回对话</button>
+            {props.saveStatus && <p className={`mb-3 text-xs ${props.saveBad ? "text-destructive" : "text-muted-foreground"}`} role="status"><LoadingText text={props.saveStatus} active={props.busy} /></p>}
+            {confirmDelete === reader.id && <div className="note-delete-confirm" role="alert"><p>删除这条笔记？原始来源不会删除。</p><button className="desk-menu-item text-destructive" disabled={props.busy} onClick={() => { props.onDelete(reader.id); setConfirmDelete(null); }}>删除</button><button className="desk-menu-item" onClick={() => setConfirmDelete(null)}>取消</button></div>}
+            <CitedText text={reader.answer} cites={reader.cites} />
+            {!!reader.files?.length && <details className="note-files"><summary>关联文件 · {reader.files.length}</summary>{reader.files.map(file => <div key={file.name} data-note-file={file.name} data-note-file-path={file.path} className="py-2">
+              <p className="text-sm">{file.name}</p><p className="break-all text-xs text-muted-foreground">{file.path}</p>
+              <div className="flex flex-wrap gap-2"><button className="desk-menu-item" disabled={props.busy} onClick={() => props.onOpenFile(reader.id, file.name)}>侧栏预览</button><button className="desk-menu-item" disabled={props.busy} onClick={() => props.onRevealFile(reader.id, file.name)}>所在文件夹</button><button className="desk-menu-item text-destructive" disabled={props.busy} onClick={() => setConfirmFile(`${reader.id}:${file.name}`)}>删除文件</button></div>
+              {confirmFile === `${reader.id}:${file.name}` && <div role="alert" className="note-delete-confirm"><p>删除关联文件 {file.name}？笔记正文保留。</p><button className="desk-menu-item text-destructive" disabled={props.busy} onClick={() => { props.onDeleteFile(reader.id, file.name); setConfirmFile(null); }}>确认删除文件</button><button className="desk-menu-item" onClick={() => setConfirmFile(null)}>取消</button></div>}
+            </div>)}</details>}
+          </article> : <>
           {turns.length === 0 ? <p className="text-sm text-muted-foreground">勾选来源后，在下面提问。回答只用来源里的原文。</p> : null}
           {turns.map((turn, index) => (
             <article key={`${turn.role}-${index}`} data-note-turn="" data-role={turn.role} className="border border-border px-3 py-2 text-sm">
               <p className="text-xs text-muted-foreground">{turn.role === "user" ? "问题" : "回答"}</p>
               {turn.role === "pet" && turn.text ? <CitedText text={turn.text} cites={turn.cites || []} /> : null}
               {turn.role === "pet" && !turn.text && props.status ? (
-                <p data-note-status="" className="mt-1 text-sm italic text-muted-foreground">{props.status}</p>
+                <p data-note-status="" className="mt-1 text-sm text-muted-foreground" role="status"><LoadingText text={props.status} active={props.busy} /></p>
               ) : null}
               {turn.role === "user" ? <p className="mt-1 whitespace-pre-wrap">{turn.text}</p> : null}
               {turn.role === "pet" && turn.text && turn.cites && turn.cites.length ? (
@@ -195,7 +219,7 @@ export function NoteMode(props: {
                 </button>
               ) : null}
             </article>
-          ))}
+          ))}</>}
           {props.error ? <p data-note-error="" className="text-sm text-destructive">{props.error}</p> : null}
         </div>
       </motion.div>
@@ -216,26 +240,25 @@ export function NoteMode(props: {
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.38, delay: 0.08, ease: columnEase }}
       >
-        <h2 className="text-sm font-semibold">笔记</h2>
-        <button
+        <div className="flex items-center justify-between gap-2"><h2 className="text-sm">已存笔记 <span className="text-xs text-muted-foreground">{notes.length}</span></h2><button className="desk-menu-item" aria-pressed={batch} onClick={() => { setBatch(value => !value); setPickedAnswers([]); }}>{batch ? "完成" : "多选"}</button></div>
+        {batch && <div className="note-batch"><p className="text-xs text-muted-foreground">已选择 {picked.length} 条笔记</p><button
           type="button"
           data-note-summarize=""
           data-note-summarize-count={picked.length}
           disabled={props.busy || picked.length === 0}
-          className="mt-3 desk-btn desk-btn-solid"
+          className="desk-menu-item"
           onClick={() => props.onSummarize(picked.map((note) => note.id))}
         >
           总结成一份文档
-        </button>
+        </button></div>}
         {notes.length === 0 ? <p className="mt-3 text-xs text-muted-foreground">还没有笔记。回答下面可以存成笔记。</p> : null}
         <div className="mt-3 space-y-2">
           {notes.map((note) => {
-            const open = openAnswers.includes(note.id);
+            const open = note.id === readerId;
             return (
-            <article key={note.id} data-note-item={note.id} data-note-answer={note.id} data-open={open ? "1" : "0"} className="border border-border px-2 py-2 text-sm">
-              <p className="text-xs text-muted-foreground">{note.saved}</p>
+            <article key={note.id} data-note-item={note.id} data-note-answer={note.id} data-open={open ? "1" : "0"} className={`note-directory-row ${open ? "active" : ""}`}>
               <div className="mt-1 flex items-start gap-2">
-                <input
+                {batch && <input
                   type="checkbox"
                   aria-label={note.question}
                   data-note-answer-pick={note.id}
@@ -245,58 +268,18 @@ export function NoteMode(props: {
                     const on = ev.target.checked;
                     setPickedAnswers((cur) => on ? [...cur, note.id] : cur.filter((item) => item !== note.id));
                   }}
-                />
-                <button
-                  type="button"
+                />}
+                <a
+                  href={`#note-${note.id}`}
                   data-note-answer-toggle={note.id}
-                  aria-expanded={open}
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() => setOpenAnswers((cur) => open ? cur.filter((item) => item !== note.id) : [...cur, note.id])}
+                  aria-current={open ? "page" : undefined}
+                  className="note-directory-title"
+                  onClick={event => { event.preventDefault(); setReaderId(note.id); setConfirmDelete(null); }}
                 >
-                  <span data-note-theme="" className="desk-answer-theme">{note.question}</span>
-                </button>
+                  <h3 data-note-theme="">{note.question}</h3>
+                </a>
               </div>
-              {open ? <CitedText text={note.answer} cites={note.cites} /> : null}
-              {(note.files || []).map((file) => (
-                <div key={file.name} data-note-file={file.name} data-note-file-path={file.path} className="mt-2 border border-border px-2 py-2">
-                  <p className="text-xs font-semibold">{file.name}</p>
-                  <p className="mt-1 break-all text-xs text-muted-foreground">{file.path}</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button type="button" data-note-file-open={file.name} disabled={props.busy} className="desk-btn" onClick={() => props.onOpenFile(note.id, file.name)}>打开</button>
-                    <button type="button" data-note-file-reveal={file.name} disabled={props.busy} className="desk-btn" onClick={() => props.onRevealFile(note.id, file.name)}>文件夹</button>
-                    <button type="button" data-note-file-delete={file.name} disabled={props.busy} className="desk-btn desk-btn-danger" onClick={() => props.onDeleteFile(note.id, file.name)}>删除文件</button>
-                  </div>
-                </div>
-              ))}
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  data-note-markdown={note.id}
-                  disabled={props.busy}
-                  className="desk-btn"
-                  onClick={() => props.onMarkdown(note.id)}
-                >
-                  Markdown
-                </button>
-                <button
-                  type="button"
-                  data-note-feishu={note.id}
-                  disabled={props.busy}
-                  className="desk-btn"
-                  onClick={() => props.onFeishu(note.id)}
-                >
-                  飞书文档
-                </button>
-                <button
-                  type="button"
-                  data-note-delete={note.id}
-                  disabled={props.busy}
-                  className="desk-btn desk-btn-danger"
-                  onClick={() => props.onDelete(note.id)}
-                >
-                  删除
-                </button>
-              </div>
+              <p className="mt-1 text-xs text-muted-foreground" title={note.saved}>{savedTime(note.saved)} · {note.cites.length} 条引用{note.files?.length ? ` · ${note.files.length} 个文件` : ""}</p>
             </article>
             );
           })}
@@ -311,17 +294,9 @@ export function NoteMode(props: {
 }
 
 function CitedText(props: { text: string; cites: NoteCite[] }) {
-  const [open, setOpen] = useState<number | null>(null);
-  const quote = props.cites.find((item) => item.n === open) || null;
   return (
     <div className="mt-1" data-note-markdown-body="">
-      <Markdown text={props.text} cites={props.cites.map((item) => item.n)} onCite={(n) => setOpen((cur) => (cur === n ? null : n))} />
-      {quote ? (
-        <div data-note-quote="" data-n={quote.n} className="mt-2 border border-border px-2 py-1 text-xs">
-          <p>{quote.doc} · {quote.title}</p>
-          <p className="mt-1 whitespace-pre-wrap">{quote.context || quote.text}</p>
-        </div>
-      ) : null}
+      <Markdown text={props.text} cites={props.cites.map((item) => item.n)} onCite={n => { const quote = props.cites.find(item => item.n === n); if (quote) previewQuote(quote); }} />
     </div>
   );
 }

@@ -8,6 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{Emitter, Manager, PhysicalPosition};
 mod video_login;
+mod side_browser;
+use side_browser::{open_side_browser, side_browser_layout, side_browser_action};
 use video_login::{open_video_login, capture_video_login, clear_video_login_window};
 
 #[derive(Clone, serde::Serialize)]
@@ -106,7 +108,7 @@ fn nudge_pet(app: tauri::AppHandle, dx: f64, dy: f64) -> Result<(), String> {
 #[tauri::command]
 fn show_main(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
-        .get_webview_window("main")
+        .get_window("main")
         .ok_or("找不到主窗口。恢复：重启客户端。")?;
     window.unminimize().map_err(|err| err.to_string())?;
     window.show().map_err(|err| err.to_string())?;
@@ -117,7 +119,7 @@ fn show_main(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn open_today(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
-        .get_webview_window("main")
+        .get_window("main")
         .ok_or("找不到主窗口。恢复：重启客户端。")?;
     window.emit("open-today", true).map_err(|err| err.to_string())?;
     Ok(())
@@ -330,13 +332,16 @@ pub fn run() {
         .invoke_handler(|invoke| {
             // Remote platform pages must never obtain backend tokens or invoke app commands.
             if !matches!(invoke.message.webview_ref().label(), "main" | "pet") {
-                invoke.resolver.reject("视频网页不能调用本地助手。");
+                invoke.resolver.reject("远程网页不能调用本地助手。");
                 return true;
             }
             let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
             open_video_login,
             capture_video_login,
             clear_video_login_window,
+            open_side_browser,
+            side_browser_layout,
+            side_browser_action,
             set_hit_regions,
             set_pet_menu_region,
             backend_info,

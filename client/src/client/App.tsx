@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Button, Card, CardBody, GlitchText, Input } from "reend-components";
+import { Button, Card, CardBody, GlitchText } from "reend-components";
 import { BoardPane, shouldReloadBoard, type BoardPayload } from "./board";
 import {
   BOARD_FIXTURE,
@@ -30,6 +30,8 @@ import { AgentMonitor } from "./agent-monitor";
 import { AgentDebugDialog } from "./agent-debug";
 import { TopToolbar } from "./top-toolbar";
 import { LocalSourcesDialog, type LocalSource } from "./local-sources";
+import { SideWorkspace, previewSource } from "./side-workspace";
+import { LoadingText } from "./loading-text";
 import { AutomationPane } from "./automation";
 import { VideoPane, WikiConnectionSettings } from "./video";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
@@ -215,7 +217,9 @@ export function App() {
   const notesRef = useRef<string[]>([]);
   const thinkingRef = useRef("");
   const [thinkPulse, setThinkPulse] = useState(false);
-  const [slashParent, setSlashParent] = useState<SlashParent>("skill");
+  const [slashParent, setSlashParent] = useState<SlashParent>("all");
+  const [composerNotice, setComposerNotice] = useState("");
+  const sessionSwitchBusy = useRef(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
   const [repoPicking, setRepoPicking] = useState(false);
@@ -225,6 +229,7 @@ export function App() {
   const [pickedDocs, setPickedDocs] = useState<SlashItem[]>([]);
   const [pickedAttachments, setPickedAttachments] = useState<LocalSource[]>([]);
   const [localDialog, setLocalDialog] = useState<"file" | "folder" | null>(null);
+  const [localDialogMinimized, setLocalDialogMinimized] = useState(false);
   const [pickedMcp, setPickedMcp] = useState<SlashItem[]>([]);
   const [pickedRepo, setPickedRepo] = useState("");
   const [composer, setComposer] = useState<ComposerOptions | null>(null);
@@ -255,12 +260,13 @@ export function App() {
 
   useEffect(() => {
     if (menuOpen) return;
+    catalogGen.current++;
     setDocCatalog(null);
     setMcpCatalog(null);
   }, [menuOpen]);
 
   useEffect(() => {
-    if (!menuOpen || (slashParent !== "doc" && slashParent !== "mcp")) return;
+    if (!menuOpen || !["all", "doc", "mcp"].includes(slashParent)) return;
     if (debugMode) {
       if (!docCatalog) {
         setDocCatalog({
@@ -279,21 +285,22 @@ export function App() {
       }
       return;
     }
-    if (slashParent === "doc" && docCatalog) return;
-    if (slashParent === "mcp" && mcpCatalog) return;
+    if (slashParent === "doc" && docCatalog || slashParent === "mcp" && mcpCatalog || slashParent === "all" && docCatalog && mcpCatalog) return;
     if (!info) {
       const failed = { ok: false, error: "还没有连上本地后端。恢复：重启客户端。", items: [] };
-      if (slashParent === "doc") setDocCatalog(failed);
-      else setMcpCatalog(failed);
+      if (slashParent === "doc" || slashParent === "all") setDocCatalog(failed);
+      if (slashParent === "mcp" || slashParent === "all") setMcpCatalog(failed);
       return;
     }
-    const parent = slashParent;
+    const parent = slashParent === "all" ? !docCatalog ? "doc" : "mcp" : slashParent;
     const gen = catalogGen.current + 1;
     catalogGen.current = gen;
     const method = parent === "doc" ? "list_feishu_docs" : "list_mcp_tools";
     rpc<{ ok: boolean; error?: string; items: { id?: string; label?: string; title?: string; url?: string; token?: string; description?: string }[] }>(
       info,
       method,
+      {},
+      { timeoutMs: 90000 },
     )
       .then((data) => {
         if (catalogGen.current !== gen) return;
@@ -348,12 +355,15 @@ export function App() {
       setComposerError("还没有连上本地后端。恢复：重启客户端。");
       return;
     }
-    rpc<ComposerOptions>(info, "load_composer_options")
+    let canceled = false;
+    rpc<ComposerOptions>(info, "load_composer_options", {}, { timeoutMs: 90000 })
       .then((data) => {
+        if (canceled) return;
         if (!data.ok) throw new Error(data.error || "菜单读取失败。");
         setComposer(data);
       })
-      .catch((err: unknown) => setComposerError(String(err)));
+      .catch((err: unknown) => { if (!canceled) setComposerError(String(err)); });
+    return () => { canceled = true; };
   }, [menuOpen, composer, composerError, debugMode, info]);
 
   useEffect(() => {
@@ -375,7 +385,7 @@ export function App() {
       items: ChatItem[];
       sessions: SessionItem[];
       context?: ContextView;
-    }>(backend, "load_chat_log");
+    }>(backend, "load_chat_log", {}, { timeoutMs: 90000 });
     if (data.ok === false) throw new Error(data.error || "会话读取失败。");
     setThread({
       sessionId: data.session_id,
@@ -513,26 +523,31 @@ export function App() {
   }, [thread?.items, noteSessions, noteSessionId, noteStatus, status]);
 
   async function newSession() {
-    setNoteSessionId(null);
-    setChatFace("thread");
-    if (!info || busy || debugPane()) return;
-    setError("");
-    const created = await rpc<{ session_id: string }>(info, "new_chat_session");
-    if (!created.session_id) return;
-    await loadThread(info);
+    if (busy || noteBusy || sessionSwitchBusy.current) { setComposerNotice("当前任务还在进行，请完成或停止后再创建会话。"); return; }
+    if (!info || debugPane()) { setComposerNotice(debugPane() ? "演示页不创建真实会话。" : "后端尚未连接，请稍后重试。"); return; }
+    sessionSwitchBusy.current = true; setError(""); setComposerNotice("正在创建会话…");
+    try {
+      const created = await rpc<{ session_id: string }>(info, "new_chat_session", {}, { timeoutMs: 60000 });
+      if (!created.session_id) throw new Error("未收到新会话编号，请检查会话列表后再试。");
+      await loadThread(info); setNoteSessionId(null); setChatFace("thread"); setComposerNotice("新会话已创建，输入草稿保留。");
+    } catch (err) { setError(String(err)); setComposerNotice(String(err)); }
+    finally { sessionSwitchBusy.current = false; }
   }
 
   async function openSession(sessionId: string) {
-    setNoteSessionId(null);
-    setChatFace("thread");
-    if (debugPane()) return;
-    if (!info || busy || sessionId === thread?.sessionId) return;
-    setError("");
-    await rpc(info, "switch_chat_session", { session_id: sessionId });
-    await loadThread(info);
+    if (busy || noteBusy || sessionSwitchBusy.current) { setComposerNotice("当前任务还在进行，请完成或停止后再切换会话。"); return; }
+    if (debugPane() || !info) { setComposerNotice(debugPane() ? "演示页不切换真实会话。" : "后端尚未连接，请稍后重试。"); return; }
+    if (sessionId === thread?.sessionId) { setNoteSessionId(null); setChatFace("thread"); setComposerNotice("已打开当前会话。"); return; }
+    sessionSwitchBusy.current = true; setError(""); setComposerNotice("正在切换会话…");
+    try {
+      await rpc(info, "switch_chat_session", { session_id: sessionId }, { timeoutMs: 60000 });
+      await loadThread(info); setNoteSessionId(null); setChatFace("thread"); setComposerNotice("会话已切换，输入草稿保留。");
+    } catch (err) { setError(String(err)); setComposerNotice(String(err)); }
+    finally { sessionSwitchBusy.current = false; }
   }
 
   function send() {
+    if (sessionSwitchBusy.current) { setComposerNotice("正在切换会话，请稍后发送。"); return; }
     if (noteSessionId) {
       sendNote();
       return;
@@ -1062,6 +1077,13 @@ export function App() {
     setNoteSaveBad(false);
     setNoteSave(action === "delete" ? "正在删除文件" : "正在打开");
     try {
+      if (action === "open") {
+        const file = noteSessions.find(s => s.id === sessionId)?.notes.find(n => n.id === id)?.files.find(f => f.name === name);
+        if (!file) throw new Error("关联文件记录不存在，请刷新笔记后重试。");
+        const staged = await rpc<{ ok: boolean; sources: LocalSource[]; errors: { error: string }[]; error?: string }>(info, "stage_local_sources", { kind: "file", paths: [file.path] }, { timeoutMs: 90000 });
+        if (!staged.ok || !staged.sources?.length) throw new Error(staged.error || staged.errors?.[0]?.error || "文件无法预览。");
+        previewSource(staged.sources[0]); setNoteSave("已在侧栏打开关联文件，尚未加入模型上下文。"); return;
+      }
       const page = await rpc<NotebookPage>(info, method, { session_id: sessionId, note_id: id, name });
       if (action === "delete" && Array.isArray(page.docs) && Array.isArray(page.sessions)) {
         setNoteDocs(page.docs);
@@ -1802,26 +1824,20 @@ export function App() {
   }
 
   function slashItems(): SlashItem[] {
-    if (slashParent === "attachment") return filterSlash([{ id: "local-file", label: "选择文件", description: "读取本地资料并附到对话" }, { id: "local-folder", label: "选择文件夹", description: "递归列出文件，按需读取" }], slashNeedle || "");
-    if (!composer) return [];
-    if (repoPicking) return composer.github.ok ? composer.github.items : [];
-    const source =
-      slashParent === "skill"
-        ? composer.skills
-        : slashParent === "tool"
-          ? composer.cli
-          : slashParent === "doc"
-            ? docCatalog?.ok
-              ? docCatalog.items
-              : []
-            : mcpCatalog?.ok
-              ? mcpCatalog.items
-              : [];
-    return filterSlash(source, slashNeedle || "");
+    if (repoPicking) return composer?.github.ok ? composer.github.items : [];
+    const groups: { parent: SlashParent; items: SlashItem[] }[] = [
+      { parent: "skill", items: composer?.skills || [] }, { parent: "tool", items: composer?.cli || [] },
+      { parent: "doc", items: docCatalog?.ok ? docCatalog.items : [] }, { parent: "mcp", items: mcpCatalog?.ok ? mcpCatalog.items : [] },
+      { parent: "attachment", items: [{ id: "local-file", label: "选择文件", description: "选择本地文件，预览后加入资料" }, { id: "local-folder", label: "选择文件夹", description: "查看目录，按需选择文件" }] },
+    ];
+    return filterSlash(groups.filter(g => slashParent === "all" || slashParent === g.parent).flatMap(g => g.items.map(item => ({ ...item, parent: g.parent,
+      source: SLASH_PARENTS.find(p => p.id === g.parent)?.label,
+      picked: (g.parent === "skill" ? pickedSkills : g.parent === "tool" ? pickedTools : g.parent === "doc" ? pickedDocs : g.parent === "mcp" ? pickedMcp : []).some(p => p.id === item.id),
+    }))), slashNeedle || "");
   }
 
-  function pickSlash(id: string) {
-    if (slashParent === "attachment") { setLocalDialog(id === "local-folder" ? "folder" : "file"); setDraft(stripSlash(draft)); setSlashDismissed(stripSlash(draft)); return; }
+  function pickSlash(id: string, selectedParent: SlashParent = slashParent) {
+    if (selectedParent === "attachment") { setLocalDialog(id === "local-folder" ? "folder" : "file"); setDraft(stripSlash(draft)); setSlashDismissed(stripSlash(draft)); setComposerNotice("已打开资料选择，可预览后再加入对话。"); return; }
     if (!composer) return;
     if (repoPicking) {
       const repo = composer.github.items.find((item) => item.id === id);
@@ -1831,17 +1847,18 @@ export function App() {
       setPendingRepoTool(null);
       setRepoPicking(false);
       setDraft(stripSlash(draft));
+      setComposerNotice(`已加入工具与仓库：${repo.label}`);
       return;
     }
-    if (slashParent === "skill") {
+    if (selectedParent === "skill") {
       const skill = composer.skills.find((item) => item.id === id);
       if (!skill) return;
       setPickedSkills((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, skill]));
-    } else if (slashParent === "doc") {
+    } else if (selectedParent === "doc") {
       const doc = docCatalog?.items.find((item) => item.id === id);
       if (!doc) return;
       setPickedDocs((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, doc]));
-    } else if (slashParent === "mcp") {
+    } else if (selectedParent === "mcp") {
       const tool = mcpCatalog?.items.find((item) => item.id === id);
       if (!tool) return;
       setPickedMcp((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, tool]));
@@ -1849,15 +1866,16 @@ export function App() {
       const tool = composer.cli.find((item) => item.id === id);
       if (!tool) return;
       if (NEED_REPO.has(tool.id)) {
-        setPickedTools((prev) => (prev.some((item) => item.id === tool.id) ? prev : [...prev, tool]));
         setPendingRepoTool(tool);
         setRepoPicking(true);
         setDraft(stripSlash(draft));
+        setComposerNotice("先选择仓库，完成后工具才会加入本轮。");
         return;
       }
       setPickedTools((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, tool]));
     }
     setDraft(stripSlash(draft));
+    setComposerNotice("已加入本轮；可以继续选择其他项目。");
   }
 
   function removeTool(id: string) {
@@ -1873,12 +1891,15 @@ export function App() {
     (slashParent === "attachment" ? "" : composerError) ||
     (repoPicking && composer && !composer.github.ok ? composer.github.error || "仓库列表读取失败。" : "") ||
     (!repoPicking && sideCatalog && !sideCatalog.ok ? sideCatalog.error || "读取失败。" : "") ||
-    (!repoPicking && sideCatalog?.ok && sideCatalog.error ? sideCatalog.error : "");
+    (!repoPicking && sideCatalog?.ok && sideCatalog.error ? sideCatalog.error : "") ||
+    (slashParent === "all" ? [docCatalog?.error, mcpCatalog?.error].filter(Boolean).join("；") : "");
   const menuLoading =
     (slashParent !== "attachment" && !composer && !composerError) ||
-    (!repoPicking && (slashParent === "doc" || slashParent === "mcp") && !sideCatalog);
+    (!repoPicking && (slashParent === "doc" || slashParent === "mcp") && !sideCatalog) ||
+    (!repoPicking && slashParent === "all" && (!docCatalog || !mcpCatalog));
 
   menuKeyRef.current = (ev: KeyboardEvent) => {
+    if (ev.isComposing) return;
     if (ev.defaultPrevented) return;
     if (!menuOpen) return;
     const target = ev.target as HTMLElement | null;
@@ -1889,12 +1910,13 @@ export function App() {
     if (!inDraft && !inMenu) return;
     if (ev.key === "Escape") {
       ev.preventDefault();
+      if (repoPicking) { setRepoPicking(false); setPendingRepoTool(null); setDraft("/"); setSlashParent("tool"); return; }
       setRepoPicking(false);
       setPendingRepoTool(null);
       setSlashDismissed(draft);
       return;
     }
-    if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+    if (ev.altKey && (ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
       ev.preventDefault();
       setRepoPicking(false);
       setPendingRepoTool(null);
@@ -1915,9 +1937,10 @@ export function App() {
       return;
     }
     if (ev.key === "Enter") {
+      if (ev.shiftKey) return;
       ev.preventDefault();
       if (!menuItems.length) return;
-      pickSlash(menuItems[Math.min(slashIndexRef.current, menuItems.length - 1)].id);
+      const item = menuItems[Math.min(slashIndexRef.current, menuItems.length - 1)]; pickSlash(item.id, item.parent);
     }
   };
 
@@ -2071,16 +2094,23 @@ export function App() {
           </div>
         )}
       </aside>
-      <main className="relative z-10 flex min-w-0 flex-1 flex-col">
+      <main className="main-workspace relative z-10 flex min-w-0 flex-1 flex-col">
         <TopToolbar title={pane === "chat" ? noteSessionId ? "笔记" : ({ thread: "对话", memory: "记忆", knowledge: "知识库" })[chatFace] :
           ({ board: "今日看板", feishu: "飞书", settings: "设置", automation: "定时任务", monitor: "聊天监控台", video: "视频读取" })[pane]}
           model={modelItems.find(m => m.id === activeModelId)?.model || ""} connected={!!info || !!debugKind} busy={busy || noteBusy} dark={dark}
           onTheme={() => setDark(!dark)} onNewChat={() => { setPane("chat"); setChatFace("thread"); void newSession(); }}
           onMonitor={() => setPane("monitor")} onVideo={() => setPane("video")} onDebug={() => setAgentDebugOpen(true)}
           onFile={() => setLocalDialog("file")} onFolder={() => setLocalDialog("folder")} />
-        {localDialog && <LocalSourcesDialog info={info} initialKind={localDialog} debug={!!debugPane()} onClose={() => setLocalDialog(null)}
+        {localDialog && <LocalSourcesDialog info={info} initialKind={localDialog} debug={!!debugPane()} onClose={() => { setLocalDialog(null); setLocalDialogMinimized(false); }} onPreview={previewSource} onMinimizedChange={setLocalDialogMinimized}
           onAttach={sources => { setPickedAttachments(prev => [...new Map([...prev, ...sources].map(s => [s.id, s])).values()]); setLocalDialog(null); setPane("chat"); setChatFace("thread"); setNoteSessionId(null); }}
           onIndex={source => knowledgeCall("add_knowledge", { doc_id: `local:${source.id}`, label: source.name })} />}
+        <SideWorkspace info={info} enabled={pane === "chat" && chatFace === "thread"} debug={!!debugKind}
+          suspended={agentDebugOpen || showGuide || !!cropSrc || releaseIntro.open || (!!localDialog && !localDialogMinimized)}
+          attachments={pickedAttachments}
+          onAttach={sources => { setPickedAttachments(prev => [...new Map([...prev, ...sources].map(s => [s.id, s])).values()]); setComposerNotice("资料已加入本轮，尚未发送。"); }}
+          onDetach={id => setPickedAttachments(prev => prev.filter(s => s.id !== id))}
+          onLink={url => setDraft(text => `${text}${text ? "\n" : ""}${url}`)}
+          onRequest={() => { setPane("chat"); setChatFace("thread"); }}>
         <AnimatePresence mode="wait">
           {pane === "chat" && chatFace === "knowledge" ? (
             <motion.section
@@ -2190,27 +2220,29 @@ export function App() {
                 docUrl={noteDocUrl}
               />
               <div data-chat-bar="" className="border-t border-border px-6 py-4">
-                <div className="mb-2">
+                <div className="composer-toolbar mb-2">
                   <ModelPick modelId={activeModelId} items={modelItems} busy={busy || noteBusy} onChange={(id) => void useModel(id)} />
+                  <SamplingBar value={sampling} onChange={setSampling} />
                 </div>
-                <SamplingBar value={sampling} onChange={setSampling} />
                 <form
-                  className="mt-3 flex gap-2"
+                  className="composer-form"
+                  onKeyDown={event => { if ((event.target as HTMLElement).tagName === "TEXTAREA" && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }}
                   onSubmit={(ev) => {
                     ev.preventDefault();
                     send();
                   }}
                 >
-                  <Input
+                  <textarea
                     value={draft}
                     onChange={(ev) => setDraft(ev.target.value)}
                     placeholder="根据勾选的来源提问"
-                    className="flex-1"
+                    className="composer-textarea"
+                    rows={3}
+                    aria-label="笔记提问"
                   />
-                  <Button type="submit" variant="primary" disabled={busy || noteBusy}>
-                    发送
-                  </Button>
+                  <div className="composer-actions"><span className="text-xs text-muted-foreground">来源 · 已选 {noteChecked.length} 份</span><Button type="submit" variant="primary" disabled={busy || noteBusy}>{noteBusy ? <LoadingText text="处理中…" /> : "发送 ↑"}</Button></div>
                 </form>
+                {composerNotice && <p className="composer-feedback" role="status">{composerNotice}</p>}
               </div>
             </motion.section>
           ) : pane === "chat" ? (
@@ -2241,7 +2273,7 @@ export function App() {
                   </Fragment>
                 ))}
                 {compressSplit === shownItems.length ? <ContextSplit covered={shownCovered} /> : null}
-                {status ? <div className="text-sm italic text-muted-foreground">{status}</div> : null}
+                {status ? <div className="text-sm text-muted-foreground" role="status"><LoadingText text={status} active={busy} /></div> : null}
                 {error ? <div data-chat-error className="text-sm text-destructive">{error}</div> : null}
               </div>
               <div data-chat-bar="" className="border-t border-border px-6 py-4">
@@ -2255,41 +2287,38 @@ export function App() {
                     leading={
                       <>
                         <ModelPick modelId={activeModelId} items={modelItems} busy={busy} onChange={(id) => void useModel(id)} />
+                        <SamplingBar value={sampling} onChange={setSampling} />
                         <button
                           type="button"
                           data-knowledge-toggle=""
                           aria-pressed={useKnowledge}
-                          className={`desk-btn shrink-0 ${useKnowledge ? "desk-btn-solid" : ""}`}
+                          className="desk-menu-item shrink-0"
                           onClick={() => setUseKnowledge((value) => !value)}
                         >
-                          知识库
+                          知识库 · {useKnowledge ? "开" : "关"}
                         </button>
                       </>
                     }
                   />
                 ) : (
-                  <ModelPick modelId={activeModelId} items={modelItems} busy={busy} onChange={(id) => void useModel(id)} />
+                  <div className="composer-toolbar"><ModelPick modelId={activeModelId} items={modelItems} busy={busy} onChange={(id) => void useModel(id)} /><SamplingBar value={sampling} onChange={setSampling} /></div>
                 )}
-                <SamplingBar value={sampling} onChange={setSampling} />
-                <div className="mb-2 flex items-center gap-2"><button type="button" className="desk-btn" onClick={() => setLocalDialog("file")}>＋ 附件</button><span className="text-xs text-muted-foreground">文件或文件夹 · 也可用 / 菜单选择</span></div>
                 {pickedAttachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{pickedAttachments.map(source => <span key={source.id} className="desk-chip" data-chip-kind="attachment">
-                  {source.name}{source.kind === "folder" ? ` · ${source.files?.length || 0} 个文件` : ` · ${source.chars} 字`}
+                  <button type="button" className="desk-menu-item" aria-label={`预览 ${source.name}`} onClick={() => previewSource(source)}>{source.name}{source.kind === "folder" ? ` · ${source.files?.length || 0} 个文件` : ` · ${source.chars} 字`}</button>
                   <button type="button" className="ml-2" aria-label={`移除附件 ${source.name}`} onClick={() => setPickedAttachments(prev => prev.filter(s => s.id !== source.id))}>×</button>
                 </span>)}</div>}
                 {pickedSkills.length || pickedTools.length || pickedDocs.length || pickedMcp.length || pickedRepo ? (
                   <div className="mb-2 flex flex-wrap gap-2">
                     {pickedSkills.map((item) => (
-                      <button
+                      <span
                         key={item.id}
-                        type="button"
                         data-chip=""
                         data-chip-kind="skill"
                         data-chip-id={item.id}
-                        className="desk-btn"
-                        onClick={() => setPickedSkills((prev) => prev.filter((row) => row.id !== item.id))}
+                        className="desk-chip"
                       >
-                        {item.label}
-                      </button>
+                        <span className="px-2 py-1">{item.label}</span><button type="button" className="desk-menu-item" aria-label={`移除技能 ${item.label}`} onClick={() => { setPickedSkills(prev => prev.filter(row => row.id !== item.id)); setComposerNotice(`已移除技能 ${item.label}`); }}>×</button>
+                      </span>
                     ))}
                     {pickedDocs.map((item) => (
                       <span
@@ -2303,38 +2332,36 @@ export function App() {
                         <button
                           type="button"
                           className="desk-btn desk-btn-danger ml-1"
+                          aria-label={`移除文档 ${item.label}`}
                           onClick={() => setPickedDocs((prev) => prev.filter((row) => row.id !== item.id))}
                         >
-                          移除
+                          ×
                         </button>
                       </span>
                     ))}
                     {pickedMcp.map((item) => (
-                      <button
+                      <span
                         key={item.id}
-                        type="button"
                         data-chip=""
                         data-chip-kind="mcp"
                         data-chip-id={item.id}
-                        className="desk-btn"
-                        onClick={() => setPickedMcp((prev) => prev.filter((row) => row.id !== item.id))}
+                        className="desk-chip"
                       >
-                        {item.label}
-                      </button>
+                        <span className="px-2 py-1">{item.label}</span><button type="button" className="desk-menu-item" aria-label={`移除 MCP ${item.label}`} onClick={() => { setPickedMcp(prev => prev.filter(row => row.id !== item.id)); setComposerNotice(`已移除 MCP ${item.label}`); }}>×</button>
+                      </span>
                     ))}
                     {pickedTools.map((item) => (
-                      <button
+                      <span
                         key={item.id}
-                        type="button"
                         data-chip=""
                         data-chip-kind="tool"
                         data-chip-id={item.id}
-                        className="desk-btn"
-                        onClick={() => removeTool(item.id)}
+                        className="desk-chip"
                       >
-                        {item.label}
+                        <span className="px-2 py-1">{item.label}
                         {NEED_REPO.has(item.id) && pickedRepo ? ` · ${pickedRepo}` : ""}
-                      </button>
+                        </span><button type="button" className="desk-menu-item" aria-label={`移除工具 ${item.label}`} onClick={() => { removeTool(item.id); setComposerNotice(`已移除工具 ${item.label}`); }}>×</button>
+                      </span>
                     ))}
                   </div>
                 ) : null}
@@ -2352,9 +2379,12 @@ export function App() {
                     setSlashParent(parent);
                   }}
                   onPick={pickSlash}
+                  onClose={() => { setRepoPicking(false); setPendingRepoTool(null); setSlashDismissed(draft); setComposerNotice("菜单已关闭，输入内容保留。"); }}
+                  onBack={() => { setRepoPicking(false); setPendingRepoTool(null); setSlashParent("tool"); setDraft("/"); }}
+                  onRetry={() => { catalogGen.current++; setComposerError(""); if (!composer?.ok) setComposer(null); setDocCatalog(null); setMcpCatalog(null); setComposerNotice("正在重新读取菜单。"); }}
                 />
                 <form
-                  className="flex gap-2"
+                  className="composer-form"
                   data-chat-draft={draft}
                   onSubmit={(ev) => {
                     ev.preventDefault();
@@ -2367,21 +2397,28 @@ export function App() {
                       return;
                     }
                     const target = ev.target as HTMLElement;
+                    if (target.tagName === "TEXTAREA" && ev.key === "Enter" && !ev.shiftKey && !ev.nativeEvent.isComposing) { ev.preventDefault(); send(); return; }
                     if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") return;
                     if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
+                    if (target instanceof HTMLTextAreaElement && (target.value.includes("\n") || target.selectionStart !== target.selectionEnd)) return;
                     if (recallHistory(ev.key)) ev.preventDefault();
                   }}
                 >
-                <Input
+                <textarea
                   value={draft}
-                  onChange={(ev) => setDraft(ev.target.value)}
+                  onChange={(ev) => { setDraft(ev.target.value); setSlashDismissed(null); }}
                   placeholder="发送视频链接总结，或输入 / 选技能、工具、文档"
-                  className="flex-1"
+                  className="composer-textarea"
+                  rows={3}
+                  aria-label="消息输入"
                 />
+                <div className="composer-actions"><div><button type="button" className="desk-menu-item" onClick={() => setLocalDialog("file")}>＋ 附件</button><button type="button" className="desk-menu-item" onClick={() => { setDraft(text => `${text}${text && !/\s$/.test(text) ? " " : ""}/`); setSlashDismissed(null); }}>工具 /</button></div>
                 <Button type="submit" variant="primary" disabled={busy || noteBusy}>
-                  发送
+                  {busy || noteBusy ? <LoadingText text="处理中…" /> : "发送 ↑"}
                 </Button>
+                </div>
                 </form>
+                {composerNotice && <p className="composer-feedback" role="status">{composerNotice}</p>}
               </div>
             </motion.section>
           ) : pane === "settings" ? (
@@ -2494,6 +2531,7 @@ export function App() {
             </motion.section>
           )}
         </AnimatePresence>
+        </SideWorkspace>
       </main>
       {cropSrc ? (
         <BackgroundCrop
@@ -2605,7 +2643,7 @@ function ModelPick(props: {
         data-model-pick
         value={props.modelId}
         disabled={props.busy || props.items.length === 0}
-        className="border border-border bg-background px-2 py-1 text-sm text-foreground"
+        className="composer-select"
         onChange={(ev) => props.onChange(ev.target.value)}
       >
         {props.items.length === 0 ? <option value="">没有模型</option> : null}
@@ -2758,25 +2796,14 @@ function ThinkCard(props: { text: string; live: boolean }) {
 function SamplingBar(props: { value: Sampling; onChange: (next: Sampling) => void }) {
   return (
     <div
-      className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground"
+      className="composer-sampling"
       data-sampling=""
       data-sampling-effort={props.value.reasoning_effort}
       data-sampling-temperature={props.value.temperature.toFixed(1)}
       data-sampling-top-p={props.value.top_p.toFixed(2)}
     >
-      <span>思考</span>
-      {EFFORTS.map((effort) => (
-        <span key={effort} data-effort={effort} data-selected={props.value.reasoning_effort === effort ? "1" : "0"}>
-          <Button
-            type="button"
-            size="sm"
-            variant={props.value.reasoning_effort === effort ? "primary" : "ghost"}
-            onClick={() => props.onChange({ ...props.value, reasoning_effort: effort })}
-          >
-            {effort}
-          </Button>
-        </span>
-      ))}
+      <label>思考 · <select className="composer-select" aria-label="思考强度" value={props.value.reasoning_effort} onChange={e => props.onChange({ ...props.value, reasoning_effort: e.target.value as Sampling["reasoning_effort"] })}>{EFFORTS.map(effort => <option key={effort} value={effort}>{effort}</option>)}</select></label>
+      <details className="composer-advanced"><summary>参数 ⌄</summary><div className="composer-parameters">
       <label className="flex items-center gap-2">
         温度
         <input
@@ -2805,6 +2832,7 @@ function SamplingBar(props: { value: Sampling; onChange: (next: Sampling) => voi
         />
         <span data-top-p-value="">{props.value.top_p.toFixed(2)}</span>
       </label>
+      </div></details>
     </div>
   );
 }
