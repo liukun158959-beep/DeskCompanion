@@ -166,15 +166,14 @@ def feishu_logout() -> dict:
     return {"ok": True, "message": "已退出本机飞书登录。"}
 
 
-def create_markdown_doc(title: str, markdown: str) -> dict:
+def create_markdown_doc(title: str, markdown: str, *, parent_token: str = "", profile: str = "") -> dict:
     title = (title or "").strip()
     body = (markdown or "").strip()
     if not title:
         raise RuntimeError("文档标题为空。")
     if not body:
         raise RuntimeError("文档正文为空。")
-    raw = _run_lark(
-        [
+    args = [
             "docs",
             "+create",
             "--as",
@@ -185,7 +184,13 @@ def create_markdown_doc(title: str, markdown: str) -> dict:
             title,
             "--content",
             "-",
-        ],
+        ]
+    if parent_token:
+        args += ["--parent-token", parent_token]
+    if profile:
+        args = ["--profile", profile, *args]
+    raw = _run_lark(
+        args,
         timeout=90,
         stdin=body,
     )

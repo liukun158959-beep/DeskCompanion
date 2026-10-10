@@ -191,22 +191,6 @@ class PetShell:
             return recent_chat(40, self.host.state.session_id)
         if method == "log_error":
             raise RuntimeError(str(params.get("message") or "Electron 渲染错误。"))
-        if method == "maa_menu":
-            return self.host.maa.snapshot()
-        if method == "maa_set_option":
-            # 桥上来的勾选必须是 JSON 布尔；拒绝 0/1 字符串，避免静默写错。
-            checked = params.get("checked")
-            if checked is not True and checked is not False:
-                raise RuntimeError("勾选必须是 true/false。")
-            return self.host.maa.set_option(str(params.get("id") or ""), checked)
-        if method == "maa_open_game":
-            return self.host.maa.start_open_game()
-        if method == "maa_start_daily":
-            return self.host.maa.start_daily()
-        if method == "maa_stop":
-            return self.host.maa.stop()
-        if method == "maa_authorize":
-            return self.host.maa.authorize_elevate()
         if method == "bubble_today":
             from .board_data import bubble_today
 

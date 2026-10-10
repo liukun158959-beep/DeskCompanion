@@ -30,8 +30,6 @@ from .assistant import (
 from .automation import AutomationScheduler
 from .board_workbench import BoardWorkbench
 from .bridge import Bridge
-from .maa_job import MaaController
-from .maa_tools import bind_host
 from .envconf import parse_env_file, public_llm_env, write_llm_env
 from .layered import enable_dpi_aware, work_area
 from .logutil import crash, install_crash_hooks, log, mark_ready, start_os_watchdog
@@ -100,8 +98,6 @@ class App(BoardWorkbench):
         self.agent = None
         self._agent_error = ""
         self._agent_running = False
-        self.maa = MaaController(self)
-        bind_host(self)
         self.automation = AutomationScheduler(self)
         self.bridge = Bridge(self)
         self._queue: queue.Queue = queue.Queue()
@@ -112,7 +108,6 @@ class App(BoardWorkbench):
         self._nudge_busy = False
         self._board_placed = False
         self._card_mode = "chat"
-        self._daily_overlay = False
         self._history_loaded = False
         self._outside_btn_down = False
         self._startup_ok = threading.Event()
@@ -151,10 +146,6 @@ class App(BoardWorkbench):
             self._load_history()
             log("start_tray")
             self.icon = start_tray(self, self.skin)
-            try:
-                self.maa.start_remote()
-            except Exception as exc:
-                log(f"MAA 远控没起来: {exc}")
             threading.Thread(target=self._run_daily, daemon=True).start()
             mark_ready()
             self._startup_ok.set()
@@ -251,23 +242,6 @@ class App(BoardWorkbench):
         if self.pet:
             self.pet.hide()
 
-    def begin_daily_overlay(self) -> None:
-        self._daily_overlay = True
-        try:
-            self.hide_pet()
-            if self.pet:
-                self.pet.emit("show_job_board")
-        except Exception as exc:
-            log(f"daily overlay: {exc}")
-
-    def end_daily_overlay(self) -> None:
-        self._daily_overlay = False
-        try:
-            if self.pet:
-                self.pet.emit("hide_job_board")
-            self.show_pet()
-        except Exception as exc:
-            log(f"daily overlay end: {exc}")
 
     def show_bubble(self, panel: str = "chat") -> None:
         if self.pet is None:
@@ -290,16 +264,10 @@ class App(BoardWorkbench):
             raise RuntimeError("纸条内容为空。")
         if self.pet is None:
             raise RuntimeError("宠物窗口还在启动，请稍后再看纸条。")
-        if self._daily_overlay:
-            return
         if not self.pet.visible():
             self.pet.show()
         self._card_mode = panel
         self.pet.bubble_open = True
-        if panel == "maa":
-            self._eval_bubble("maa_notice", text=text)
-            self._eval_bubble("show_panel", panel="maa")
-            return
         if panel == "today":
             self._eval_bubble("today_notice", text=text)
             self._eval_bubble("show_panel", panel="today")
@@ -722,45 +690,6 @@ class App(BoardWorkbench):
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def board_maa(self) -> dict:
-        try:
-            return self.maa.snapshot()
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def board_depot(self) -> dict:
-        from .depot_view import depot_snapshot
-
-        try:
-            data = depot_snapshot()
-            data["ok"] = True
-            return data
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def board_raise(self) -> dict:
-        from .raise_roster import snapshot
-
-        try:
-            return snapshot()
-        except Exception as exc:
-            return {"ok": False, "error": str(exc), "roster": [], "lines": []}
-
-    def board_add_raise(self, operator: str, rank: str) -> dict:
-        from .raise_roster import add_target
-
-        try:
-            return add_target(operator, rank)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def board_remove_raise(self, operator: str, rank: str) -> dict:
-        from .raise_roster import remove_target
-
-        try:
-            return remove_target(operator, rank)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
 
     def board_github(self) -> dict:
         from .github import board_snapshot
@@ -770,78 +699,6 @@ class App(BoardWorkbench):
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def save_maa_paths(self, payload: dict) -> dict:
-        try:
-            snap = self.maa.save_paths(payload)
-            snap["message"] = "路径已保存。"
-            return snap
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def save_maa_option(self, payload: dict) -> dict:
-        try:
-            if not isinstance(payload, dict):
-                raise RuntimeError("勾选参数必须是对象。")
-            checked = payload.get("checked")
-            if type(checked) is not bool:
-                raise RuntimeError("勾选必须是 true/false。")
-            return self.maa.set_option(str(payload.get("id") or ""), checked)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def maa_open_game(self) -> dict:
-        try:
-            return self.maa.start_open_game()
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def maa_start_daily(self) -> dict:
-        try:
-            return self.maa.start_daily()
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def maa_stop(self) -> dict:
-        try:
-            return self.maa.stop()
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def maa_authorize(self) -> dict:
-        try:
-            snap = self.maa.authorize_elevate()
-            snap["ok"] = True
-            return snap
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def board_skland(self) -> dict:
-        from .skland import board_snapshot
-
-        try:
-            return board_snapshot()
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def sync_skland(self) -> dict:
-        from .skland import sync_from_skland
-
-        try:
-            data = sync_from_skland()
-            data["message"] = "森空岛已同步。"
-            return data
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    def compute_farm_plan(self) -> dict:
-        from .farm_plan import today_farm_plan
-
-        try:
-            data = today_farm_plan()
-            data["message"] = "已按今天的账本算出。"
-            return data
-        except Exception as exc:
-            return {"ok": False, "error": str(exc), "text": str(exc)}
 
     def _chat_visible(self) -> bool:
         return bool(self.pet and self.pet.bubble_open)

@@ -13,31 +13,25 @@ import {
   KNOWLEDGE_CATALOG,
   KNOWLEDGE_FIXTURE,
   NOTE_FIXTURE,
-  DEPOT_FIXTURE,
   MEMORY_FIXTURE,
-  RAISE_FIXTURE,
   FEISHU_LOGGED_OUT,
   FEISHU_WAITING,
-  MAA_IDLE_FIXTURE,
-  MAA_LOG_FIXTURE,
-  MAA_SKILL_RAW,
   STATUS_FIXTURE,
   debugPane,
   debugRequested,
   installDeskDebug,
 } from "./debug";
-import { columnItems, MaaPane, type LogPayload, type MaaSnap } from "./maa";
-import { DepotPane, type DepotPayload } from "./depot";
 import { ContextCard, ContextSplit, MemoryPane, modelVerbatim, splitIndex, type ContextView, type MemoryPayload } from "./memory";
 import { KnowledgePane, KnowledgeTraceView, mergeKnowledgePage, type FeishuDoc, type KnowledgePayload } from "./knowledge";
 import { NoteMode, type NotebookPage, type NoteDoc, type NoteSession } from "./note";
-import { RaisePane, type RaisePayload } from "./raise";
 import { FeishuPane, feishuLoggedIn, feishuWaiting, type FeishuSnap } from "./feishu";
 import { FeishuAgentPane } from "./feishu-agent";
 import { AgentMonitor } from "./agent-monitor";
+import { AgentDebugDialog } from "./agent-debug";
+import { TopToolbar } from "./top-toolbar";
+import { LocalSourcesDialog, type LocalSource } from "./local-sources";
 import { AutomationPane } from "./automation";
-import { VideoPane } from "./video";
-import { matchRules, parseRules, type Analysis, type MaaRule } from "./maa-rules";
+import { VideoPane, WikiConnectionSettings } from "./video";
 import { loadingStatuses, statusError, statusFromPayload, STATUS_KINDS, type StatusKind, type StatusView } from "./status";
 import { Markdown, MdLink, openableHref, PlainLinks } from "./Markdown";
 import { DEFAULT_SAMPLING, samplingFromInputs, EFFORTS, type Sampling } from "./sampling";
@@ -84,10 +78,10 @@ import {
   type PersonaPublic,
 } from "./settings";
 
-type Pane = "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise" | "automation" | "monitor" | "video";
+type Pane = "chat" | "board" | "feishu" | "settings" | "automation" | "monitor" | "video";
 
 const debugKind = debugPane();
-const boardDebug = debugKind === "board" || debugKind === "maa" || debugKind === "feishu" || debugKind === "depot" || debugKind === "raise" || debugKind === "automation" || debugKind === "monitor" || debugKind === "video";
+const boardDebug = debugKind === "board" || debugKind === "feishu" || debugKind === "automation" || debugKind === "monitor" || debugKind === "video";
 
 type Thread = {
   sessionId: string;
@@ -100,6 +94,7 @@ export function App() {
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [showGuide, setShowGuide] = useState(false);
   const [dark, setDark] = useState(true);
+  const [agentDebugOpen, setAgentDebugOpen] = useState(false);
   const [storedBg] = useState(() => readStoredBackground());
   const [bgUrl, setBgUrl] = useState(storedBg.url);
   const [bgError, setBgError] = useState(storedBg.error);
@@ -126,13 +121,7 @@ export function App() {
   const [pane, setPane] = useState<Pane>(
     debugKind === "automation" || debugKind === "monitor" || debugKind === "video"
       ? debugKind
-      : debugKind === "maa"
-      ? "maa"
-      : debugKind === "depot"
-        ? "depot"
-        : debugKind === "raise"
-          ? "raise"
-          : debugKind === "feishu"
+      : debugKind === "feishu"
         ? "feishu"
         : debugKind === "board"
           ? "board"
@@ -156,13 +145,6 @@ export function App() {
   const [boardClock, setBoardClock] = useState<string | null>(boardDebug ? BOARD_NOW : null);
   const [boardLoading, setBoardLoading] = useState(false);
   const [statuses, setStatuses] = useState<StatusView[]>(boardDebug ? STATUS_FIXTURE : []);
-  const [maa, setMaa] = useState<MaaSnap | null>(debugKind === "maa" ? MAA_IDLE_FIXTURE : null);
-  const [depot, setDepot] = useState<DepotPayload | null>(debugKind === "depot" ? DEPOT_FIXTURE : null);
-  const [depotLoading, setDepotLoading] = useState(false);
-  const [raise, setRaise] = useState<RaisePayload | null>(debugKind === "raise" ? RAISE_FIXTURE : null);
-  const [raiseLoading, setRaiseLoading] = useState(false);
-  const [raiseBusy, setRaiseBusy] = useState(false);
-  const [raiseFormError, setRaiseFormError] = useState("");
   const [chatFace, setChatFace] = useState<"thread" | "memory" | "knowledge">(
     debugKind === "memory" ? "memory" : debugKind === "knowledge" ? "knowledge" : "thread",
   );
@@ -211,23 +193,11 @@ export function App() {
       window.clearInterval(id);
     };
   }, [info, knowledge?.downloads]);
-  const [logs, setLogs] = useState<LogPayload | null>(debugKind === "maa" ? MAA_LOG_FIXTURE : null);
-  const logsRef = useRef<LogPayload | null>(debugKind === "maa" ? MAA_LOG_FIXTURE : null);
-  const [rules, setRules] = useState<MaaRule[] | null>(debugKind === "maa" ? parseRules(MAA_SKILL_RAW) : null);
-  const [rulesError, setRulesError] = useState("");
-  const [logError, setLogError] = useState("");
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [maaBusy, setMaaBusy] = useState(false);
-  const [maaLoading, setMaaLoading] = useState(false);
   const [feishu, setFeishu] = useState<FeishuSnap | null>(debugKind === "feishu" ? FEISHU_LOGGED_OUT : null);
   const [feishuBusy, setFeishuBusy] = useState(false);
   const feishuBusyRef = useRef(false);
-  const maaBusyRef = useRef(false);
-  const openMaaRef = useRef<() => void>(() => {});
   const openFeishuRef = useRef<() => void>(() => {});
   const rememberFeishuRef = useRef<(snap: FeishuSnap) => void>(() => {});
-  const analyzeRef = useRef<() => void>(() => {});
-  const seedLogsRef = useRef<(next: LogPayload) => void>(() => {});
   const statusGen = useRef(0);
   const boardSeen = useRef(false);
   const boardFetches = useRef(0);
@@ -253,6 +223,8 @@ export function App() {
   const [pickedSkills, setPickedSkills] = useState<SlashSkill[]>([]);
   const [pickedTools, setPickedTools] = useState<SlashTool[]>([]);
   const [pickedDocs, setPickedDocs] = useState<SlashItem[]>([]);
+  const [pickedAttachments, setPickedAttachments] = useState<LocalSource[]>([]);
+  const [localDialog, setLocalDialog] = useState<"file" | "folder" | null>(null);
   const [pickedMcp, setPickedMcp] = useState<SlashItem[]>([]);
   const [pickedRepo, setPickedRepo] = useState("");
   const [composer, setComposer] = useState<ComposerOptions | null>(null);
@@ -441,20 +413,8 @@ export function App() {
       },
       openBoard: (refresh = false) => openBoardRef.current(refresh),
       requestToday: () => openBoardRef.current(false),
-      openMaa: () => openMaaRef.current(),
-      analyzeMaa: () => analyzeRef.current(),
-      seedMaaLogs: (next) => seedLogsRef.current(next),
       openFeishu: () => openFeishuRef.current(),
       seedFeishu: (snap) => rememberFeishuRef.current(snap),
-      seedDepot: (payload) => {
-        setPane("depot");
-        setDepot(payload);
-      },
-      seedRaise: (payload) => {
-        setPane("raise");
-        setRaise(payload);
-        setRaiseFormError("");
-      },
       seedMemory: (payload) => {
         setPane("chat");
         setChatFace("memory");
@@ -581,6 +541,7 @@ export function App() {
     const skills = pickedSkills.map((item) => item.id);
     const cli = pickedTools.map((item) => item.id);
     const docs = pickedDocs.map((item) => ({ id: item.id, label: item.label }));
+    const attachments = pickedAttachments.map(item => item.id);
     const mcp = pickedMcp.map((item) => {
       const cut = item.id.indexOf(MCP_SEP);
       return {
@@ -591,7 +552,7 @@ export function App() {
     });
     const needsRepo = pickedTools.some((item) => NEED_REPO.has(item.id));
     if (busy) return;
-    if (!text && skills.length === 0 && cli.length === 0 && docs.length === 0 && mcp.length === 0) return;
+    if (!text && skills.length === 0 && cli.length === 0 && docs.length === 0 && mcp.length === 0 && !attachments.length) return;
     if (needsRepo && !pickedRepo) {
       setError("选了 GitHub 近况或路线图时必须同时选一个已列出的仓库。");
       return;
@@ -601,13 +562,15 @@ export function App() {
       return;
     }
     if (!info || !thread) return;
-    const chips = { skills, cli, github: needsRepo ? pickedRepo : "", docs, mcp };
+    if (useKnowledge && attachments.length) { setError("本地附件请先加入知识库，或关闭知识库后直接提问。"); return; }
+    const chips = { skills, cli, github: needsRepo ? pickedRepo : "", docs, mcp, attachments };
     historyAt.current = null;
     draftStash.current = null;
     setDraft("");
     setPickedSkills([]);
     setPickedTools([]);
     setPickedDocs([]);
+    setPickedAttachments([]);
     setPickedMcp([]);
     setPickedRepo("");
     setRepoPicking(false);
@@ -794,7 +757,7 @@ export function App() {
     const text = stripSlash(draft).trim();
     const sessionId = noteSessionId;
     if (!sessionId || busy || noteBusy || !text) return;
-    if (pickedSkills.length || pickedTools.length || pickedDocs.length || pickedMcp.length || pickedRepo) {
+    if (pickedSkills.length || pickedTools.length || pickedDocs.length || pickedMcp.length || pickedRepo || pickedAttachments.length) {
       setNoteError("笔记只根据勾选的来源回答。去掉这些点选后再问。");
       return;
     }
@@ -1126,8 +1089,6 @@ export function App() {
     const methods: Record<StatusKind, string> = {
       feishu: "load_feishu",
       github: "load_github",
-      maa: "load_maa",
-      skland: "load_skland",
     };
     for (const kind of STATUS_KINDS) {
       rpc<unknown>(backend, methods[kind])
@@ -1306,56 +1267,6 @@ export function App() {
     }
   }
 
-  function rememberMaa(snap: MaaSnap) {
-    setMaa(snap);
-    setStatuses((cur) => cur.map((card) => (card.kind === "maa" ? statusFromPayload("maa", snap) : card)));
-  }
-
-  async function pullMaa(backend: BackendInfo) {
-    const snap = await rpc<MaaSnap>(backend, "load_maa");
-    const nextLogs = await rpc<LogPayload>(backend, "load_log_errors");
-    if (nextLogs.ok === false) {
-      setLogError(nextLogs.error || "读取日志失败。");
-    } else {
-      setLogError("");
-      logsRef.current = nextLogs;
-      setLogs(nextLogs);
-    }
-    rememberMaa(snap);
-  }
-
-  async function openDepot() {
-    setPane("depot");
-    if (boardClock !== null) {
-      setDepot((cur) => cur || DEPOT_FIXTURE);
-      return;
-    }
-    if (!info) {
-      setDepot({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。" });
-      return;
-    }
-    setDepotLoading(true);
-    try {
-      setDepot(await rpc<DepotPayload>(info, "load_depot"));
-    } catch (err) {
-      const text = String(err);
-      setDepot({
-        ok: false,
-        error: text.includes("load_depot")
-          ? "后端还没有仓库页。恢复：停掉当前客户端，在 desk-companion\\client 里重新运行 pnpm tauri dev。"
-          : text,
-      });
-    } finally {
-      setDepotLoading(false);
-    }
-  }
-
-  function raiseMiss(text: string) {
-    return text.includes("load_raise") || text.includes("add_raise") || text.includes("remove_raise")
-      ? "后端还没有培养清单。恢复：停掉当前客户端，在 desk-companion\\client 里重新运行 pnpm tauri dev。"
-      : text;
-  }
-
   async function openMemory() {
     setNoteSessionId(null);
     setPane("chat");
@@ -1396,7 +1307,7 @@ export function App() {
     setKnowledgeBusy(true);
     try {
       const [page, docs] = await Promise.all([
-        rpc<KnowledgePayload>(info, "load_knowledge"),
+        rpc<KnowledgePayload>(info, "load_knowledge").then(page => { setKnowledge(page); return page; }),
         rpc<{ ok?: boolean; error?: string; items?: FeishuDoc[] }>(info, "list_feishu_docs"),
       ]);
       setKnowledge(page);
@@ -1405,7 +1316,7 @@ export function App() {
         setKnowledgeCatalogError(docs.error || "飞书文档没有列出来。");
       } else {
         setKnowledgeCatalog(docs.items || []);
-        setKnowledgeCatalogError("");
+        setKnowledgeCatalogError(docs.error || "");
       }
     } catch (err) {
       setKnowledge({ ok: false, error: String(err) });
@@ -1505,247 +1416,10 @@ export function App() {
     }
   }
 
-  async function openRaise() {
-    setPane("raise");
-    setRaiseFormError("");
-    if (boardClock !== null) {
-      setRaise((cur) => cur || RAISE_FIXTURE);
-      return;
-    }
-    if (!info) {
-      setRaise({ ok: false, error: "还没有连上本地后端。恢复：重启客户端。", roster: [], lines: [] });
-      return;
-    }
-    setRaiseLoading(true);
-    try {
-      setRaise(await rpc<RaisePayload>(info, "load_raise"));
-    } catch (err) {
-      setRaise({ ok: false, error: raiseMiss(String(err)), roster: [], lines: [] });
-    } finally {
-      setRaiseLoading(false);
-    }
-  }
-
-  async function addRaise(operator: string, rank: string) {
-    if (boardClock !== null) {
-      setRaiseFormError("调试页只看样本，不写入清单。");
-      return;
-    }
-    if (!info) {
-      setRaiseFormError("还没有连上本地后端。恢复：重启客户端。");
-      return;
-    }
-    setRaiseBusy(true);
-    try {
-      const data = await rpc<RaisePayload>(info, "add_raise", { operator, rank });
-      if (data.ok === false && !Array.isArray(data.roster)) {
-        setRaiseFormError(data.error || "加入失败。");
-        return;
-      }
-      setRaiseFormError("");
-      setRaise(data);
-    } catch (err) {
-      setRaiseFormError(raiseMiss(String(err)));
-    } finally {
-      setRaiseBusy(false);
-    }
-  }
-
-  async function removeRaise(operator: string, rank: string) {
-    if (boardClock !== null) {
-      setRaiseFormError("调试页只看样本，不写入清单。");
-      return;
-    }
-    if (!info) {
-      setRaiseFormError("还没有连上本地后端。恢复：重启客户端。");
-      return;
-    }
-    setRaiseBusy(true);
-    try {
-      const data = await rpc<RaisePayload>(info, "remove_raise", { operator, rank });
-      if (data.ok === false && !Array.isArray(data.roster)) {
-        setRaiseFormError(data.error || "移除失败。");
-        return;
-      }
-      setRaiseFormError("");
-      setRaise(data);
-    } catch (err) {
-      setRaiseFormError(raiseMiss(String(err)));
-    } finally {
-      setRaiseBusy(false);
-    }
-  }
-
-  async function openMaa() {
-    setPane("maa");
-    setAnalysis(null);
-    if (boardClock !== null) {
-      try {
-        setRules(parseRules(MAA_SKILL_RAW));
-        setRulesError("");
-      } catch (err) {
-        setRules(null);
-        setRulesError(String(err));
-      }
-      logsRef.current = MAA_LOG_FIXTURE;
-      setLogs(MAA_LOG_FIXTURE);
-      setLogError("");
-      setMaa((cur) => cur || MAA_IDLE_FIXTURE);
-      return;
-    }
-    if (!info) {
-      setLogError("还没有连上本地后端。恢复：重启客户端。");
-      return;
-    }
-    setMaaLoading(true);
-    try {
-      const skillPack = await rpc<{ items?: { id: string; body: string }[] }>(info, "load_skills");
-      const body = skillPack.items?.find((item) => item.id === "maa-log-analysis")?.body;
-      if (!body) {
-        throw new Error("没有 maa-log-analysis。恢复：检查 skills/maa-log-analysis/SKILL.md。");
-      }
-      setRules(parseRules(body));
-      setRulesError("");
-      await pullMaa(info);
-    } catch (err) {
-      setRules(null);
-      setRulesError(String(err));
-    } finally {
-      setMaaLoading(false);
-    }
-  }
-
-  async function startDaily() {
-    if (maaBusyRef.current) return;
-    if (boardClock !== null) {
-      rememberMaa({
-        ok: true,
-        status: "daily",
-        running: true,
-        message: "正在确认游戏窗并让 MAA 清日常…",
-        current_task: "理智作战",
-        task_error: "",
-      });
-      return;
-    }
-    if (!info) {
-      rememberMaa({ ok: false, status: "error", running: false, message: "还没有连上本地后端。恢复：重启客户端。" });
-      return;
-    }
-    maaBusyRef.current = true;
-    setMaaBusy(true);
-    try {
-      const result = await rpc<MaaSnap>(info, "maa_start_daily");
-      if (result.ok === false) {
-        rememberMaa({
-          ok: false,
-          status: "error",
-          running: false,
-          message: result.error || "开始清日常失败。",
-          error: result.error,
-        });
-        return;
-      }
-      rememberMaa({
-        ok: true,
-        status: "daily",
-        running: true,
-        message: result.message || "",
-        current_task: maa?.current_task || "",
-        task_error: maa?.task_error || "",
-      });
-      await pullMaa(info);
-    } catch (err) {
-      rememberMaa({ ok: false, status: "error", running: false, message: String(err) });
-    } finally {
-      maaBusyRef.current = false;
-      setMaaBusy(false);
-    }
-  }
-
-  async function stopDaily() {
-    if (maaBusyRef.current) return;
-    if (boardClock !== null) {
-      rememberMaa({
-        ok: true,
-        status: "idle",
-        running: false,
-        message: "已请求停止。",
-        current_task: "",
-        task_error: "",
-      });
-      return;
-    }
-    if (!info) {
-      rememberMaa({ ok: false, status: "error", running: false, message: "还没有连上本地后端。恢复：重启客户端。" });
-      return;
-    }
-    maaBusyRef.current = true;
-    setMaaBusy(true);
-    try {
-      const result = await rpc<MaaSnap>(info, "maa_stop");
-      if (result.ok === false) {
-        rememberMaa({
-          ok: false,
-          status: "error",
-          running: maa?.running === true,
-          message: result.error || "停止失败。",
-          error: result.error,
-        });
-        return;
-      }
-      rememberMaa({
-        ...(maa || {}),
-        ok: true,
-        message: result.message || "已请求停止。",
-      });
-      await pullMaa(info);
-    } catch (err) {
-      rememberMaa({ ...(maa || {}), ok: false, status: "error", message: String(err) });
-    } finally {
-      maaBusyRef.current = false;
-      setMaaBusy(false);
-    }
-  }
-
-  function analyzeLogs() {
-    if (rulesError || !rules) {
-      setAnalysis({
-        kind: "bad",
-        message: rulesError || "还没有技能表。恢复：检查 skills/maa-log-analysis/SKILL.md。",
-      });
-      return;
-    }
-    if (logError) {
-      setAnalysis({ kind: "bad", message: logError });
-      return;
-    }
-    setAnalysis(matchRules(columnItems(logsRef.current), rules));
-  }
-
-  openMaaRef.current = () => {
-    void openMaa();
-  };
   openFeishuRef.current = () => {
     void openFeishu();
   };
-  analyzeRef.current = analyzeLogs;
-  seedLogsRef.current = (next) => {
-    logsRef.current = next;
-    setLogs(next);
-    setLogError("");
-    setAnalysis(null);
-  };
   openBoardRef.current = openBoard;
-
-  useEffect(() => {
-    if (pane !== "maa" || boardClock !== null || !info || maa?.running !== true) return;
-    const timer = window.setInterval(() => {
-      if (maaBusyRef.current) return;
-      void pullMaa(info).catch((err: unknown) => setLogError(String(err)));
-    }, 2000);
-    return () => window.clearInterval(timer);
-  }, [pane, boardClock, info, maa?.running]);
 
   function rememberFeishu(snap: FeishuSnap) {
     setFeishu(snap);
@@ -2128,6 +1802,7 @@ export function App() {
   }
 
   function slashItems(): SlashItem[] {
+    if (slashParent === "attachment") return filterSlash([{ id: "local-file", label: "选择文件", description: "读取本地资料并附到对话" }, { id: "local-folder", label: "选择文件夹", description: "递归列出文件，按需读取" }], slashNeedle || "");
     if (!composer) return [];
     if (repoPicking) return composer.github.ok ? composer.github.items : [];
     const source =
@@ -2146,6 +1821,7 @@ export function App() {
   }
 
   function pickSlash(id: string) {
+    if (slashParent === "attachment") { setLocalDialog(id === "local-folder" ? "folder" : "file"); setDraft(stripSlash(draft)); setSlashDismissed(stripSlash(draft)); return; }
     if (!composer) return;
     if (repoPicking) {
       const repo = composer.github.items.find((item) => item.id === id);
@@ -2194,12 +1870,12 @@ export function App() {
   const menuActive = menuItems.length ? Math.min(slashIndex, menuItems.length - 1) : 0;
   const sideCatalog = slashParent === "doc" ? docCatalog : slashParent === "mcp" ? mcpCatalog : null;
   const menuError =
-    composerError ||
+    (slashParent === "attachment" ? "" : composerError) ||
     (repoPicking && composer && !composer.github.ok ? composer.github.error || "仓库列表读取失败。" : "") ||
     (!repoPicking && sideCatalog && !sideCatalog.ok ? sideCatalog.error || "读取失败。" : "") ||
     (!repoPicking && sideCatalog?.ok && sideCatalog.error ? sideCatalog.error : "");
   const menuLoading =
-    (!composer && !composerError) ||
+    (slashParent !== "attachment" && !composer && !composerError) ||
     (!repoPicking && (slashParent === "doc" || slashParent === "mcp") && !sideCatalog);
 
   menuKeyRef.current = (ev: KeyboardEvent) => {
@@ -2255,13 +1931,13 @@ export function App() {
         }}
         onNavigate={(nextPane, sub) => {
           if (sub === "knowledge") void openKnowledge();
-          else if (nextPane === "maa") void openMaa();
           else if (nextPane === "feishu") void openFeishu();
           else if (nextPane === "board") void openBoard();
           else setPane(nextPane);
         }}
       /> : null}
-      {releaseIntro.open && !showGuide && !cropSrc ? <ReleaseIntro daily={releaseIntro.daily}
+      {agentDebugOpen ? <AgentDebugDialog info={info} debug={!!debugKind} onClose={() => setAgentDebugOpen(false)} /> : null}
+      {releaseIntro.open && !showGuide && !cropSrc && !agentDebugOpen ? <ReleaseIntro daily={releaseIntro.daily}
         onDaily={releaseIntro.setDaily} onClose={releaseIntro.close} error={releaseIntro.preferenceError} /> : null}
       <div
         className="desk-bg"
@@ -2307,7 +1983,7 @@ export function App() {
           <SideNav
             icon="board"
             label="看板"
-            active={pane === "board" || pane === "maa" || pane === "depot" || pane === "raise" || pane === "feishu" || pane === "automation" || pane === "monitor" || pane === "video"}
+            active={pane === "board" || pane === "feishu" || pane === "automation" || pane === "monitor" || pane === "video"}
             onClick={() => void openBoard()}
           />
           <SideNav icon="settings" label="设置" active={pane === "settings"} onClick={() => setPane("settings")} />
@@ -2388,9 +2064,6 @@ export function App() {
         ) : (
           <div className="mt-4 flex-1 overflow-y-auto px-2" data-nav="board">
             <SideLink icon="today" label="今日" sub="today" selected={pane === "board"} onClick={() => openBoard()} />
-            <SideLink icon="maa" label="清日常" sub="maa" selected={pane === "maa"} onClick={() => void openMaa()} />
-            <SideLink icon="depot" label="仓库" sub="depot" selected={pane === "depot"} onClick={() => void openDepot()} />
-            <SideLink icon="raise" label="培养" sub="raise" selected={pane === "raise"} onClick={() => void openRaise()} />
             <SideLink icon="feishu" label="飞书" sub="feishu" selected={pane === "feishu"} onClick={() => void openFeishu()} />
             <SideLink icon="today" label="定时任务" sub="automation" selected={pane === "automation"} onClick={() => setPane("automation")} />
             <SideLink icon="board" label="聊天监控台" sub="monitor" selected={pane === "monitor"} onClick={() => setPane("monitor")} />
@@ -2399,6 +2072,15 @@ export function App() {
         )}
       </aside>
       <main className="relative z-10 flex min-w-0 flex-1 flex-col">
+        <TopToolbar title={pane === "chat" ? noteSessionId ? "笔记" : ({ thread: "对话", memory: "记忆", knowledge: "知识库" })[chatFace] :
+          ({ board: "今日看板", feishu: "飞书", settings: "设置", automation: "定时任务", monitor: "聊天监控台", video: "视频读取" })[pane]}
+          model={modelItems.find(m => m.id === activeModelId)?.model || ""} connected={!!info || !!debugKind} busy={busy || noteBusy} dark={dark}
+          onTheme={() => setDark(!dark)} onNewChat={() => { setPane("chat"); setChatFace("thread"); void newSession(); }}
+          onMonitor={() => setPane("monitor")} onVideo={() => setPane("video")} onDebug={() => setAgentDebugOpen(true)}
+          onFile={() => setLocalDialog("file")} onFolder={() => setLocalDialog("folder")} />
+        {localDialog && <LocalSourcesDialog info={info} initialKind={localDialog} debug={!!debugPane()} onClose={() => setLocalDialog(null)}
+          onAttach={sources => { setPickedAttachments(prev => [...new Map([...prev, ...sources].map(s => [s.id, s])).values()]); setLocalDialog(null); setPane("chat"); setChatFace("thread"); setNoteSessionId(null); }}
+          onIndex={source => knowledgeCall("add_knowledge", { doc_id: `local:${source.id}`, label: source.name })} />}
         <AnimatePresence mode="wait">
           {pane === "chat" && chatFace === "knowledge" ? (
             <motion.section
@@ -2418,7 +2100,9 @@ export function App() {
                 onDownload={(repo) => knowledgeCall("download_knowledge", { repo }).then((result) => result.ok)}
                 onDeleteModel={(repo) => knowledgeCall("delete_model", { repo }).then((result) => result.ok)}
                 onSave={(payload) => knowledgeCall("save_knowledge", { payload }).then((result) => result.ok)}
-                onAdd={(doc_id, label) => knowledgeCall("add_knowledge", { doc_id, label })}
+                onAdd={(doc_id, label, source) => knowledgeCall("add_knowledge", { doc_id, label, source })}
+                onLocal={kind => setLocalDialog(kind)}
+                onRefresh={() => void openKnowledge()}
                 onDelete={(doc_id) => knowledgeCall("delete_knowledge", { doc_id })}
                 onRebuild={() => knowledgeCall("rebuild_knowledge").then((result) => result.ok)}
                 onAsk={async (text) => {
@@ -2444,6 +2128,7 @@ export function App() {
                   }
                 }}
               />
+              <WikiConnectionSettings info={info} debug={!!debugPane()} onSaved={() => void openKnowledge()} />
             </motion.section>
           ) : pane === "chat" && chatFace === "memory" ? (
             <motion.section
@@ -2586,6 +2271,11 @@ export function App() {
                   <ModelPick modelId={activeModelId} items={modelItems} busy={busy} onChange={(id) => void useModel(id)} />
                 )}
                 <SamplingBar value={sampling} onChange={setSampling} />
+                <div className="mb-2 flex items-center gap-2"><button type="button" className="desk-btn" onClick={() => setLocalDialog("file")}>＋ 附件</button><span className="text-xs text-muted-foreground">文件或文件夹 · 也可用 / 菜单选择</span></div>
+                {pickedAttachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{pickedAttachments.map(source => <span key={source.id} className="desk-chip" data-chip-kind="attachment">
+                  {source.name}{source.kind === "folder" ? ` · ${source.files?.length || 0} 个文件` : ` · ${source.chars} 字`}
+                  <button type="button" className="ml-2" aria-label={`移除附件 ${source.name}`} onClick={() => setPickedAttachments(prev => prev.filter(s => s.id !== source.id))}>×</button>
+                </span>)}</div>}
                 {pickedSkills.length || pickedTools.length || pickedDocs.length || pickedMcp.length || pickedRepo ? (
                   <div className="mb-2 flex flex-wrap gap-2">
                     {pickedSkills.map((item) => (
@@ -2694,58 +2384,6 @@ export function App() {
                 </form>
               </div>
             </motion.section>
-          ) : pane === "depot" ? (
-            <motion.section
-              key="depot"
-              className="flex-1 overflow-y-auto px-8 py-6"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <DepotPane data={depot} loading={depotLoading} info={info} />
-            </motion.section>
-          ) : pane === "raise" ? (
-            <motion.section
-              key="raise"
-              className="flex-1 overflow-y-auto px-8 py-6"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <RaisePane
-                data={raise}
-                loading={raiseLoading}
-                formError={raiseFormError}
-                busy={raiseBusy}
-                onAdd={(operator, rank) => void addRaise(operator, rank)}
-                onRemove={(operator, rank) => void removeRaise(operator, rank)}
-              />
-            </motion.section>
-          ) : pane === "maa" ? (
-            <motion.section
-              key="maa"
-              className="flex-1 overflow-y-auto px-8 py-6"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <MaaPane
-                snap={maa}
-                logs={logs}
-                logError={logError}
-                rulesError={rulesError}
-                analysis={analysis}
-                busy={maaBusy}
-                loading={maaLoading}
-                debug={boardClock !== null}
-                onStart={() => void startDaily()}
-                onStop={() => void stopDaily()}
-                onAnalyze={analyzeLogs}
-              />
-            </motion.section>
           ) : pane === "settings" ? (
             <motion.section
               key="settings"
@@ -2842,7 +2480,6 @@ export function App() {
                 onRefresh={() => void openBoard(true)}
                 statuses={statuses}
                 fetches={fetchCount}
-                onOpenMaa={() => void openMaa()}
                 onOpenFeishu={() => void openFeishu()}
                 deleting={rowDeleting}
                 deleteErrors={agendaErrors}
@@ -2945,27 +2582,9 @@ function SideIcon(props: { name: string }) {
       </svg>
     );
   }
-  if (props.name === "maa") {
-    return (
-      <svg {...stroke}>
-        <path d="M3 12l2.2-6 2 3.2L8.6 7 13 12" />
-      </svg>
-    );
-  }
-  if (props.name === "depot") {
-    return (
-      <svg {...stroke}>
-        <path d="M3 6.5 8 3.5 13 6.5V12.5H3V6.5zM3 6.5 8 9.5 13 6.5M8 9.5V13" />
-      </svg>
-    );
-  }
-  if (props.name === "raise") {
-    return (
-      <svg {...stroke}>
-        <path d="M3 3.5h10M3 7h10M3 10.5h6" />
-      </svg>
-    );
-  }
+
+
+
   return (
     <svg {...stroke}>
       <path d="M3.5 3h6.2L12.5 5.8V13h-9V3zM9.5 3v3H12.5" />

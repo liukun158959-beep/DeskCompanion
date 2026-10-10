@@ -64,7 +64,7 @@ test('optional-feature navigation persists completion before leaving guide', asy
   act(() => app.button('开始配置').props.onClick());
   act(() => app.button('先浏览，稍后配置').props.onClick());
   const links = app.renderer.root.findAllByType('button').filter((node) => node.children.join('') === '前往设置');
-  await act(async () => links[3].props.onClick());
+  await act(async () => links[2].props.onClick());
   assert.deepEqual(calls, ['complete_onboarding']);
   assert.deepEqual(app.props.target, ['board', 'knowledge']);
   app.renderer.unmount();

@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 import desk_companion
 from desk_companion import (
-    assistant, automation, board_data, context_pack, depot_view, facts,
-    knowledge, maa_depot, memory, model_catalog, notebook, skill_catalog, web_search,
+    assistant, automation, board_data, context_pack, facts,
+    knowledge, memory, model_catalog, notebook, skill_catalog, web_search,
 )
 from desk_companion.bridge import Bridge
 from desk_companion.local_api import server
@@ -59,6 +59,7 @@ class RegressionTests(unittest.TestCase):
             agent = assistant.build_agent(host)
         names = {tool["function"]["name"] for tool in agent.tools.to_openai_tools()}
         self.assertTrue({"remember_fact", "forget_fact", "web_search", "create_calendar_event"} <= names)
+        self.assertFalse(any("arknights" in name or name.startswith("maa_") for name in names))
         agent.llm = FakeLLM([{"role": "assistant", "content": "回归正常。"}])
         result = agent.run("打个招呼", run_id="regression")
         self.assertIn("回归正常", str(result))
@@ -117,17 +118,6 @@ class RegressionTests(unittest.TestCase):
         self.assertIn("10月9日", rows[0]["end"])
         self.assertEqual(board_data._next_event(rows, now)["summary"], "跨日")
 
-    def test_saved_depot_can_be_old_but_plan_requires_today(self):
-        patch.object(maa_depot, "account_path", return_value=self.root / "account.json").start()
-        yesterday = (datetime.now().astimezone() - timedelta(days=1)).isoformat()
-        (self.root / "account.json").write_text(json.dumps({"depot_sync": yesterday, "inventory": {"龙门币": 100}}), encoding="utf-8")
-        self.assertEqual(maa_depot.read_saved_inventory()["龙门币"], 100)
-        with self.assertRaises(RuntimeError):
-            maa_depot.require_today_inventory()
-
-    def test_depot_icon_rejects_path_traversal(self):
-        with self.assertRaises(RuntimeError):
-            depot_view.read_icon("../../account")
 
     def test_search_results_require_links(self):
         result = web_search.format_search({"results": [{"title": "来源", "link": "https://example.invalid", "snippet": "样本"}]})
@@ -176,13 +166,13 @@ class RegressionTests(unittest.TestCase):
 
     def test_automation_roundtrip_without_running_actions(self):
         patch.object(automation, "jobs_path", return_value=self.root / "automation.json").start()
-        automation.upsert_job({"name": "样本", "action": "maa_daily", "enabled": False,
+        automation.upsert_job({"name": "样本", "action": "retro_gen", "enabled": False,
                                "cadence": "daily", "weekdays": [], "hour": 12, "minute": 0})
         self.assertFalse(automation.list_snapshot()["items"][0]["enabled"])
 
     def test_skills_still_available(self):
         skills = skill_catalog.list_skills()
-        self.assertEqual(len(skills), 4)
+        self.assertEqual({item["id"] for item in skills}, {"weekly-retro", "feishu-doc-writing", "github-repo-summary"})
         self.assertTrue(all(item["body"].strip() for item in skills))
 
     def test_legacy_entry_resources_remain(self):
@@ -190,7 +180,7 @@ class RegressionTests(unittest.TestCase):
         for relative in ("desk_companion/ui/board.html", "desk_companion/ui/tokens.css",
                          "desk_companion/ui/fonts/ZCOOLKuaiLe-Regular.ttf",
                          "desk_companion/ui/vendor/marked.min.js", "desk_companion/ui/vendor/purify.min.js",
-                         "pet-ui/public/job.html", "pet-ui/public/vendor/marked.min.js",
+                         "pet-ui/public/vendor/marked.min.js",
                          "pet-ui/public/vendor/purify.min.js"):
             with self.subTest(resource=relative):
                 self.assertTrue((root / relative).is_file())

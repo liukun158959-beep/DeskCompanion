@@ -70,10 +70,20 @@ class TaskManager:
             if self.stopped:
                 raise RuntimeError("桌宠正在退出。")
             limits = {**self.settings, **(task_limits or {})}
+            from .video_analysis import initial_video_url
+            video_url = request.get("video_url") or (initial_video_url(text) if not request.get("resume_note")
+                and not request.get("workflow") and not request.get("chips") and not request.get("knowledge") else None)
+            if video_url:
+                request.update(workflow="video_note", video_url=video_url)
+                request.setdefault("video_focus", text)
+                limits["task_timeout"] = max(limits["task_timeout"], 900)
+                source = {**(source or {}), "workflow": "video", "video_url": video_url}
             if not 0 < limits["call_timeout"] <= limits["task_timeout"] <= 1800:
                 raise ValueError("任务时限不正确。")
             request.update(text=text, session_id=session, limits=limits)
             request.setdefault("sampling", {"reasoning_effort": "low", "temperature": .5, "top_p": 1})
+            from .wiki_connection import load_settings as wiki_settings
+            request.setdefault("video_archive_config", wiki_settings())
             with self.db() as db:
                 db.execute("INSERT INTO tasks(id,session,channel,text,request,state,created,source) VALUES(?,?,?,?,?,'queued',?,?)",
                            (task_id, session, channel, text, json.dumps(request), time.time(), json.dumps(source or {})))
@@ -189,8 +199,9 @@ class TaskManager:
     def _execute(self, row, control):
         task_id = row["id"]
         request = json.loads(row["request"])
+        request.update(task_id=task_id, channel=row["channel"])
         tree = process = None
-        phase = {"deadline": None, "waiting_note": None}
+        phase = {"deadline": None, "hard_deadline": None, "kind": None, "waiting_note": None}
         ended = threading.Event()
         outcome = {}
         try:
@@ -208,27 +219,29 @@ class TaskManager:
                     for line in process.stdout:
                         event = json.loads(line)
                         kind, data = event["kind"], event.get("data")
-                        if kind == "maa":
-                            from . import maa_tools
-                            from .resource_lock import WRITES
-                            with WRITES:
-                                if control["cancel"].is_set():
-                                    return
-                                result = getattr(maa_tools, data["name"])(data["args"])
-                            process.stdin.write(json.dumps({"result": result}) + "\n")
-                            process.stdin.flush()
-                        elif kind == "result":
+                        if kind == "result":
                             outcome["answer"] = str(data)
+                            self.update(task_id, answer=outcome["answer"])
                         elif kind == "failure":
                             outcome["error"] = data.get("message", "任务失败") if isinstance(data, dict) else str(data)
                             outcome["timed_out"] = isinstance(data, dict) and "Timeout" in data.get("type", "")
+                            self.event(task_id, kind, data)
                         else:
                             if kind in ("llm_start", "tool_start"):
                                 phase["deadline"] = time.monotonic() + request["limits"]["call_timeout"]
+                                phase["kind"] = kind
+                                phase["hard_deadline"] = time.monotonic() + max(300, request["limits"]["call_timeout"]) if kind == "llm_start" else None
                                 phase["waiting_note"] = time.monotonic() + 30
                             elif kind in ("llm_end", "tool_end"):
                                 phase["deadline"] = None
+                                phase["hard_deadline"] = None
+                                phase["kind"] = None
                                 phase["waiting_note"] = None
+                            elif kind in ("token", "think", "llm_progress") and data and phase["kind"] == "llm_start":
+                                phase["deadline"] = time.monotonic() + request["limits"]["call_timeout"]
+                                phase["waiting_note"] = time.monotonic() + 30
+                            if kind == "llm_progress":
+                                continue
                             self.event(task_id, kind, data)
                 except Exception:
                     outcome["error"] = "任务通信中断，工具可能已经执行，请查看时间线。"
@@ -243,19 +256,22 @@ class TaskManager:
                 if control["cancel"].is_set():
                     reason = "cancelled"
                     break
-                if time.monotonic() >= deadline or (phase["deadline"] and time.monotonic() >= phase["deadline"]):
+                if time.monotonic() >= deadline or (phase["deadline"] and time.monotonic() >= phase["deadline"]) or (phase["hard_deadline"] and time.monotonic() >= phase["hard_deadline"]):
                     reason = "timed_out"
                     break
                 if phase["waiting_note"] and time.monotonic() >= phase["waiting_note"]:
-                    self.event(task_id, "status", "当前调用还未返回。我会保留进度，到时限后停止等待。")
+                    self.event(task_id, "status", "当前调用仍在等待返回；此提示不代表超时或失败。")
                     phase["waiting_note"] = None
             if reason:
                 control["cancel"].set()
                 tree.close()
                 reader.join(2)
                 message = "任务已停止。" if reason == "cancelled" else "调用达到时限，已停止等待。"
-                self.finish(task_id, reason, message + "已保留部分答案和工具记录；继续前请确认已执行的操作。")
-                self._save_partial(row, reason)
+                if reason == "timed_out" and "answer" in outcome:
+                    self.finish(task_id, "succeeded", "笔记已完成；自动归档达到时限，请核实飞书保存回执。", answer=outcome["answer"])
+                else:
+                    self.finish(task_id, reason, message + "已保留部分答案和工具记录；继续前请确认已执行的操作。")
+                    self._save_partial(row, reason)
             elif "answer" in outcome:
                 self.finish(task_id, "succeeded", answer=outcome["answer"])
             else:
@@ -291,6 +307,17 @@ class TaskManager:
             request = json.loads(db.execute("SELECT request FROM tasks WHERE id=?", (task_id,)).fetchone()[0])
         for key in ("text", "session_id", "limits"):
             request.pop(key, None)
+        # Successful-answer follow-ups do not create another full note automatically.
+        if previous["state"] == "succeeded":
+            request["auto_video_archive"] = False
+            if request.get("workflow") == "video_note":
+                for key in ("workflow", "video_url", "video_focus"):
+                    request.pop(key, None)
+        elif not request.get("workflow") and not request.get("chips") and not request.get("knowledge"):
+            from .video_analysis import initial_video_url
+            original_url = initial_video_url(previous["text"])
+            if original_url and all(e.get("read_only", True) for e in steps if isinstance(e, dict)):
+                request.update(workflow="video_note", video_url=original_url, video_focus=previous["text"])
         completed = {e["data"].get("fingerprint") for e in previous["events"] if e["kind"] in {"tool_start", "tool_end"}
                      and not e["data"].get("read_only", True)}
         request["completed_writes"] = list(set(request.get("completed_writes", [])) | (completed - {None}))

@@ -22,6 +22,7 @@ export type KnowledgeDoc = {
   url: string;
   chars: number;
   chunks: number;
+  source?: string; space_id?: string; space_name?: string; folder_name?: string; local_path?: string;
 };
 
 export type KnowledgeChunk = {
@@ -148,7 +149,18 @@ function downloadLabel(row: KnowledgeDownload): string {
   return `${row.percent}% · ${formatMb(row.bytes)} / ${formatMb(row.total)}`;
 }
 
-export type FeishuDoc = { title: string; url: string; token: string };
+export type FeishuDoc = { title: string; url: string; token: string; source?: string; space_id?: string; space_name?: string };
+
+export function groupSources<T extends { source?: string; space_id?: string; space_name?: string; url?: string }>(items: T[]) {
+  const groups = new Map<string, { id: string; name: string; items: T[] }>();
+  for (const item of items) {
+    const id = item.source === "local" ? `local:${item.space_name || "files"}` : item.space_id ? `wiki:${item.space_id}` : item.source === "wiki" || item.url?.includes("/wiki/") ? "wiki:unknown" : "drive";
+    const name = item.space_name || (item.source === "local" ? "本地文件" : item.space_id ? `飞书知识库 · ${item.space_id}` : id === "wiki:unknown" ? "飞书知识库（归属待识别）" : "飞书云文档");
+    const group = groups.get(id) || { id, name, items: [] };
+    group.items.push(item); groups.set(id, group);
+  }
+  return [...groups.values()];
+}
 
 export function KnowledgeTraceView(props: { trace: KnowledgeTrace; showAnswer?: boolean }) {
   const trace = props.trace;
@@ -219,7 +231,9 @@ export function KnowledgePane(props: {
   onDownload: (repo: string) => Promise<boolean>;
   onDeleteModel: (repo: string) => Promise<boolean>;
   onSave: (payload: KnowledgeSettings) => Promise<boolean>;
-  onAdd: (id: string, label: string) => Promise<{ ok: boolean; error: string }>;
+  onAdd: (id: string, label: string, source?: FeishuDoc) => Promise<{ ok: boolean; error: string }>;
+  onLocal?: (kind: "file" | "folder") => void;
+  onRefresh?: () => void;
   onDelete: (id: string) => Promise<{ ok: boolean; error: string }>;
   onRebuild: () => Promise<boolean>;
   onAsk: (text: string) => Promise<boolean>;
@@ -250,7 +264,11 @@ export function KnowledgePane(props: {
   }, [data?.chunk_size, data?.retrieve_k, data?.rerank_n, data?.chunk_strategy, data?.chunk_unit, data?.overlap]);
   const [askText, setAskText] = useState("");
   const docs = failed ? [] : data.docs || [];
-  const shown = docs.filter((doc) => fuzzyHit(query, doc.title));
+  const enriched = docs.map(doc => {
+    const found = props.catalog.find(c => c.url === doc.id || c.token === doc.id || !!c.url && !!doc.url && c.url === doc.url);
+    return found?.space_id && doc.source !== "local" ? { ...doc, source: found.source, space_id: found.space_id, space_name: found.space_name } : doc;
+  });
+  const shown = enriched.filter((doc) => fuzzyHit(query, doc.title) || !!doc.space_name && fuzzyHit(query, doc.space_name));
   const chunks = failed ? [] : data.chunks || [];
   async function removeDoc(id: string, title: string, where: "library" | "catalog") {
     setRemoveWhere(where);
@@ -300,7 +318,7 @@ export function KnowledgePane(props: {
     <div data-knowledge="" data-knowledge-ok={data ? (failed ? "0" : "1") : ""}>
       <h1 className="text-xl font-semibold">知识库</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        面试和 AI 知识只从这里的飞书文档检索。打开对话底栏的知识库后，这一轮固定先走{data?.subagent || "知识库检索"}。
+        按飞书知识库和本地资料管理文档。打开对话底栏的知识库后，从已入库的内容中检索，先走{data?.subagent || "知识库检索"}。
       </p>
       {data?.error ? <p data-knowledge-error="" className="mt-3 text-sm text-destructive">{data.error}</p> : null}
       {data && data.ok !== false ? (
@@ -390,7 +408,9 @@ export function KnowledgePane(props: {
         </section>
       ) : null}
       <section className="mt-6">
-        <h2 className="text-sm font-semibold">文档库</h2>
+        <div className="flex items-center gap-2"><h2 className="mr-auto text-sm font-semibold">文档库 · {docs.length} 篇</h2>
+          <button className="desk-btn" disabled={props.busy} onClick={() => props.onLocal?.("file")}>本地文件</button>
+          <button className="desk-btn" disabled={props.busy} onClick={() => props.onLocal?.("folder")}>本地文件夹</button></div>
         <input
           data-knowledge-query=""
           value={query}
@@ -400,7 +420,9 @@ export function KnowledgePane(props: {
         />
         <div className="mt-3 space-y-2">
           {shown.length === 0 ? <p className="text-sm text-muted-foreground">库里没有匹配的文档。</p> : null}
-          {shown.map((doc) => (
+          {groupSources(shown).map(group => <details key={group.id} data-knowledge-group={group.id} open className="rounded-lg border border-border p-3">
+            <summary className="mb-2 cursor-pointer text-sm font-medium">{group.name} · {group.items.length} 篇</summary>
+            {group.items.map((doc) => (
             <div key={doc.id} data-knowledge-doc="" data-id={doc.id} data-title={doc.title} className="flex items-start justify-between gap-3 border border-border px-3 py-2 text-sm">
               <div>
                 <p>{doc.title}</p>
@@ -410,14 +432,15 @@ export function KnowledgePane(props: {
                 移除
               </button>
             </div>
-          ))}
+          ))}</details>)}
           {removeWhere === "library" && removeNote ? (
             <p data-knowledge-remove-status="" className={`text-xs ${removeBad ? "text-destructive" : "text-foreground"}`}>{removeNote}</p>
           ) : null}
         </div>
       </section>
       <section className="mt-6">
-        <h2 className="text-sm font-semibold">从飞书添加</h2>
+        <div className="flex items-center justify-between"><h2 className="text-sm font-semibold">从飞书添加</h2>
+          <button className="desk-btn" disabled={props.busy} onClick={props.onRefresh}>刷新目录</button></div>
         {props.catalogError ? <p className="mt-2 text-sm text-destructive">{props.catalogError}</p> : null}
         <input
           data-knowledge-catalog-query=""
@@ -427,7 +450,10 @@ export function KnowledgePane(props: {
           className="mt-2 w-full border border-border bg-card px-3 py-2 text-sm"
         />
         <div className="mt-3 space-y-2">
-          {props.catalog.filter((doc) => fuzzyHit(catalogQuery, doc.title)).map((doc) => {
+          {groupSources(props.catalog.filter((doc) => fuzzyHit(catalogQuery, doc.title) || !!doc.space_name && fuzzyHit(catalogQuery, doc.space_name))).map(group => <details key={group.id} data-knowledge-catalog-group={group.id} open className="rounded-lg border border-border p-3">
+            <summary className="mb-2 cursor-pointer text-sm font-medium">{group.name} · {group.items.length} 篇
+              <span className="ml-2 text-xs text-muted-foreground">已入库 {group.items.filter(doc => docs.some(item => item.id === doc.url || item.id === doc.token || !!doc.url && item.url === doc.url)).length}</span></summary>
+            {group.items.map((doc) => {
             const id = doc.url || doc.token;
             const stored = docs.find((item) => item.id === id || item.id === doc.token || (doc.url && item.url === doc.url));
             if (stored) {
@@ -454,7 +480,7 @@ export function KnowledgePane(props: {
                 <span>{doc.title}</span>
               </label>
             );
-          })}
+          })}</details>)}
         </div>
         <button
           type="button"
@@ -475,7 +501,7 @@ export function KnowledgePane(props: {
                 const title = doc.title || "（无标题）";
                 setAddBad(false);
                 setAddNote(`正在加入 ${i + 1}/${chosen.length}《${title}》`);
-                const result = await props.onAdd(doc.url || doc.token, doc.title);
+                const result = await props.onAdd(doc.url || doc.token, doc.title, doc);
                 if (!result.ok) {
                   setAddBad(true);
                   setAddNote(result.error || `《${title}》没有加入。`);

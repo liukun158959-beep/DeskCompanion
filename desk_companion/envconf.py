@@ -1,4 +1,4 @@
-"""本项目 .env：模型键与森空岛凭证。保存模型时保留已有 SKLAND_*。"""
+"""本项目 .env：模型配置。保存时保留其它配置与注释。"""
 from __future__ import annotations
 
 from .paths import data_root
@@ -7,15 +7,7 @@ from pathlib import Path
 
 LLM_KEYS = ("ATLAS_API_KEY", "ATLAS_BASE_URL", "ATLAS_MODEL")
 ENV_KEYS = LLM_KEYS
-SKLAND_KEYS = ("SKLAND_TOKEN", "SKLAND_UID")
-KNOWN_KEYS = LLM_KEYS + SKLAND_KEYS
-SKLAND_TOKEN_HINT = (
-    "本项目 .env 没有 SKLAND_TOKEN。"
-    "浏览器登录 https://www.skland.com/ ，同一浏览器打开 "
-    "https://web-api.skland.com/account/info/hg ，"
-    "把 JSON 里 data.content 整串写成 SKLAND_TOKEN=。"
-    "不要把这串发到对话里。"
-)
+KNOWN_KEYS = LLM_KEYS
 
 
 def env_path() -> Path:
@@ -60,21 +52,6 @@ def require_llm_env() -> dict[str, str]:
     return {key: data[key] for key in LLM_KEYS}
 
 
-def require_skland_token() -> str:
-    token = (parse_env_file().get("SKLAND_TOKEN") or "").strip()
-    if not token:
-        raise RuntimeError(SKLAND_TOKEN_HINT)
-    return token
-
-
-def skland_uid() -> str:
-    return (parse_env_file().get("SKLAND_UID") or "").strip()
-
-
-def has_skland_token() -> bool:
-    return bool((parse_env_file().get("SKLAND_TOKEN") or "").strip())
-
-
 def write_llm_env(*, api_key: str, base_url: str, model: str) -> None:
     from .model_validation import validate_base_url
     api_key = (api_key or "").strip()
@@ -90,21 +67,19 @@ def write_llm_env(*, api_key: str, base_url: str, model: str) -> None:
         ch in model for ch in "\n\r"
     ):
         raise RuntimeError("配置不能包含换行。")
-    existing = parse_env_file()
     base_url = validate_base_url(base_url)
     lines = [
         f"ATLAS_API_KEY={api_key}",
         f"ATLAS_BASE_URL={base_url}",
         f"ATLAS_MODEL={model}",
     ]
-    token = (existing.get("SKLAND_TOKEN") or "").strip()
-    uid = (existing.get("SKLAND_UID") or "").strip()
-    if token:
-        if any(ch in token for ch in "\n\r"):
-            raise RuntimeError("SKLAND_TOKEN 不能包含换行。")
-        lines.append(f"SKLAND_TOKEN={token}")
-    if uid:
-        if any(ch in uid for ch in "\n\r"):
-            raise RuntimeError("SKLAND_UID 不能包含换行。")
-        lines.append(f"SKLAND_UID={uid}")
+    path = env_path()
+    preserved = []
+    if path.is_file():
+        for raw in path.read_text("utf-8").splitlines():
+            key = raw.strip().removeprefix("export ").partition("=")[0].strip()
+            if key not in LLM_KEYS:
+                preserved.append(raw)
+    lines = preserved + lines
+    path.parent.mkdir(parents=True, exist_ok=True)
     env_path().write_text("\n".join(lines) + "\n", encoding="utf-8")

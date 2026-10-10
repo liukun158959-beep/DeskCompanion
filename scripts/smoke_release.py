@@ -35,6 +35,9 @@ class ModelServer(BaseHTTPRequestHandler):
                 chunk = {"id": "smoke", "object": "chat.completion.chunk", "created": 1, "model": "release-smoke",
                          "choices": [{"index": 0, "delta": delta, "finish_reason": "stop" if not delta else None}]}
                 self.wfile.write(("data: " + json.dumps(chunk) + "\n\n").encode())
+                self.wfile.flush()
+                if delta:
+                    time.sleep(.5)
             self.wfile.write(b"data: [DONE]\n\n")
         else:
             self.send_header("Content-Type", "application/json")
@@ -86,11 +89,33 @@ async def check(port, model_port, root, restored=False):
         while True:
             msg = json.loads(await asyncio.wait_for(ws.recv(), 30))
             frames.append(msg)
+            if msg["type"] == "token":
+                in_flight = await rpc("list_debug_calls")
+                assert any(call["state"] == "receiving" for call in in_flight["items"]), "Live SDK recording must remain queryable"
             if msg["type"] in {"done", "error"}:
                 break
         assert frames[-1] == {"type": "done", "data": "发布包对话正常。"}, frames
         assert any(frame["type"] == "token" for frame in frames)
     assert ModelServer.requests[-1]["temperature"] == 0.5
+    # Exercise the shipped SDK recorder, not a source-tree fixture.
+    calls = (await rpc("list_debug_calls"))["items"]
+    recorded = []
+    for call in calls:
+        detail = await rpc("get_debug_call", {"call_id": call["id"]})
+        if any("验证发布包" in str(m.get("content") or "") for m in detail["request"].get("messages", [])):
+            recorded.append(detail)
+    assert recorded and recorded[0]["response_raw"]
+    assert recorded[0]["response"]["choices"][0]["message"]["content"] == "发布包对话正常。"
+    folder = root / "local-smoke"
+    folder.mkdir()
+    document = folder / "中文笔记.txt"
+    document.write_text("发布包本地文件读取正常。", encoding="utf-8")
+    staged = await rpc("stage_local_sources", {"paths": [str(document)], "kind": "file"})
+    page = await rpc("read_local_source", {"source_id": staged["sources"][0]["id"]})
+    assert "发布包本地文件读取正常。" in page["source"]["text"]
+    grouped = await rpc("stage_local_sources", {"paths": [str(folder)], "kind": "folder"})
+    assert grouped["sources"][0]["files"][0]["name"] == document.name
+    print("Bundled full LLM request/response recording and local file/folder reading: OK")
     await rpc("complete_onboarding")
     assert not (await rpc("load_onboarding"))["show"]
     assert (await rpc("load_chat_log"))["items"]

@@ -7,6 +7,8 @@ import sys
 
 def main():
     request = json.loads(sys.stdin.readline())
+    from .agent_debug import install
+    install({"task_id": request.get("task_id", ""), "session": request["session_id"], "channel": request.get("channel", "desktop")})
     transport = sys.stdout
 
     def emit(kind, data):
@@ -15,9 +17,23 @@ def main():
 
     # Atlas renderer、第三方库的调试输出不能混入事件协议。
     with contextlib.redirect_stdout(sys.stderr):
+        if request.get("workflow") == "debug_explain":
+            from .agent_debug import execute_explanation
+            try:
+                execute_explanation(request, emit)
+            except Exception as exc:
+                emit("failure", {"type": type(exc).__name__, "message": "调用解读失败（" + type(exc).__name__ + "），请检查模型上下文容量或网络。"})
+            return
         if request.get("workflow") == "ai_news":
             from .news import execute
             execute(request, emit)
+            return
+        if request.get("workflow") == "video_note":
+            from .video_analysis import execute, failure_details
+            try:
+                execute(request, emit)
+            except Exception as exc:
+                emit("failure", failure_details(exc))
             return
         from atlas.core.plugin import BasePlugin
         from atlas.core.terminator import MaxSteps, Timeout
@@ -26,15 +42,19 @@ def main():
         from .model_catalog import bind_llm, require_active, require_item
         from .resource_lock import WRITES
         from .sampling import parse_sampling
+        from .video_archive import VideoArchive
+        archive = VideoArchive(request, emit)
 
         class Progress(BasePlugin):
             name = "task_progress"
             def on_tool_before_call(self, **kw):
                 emit("tool_start", {"tool": kw["tool_name"], "step": kw["step_id"],
+                                    "input": kw["input"],
                                     "fingerprint": fingerprint(kw["tool_name"], kw["input"]),
                                     "read_only": host.agent.tools.get(kw["tool_name"]).isReadOnly})
             def on_tool_after_call(self, **kw):
                 emit("tool_end", {"tool": kw["tool_name"], "step": kw["step_id"],
+                                  "input": kw["input"], "result": kw["result"],
                                   "status": kw["status"], "duration_ms": kw["duration_ms"],
                                   "fingerprint": fingerprint(kw["tool_name"], kw["input"]),
                                   "read_only": host.agent.tools.get(kw["tool_name"]).isReadOnly})
@@ -70,21 +90,18 @@ def main():
             host.agent.runtime.terminator = host.agent.terminator
             host.agent.plugin_manager.register(Progress())
             original = host.agent.tools.execute
-            maa = {"get_arknights_daily_options", "set_arknights_daily_options", "open_arknights_pc",
-                   "start_arknights_daily", "stop_arknights_daily"}
-
             def execute(name, arguments):
                 args = json.loads(arguments) if isinstance(arguments, str) else arguments
                 if fingerprint(name, args) in request.get("completed_writes", []):
                     return "该写入在前次任务中已经尝试过，本次不再重复执行；请查询确认原结果，再下达新的操作。"
-                if name in maa:
-                    # 游戏控制留在主进程；任务完成不会终止已开始的 MAA 后台作业。
-                    emit("maa", {"name": name, "args": args})
-                    return json.loads(sys.stdin.readline())["result"]
                 tool = host.agent.tools.get(name)
                 if tool.isReadOnly:
-                    return original(name, arguments)
+                    output = original(name, arguments)
+                    archive.record(name, output)
+                    return output
                 with WRITES:
+                    if name == "save_video_summary":
+                        archive.manual_save = True
                     return original(name, arguments)
             host.agent.tools.execute = execute
 
@@ -99,6 +116,7 @@ def main():
                 emit("failure", "Agent 达到步骤或时间上限。已保留进度，请查看任务时间线。")
             else:
                 emit("result", answer)
+                archive.finish(answer)
         except Exception as exc:
             # 不通过网络泄露地址、凭证或堆栈，监控台给出可操作的类型。
             name = type(exc).__name__

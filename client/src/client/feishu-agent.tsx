@@ -9,6 +9,8 @@ export type FeishuAgentStatus = {
   menu_connected?: boolean; menu_error?: string;
   binding: { app_id?: string; app_name?: string; owner_name?: string; owner_id?: string };
   settings?: Settings;
+  connection_attempts?: number; connected_at?: number; next_retry_at?: number; failure_kind?: string;
+  connection_events?: { at: number; stage: string; kind: string; message: string; retry_in: number }[];
 };
 
 type Settings = { profile: string; auto_start: boolean; auto_reconnect: boolean; retry_min: number; retry_max: number };
@@ -18,6 +20,9 @@ const DEFAULTS: Settings = { profile: "", auto_start: true, auto_reconnect: true
 const STATES: Record<string, string> = {
   stopped: "未接入", connecting: "正在连接", connected: "已接入", reconnecting: "正在重连", error: "接入未成功",
 };
+const FAILURE_KINDS: Record<string, string> = { network: "网络或服务", rate_limit: "限流", credentials: "应用密钥",
+  permission: "机器人权限", configuration: "应用配置", occupied: "长连接占用", verification: "身份校验",
+  binding: "绑定身份不一致", user_auth: "用户授权", setup: "监听设置" };
 
 export function FeishuAgentPane({ info, debug = false }: { info: BackendInfo | null; debug?: boolean }) {
   const [snap, setSnap] = useState<FeishuAgentStatus | null>(null);
@@ -124,6 +129,14 @@ export function FeishuAgentPane({ info, debug = false }: { info: BackendInfo | n
     </p> : null}
     {error || snap?.error ? <p role="alert" className="mt-3 whitespace-pre-wrap text-sm text-destructive">{error || snap?.error}</p> : null}
     {snap?.diagnostic ? <p className="mt-2 text-sm text-muted-foreground">{snap.diagnostic}</p> : null}
+    {!!snap?.next_retry_at && <p className="mt-2 text-xs text-muted-foreground">下次重试：{new Date(snap.next_retry_at * 1000).toLocaleTimeString()}，会重新校验同一应用和绑定用户。</p>}
+    {!!snap?.connection_events?.length && <details className="mt-3 text-xs text-muted-foreground">
+      <summary className="cursor-pointer">连接诊断 · {snap.connection_attempts || 0} 次尝试</summary>
+      <ol className="mt-2 space-y-2">{[...snap.connection_events].reverse().map((event, index) => <li key={`${event.at}-${index}`}>
+        {new Date(event.at * 1000).toLocaleTimeString()} · {event.stage === "verifying" ? "身份校验" : STATES[event.stage] || event.stage}
+        {event.kind ? ` · ${FAILURE_KINDS[event.kind] || "连接异常"}` : ""}{event.message ? `：${event.message}` : ""}{event.retry_in ? `（${event.retry_in} 秒后重试）` : ""}
+      </li>)}</ol>
+    </details>}
     {snap?.last_reply ? <p className="mt-2 text-xs text-muted-foreground">最近回复：{snap.last_reply}</p> : null}
     <fieldset className="mt-5 space-y-4 rounded-lg bg-muted/30 p-4" disabled={locked}>
       <legend className="px-1 text-sm font-medium">长连接设置</legend>

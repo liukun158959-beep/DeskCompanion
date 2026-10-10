@@ -236,7 +236,7 @@ class NewsTests(unittest.TestCase):
 
     def test_disabled_new_jobs_and_legacy_actions_do_not_catch_up(self):
         now = datetime(2026, 10, 8, 14, tzinfo=TZ)
-        for action in ("ai_news", "maa_daily"):
+        for action in ("ai_news", "retro_gen"):
             automation.upsert_job(dict(name=action, action=action, enabled=False, cadence="daily", weekdays=[], hour=9, minute=0))
         store = automation.load_store()
         self.assertFalse(automation._due_jobs(store, now))
@@ -418,11 +418,11 @@ class NewsTests(unittest.TestCase):
 
     def test_independent_news_can_start_while_legacy_host_is_busy(self):
         scheduler = automation.AutomationScheduler(SimpleNamespace(_agent_running=True))
-        scheduler._queued = {"maa_daily": "maa", "ai_news": "news"}
+        scheduler._queued = {"retro_gen": "retro", "ai_news": "news"}
         with patch.object(scheduler, "_execute") as execute, patch.object(scheduler, "_notify"):
             scheduler._loop()
         execute.assert_called_once_with("news")
-        self.assertEqual(scheduler._queued, {"maa_daily": "maa"})
+        self.assertEqual(scheduler._queued, {"retro_gen": "retro"})
 
     def test_scheduled_retry_once_shares_remaining_fifteen_minute_budget(self):
         run = fixture()

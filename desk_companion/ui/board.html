@@ -392,9 +392,6 @@
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .opt-list { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; }
     .opt-list .check { margin: 2px 0; }
-    #auto-maa .card { overflow: auto; }
-    .skland-meta { margin: 0 0 8px; }
-    .skland-stats { margin-bottom: 4px; grid-template-columns: repeat(4, 1fr); }
     .farm-body {
       white-space: pre-wrap;
       font-size: 13px;
@@ -732,7 +729,6 @@
                   <select id="chip-skill"><option value="">技能</option></select>
                   <select id="chip-cli"><option value="">CLI</option></select>
                   <select id="chip-github"><option value="">GitHub 仓库</option></select>
-                  <select id="chip-maa"><option value="">方舟动作</option></select>
                 </div>
                 <textarea id="chat-input" placeholder="跟凯尔希说…"></textarea>
                 <div class="form-actions">
@@ -865,14 +861,13 @@
           <div class="chat-subnav" id="jobs-subnav">
             <button class="chat-sub active" type="button" data-autosub="list">任务</button>
             <button class="chat-sub" type="button" data-autosub="retro">周复盘</button>
-            <button class="chat-sub" type="button" data-autosub="maa">明日方舟</button>
           </div>
           <div class="chat-subpanel active" id="auto-list">
             <article class="card" style="flex:1; overflow:auto">
               <div class="form-actions" style="margin-top:0">
                 <button class="btn" id="job-new" type="button">新建定时</button>
               </div>
-              <p class="hint" id="jobs-empty">还没有定时任务。去「周复盘」或「明日方舟」手点，或点新建。</p>
+              <p class="hint" id="jobs-empty">还没有定时任务。去「周复盘」手点，或点新建。</p>
               <div id="jobs-list"></div>
               <div id="job-form" hidden>
                 <h2 id="job-form-title">新建定时</h2>
@@ -883,7 +878,6 @@
                 <select id="job-action">
                   <option value="retro_gen">生成本周复盘</option>
                   <option value="retro_write">覆盖写入飞书</option>
-                  <option value="maa_daily">开始清日常</option>
                 </select>
                 <label for="job-cadence">周期</label>
                 <select id="job-cadence">
@@ -934,44 +928,6 @@
               <div id="retro-body"></div>
             </article>
           </div>
-          <div class="chat-subpanel" id="auto-maa">
-            <article class="card" style="flex:1">
-              <h2>森空岛</h2>
-              <p class="hint skland-meta" id="skland-meta"></p>
-              <div class="gh-stats skland-stats" id="skland-stats"></div>
-              <p class="hint" id="skland-extra"></p>
-              <div class="form-actions">
-                <button class="btn" id="skland-sync" type="button">同步森空岛</button>
-              </div>
-              <p class="hint" id="skland-msg"></p>
-              <h2 style="margin-top:16px">今天刷什么</h2>
-              <p class="hint">按今天的仓库和森空岛额度算。不改 MAA 关卡，不编打几次。活动关本刀不做。</p>
-              <div class="form-actions">
-                <button class="btn" id="farm-plan" type="button">今天刷什么</button>
-              </div>
-              <p class="farm-body hint" id="farm-body"></p>
-              <p class="hint" id="farm-msg"></p>
-              <h2 style="margin-top:16px">一键长草（与 MAA 同名）</h2>
-              <p class="hint">勾选这次要跑的项。关卡、吃药、基建班表仍在 MAA 齿轮里。清日常不再代开启动器或游戏；请先自己开到「明日方舟」窗口。授权一次只为让管理员 MAA 点得动游戏窗。</p>
-              <p class="hint">清日常结束会更新仓库（强制带上，不是第 9 个勾选）。八项都不勾也仍会只跑扫仓。</p>
-              <div class="opt-list" id="maa-options"></div>
-              <h2 style="margin-top:16px">PC 客户端路径</h2>
-              <label for="maa-launcher">鹰角启动器 Launcher.exe</label>
-              <input id="maa-launcher" type="text" autocomplete="off">
-              <label for="maa-game">明日方舟 Arknights.exe（不要填终末地或模拟器）</label>
-              <input id="maa-game" type="text" autocomplete="off">
-              <label for="maa-exe">官方 MAA.exe</label>
-              <input id="maa-exe" type="text" autocomplete="off">
-              <div class="form-actions">
-                <button class="btn ghost" id="maa-save" type="button">保存路径</button>
-                <button class="btn ghost" id="maa-auth" type="button">授权一次 MAA</button>
-                <button class="btn" id="maa-open" type="button">打开游戏</button>
-                <button class="btn" id="maa-start" type="button">开始清日常</button>
-                <button class="btn ghost" id="maa-stop" type="button">停止</button>
-              </div>
-              <p class="hint" id="maa-msg"></p>
-            </article>
-          </div>
         </div>
       </section>
     </div>
@@ -994,11 +950,6 @@
             <h3>桌宠</h3>
             <p class="meta" id="log-desk-path"></p>
             <div id="log-desk"></div>
-          </article>
-          <article class="log-col">
-            <h3>MAA</h3>
-            <p class="meta" id="log-maa-path"></p>
-            <div id="log-maa"></div>
           </article>
         </div>
       </div>
@@ -1130,10 +1081,6 @@
       });
       if (id === "list") loadJobs(true);
       if (id === "retro") loadRetro();
-      if (id === "maa") {
-        loadMaa();
-        loadSkland();
-      }
     }
 
     function renderSection(el, section, emptyText, kind) {
@@ -1389,7 +1336,6 @@
           "GitHub 仓库",
           gh.ok === false ? (gh.error || "仓库列表失败") : ""
         );
-        fillSelect(document.getElementById("chip-maa"), data.maa, "方舟动作");
       } catch (exc) {
         msg.className = "error";
         msg.textContent = String(exc);
@@ -1400,12 +1346,10 @@
       const skills = document.getElementById("chip-skill").value;
       const cli = document.getElementById("chip-cli").value;
       const github = document.getElementById("chip-github").value;
-      const maa = document.getElementById("chip-maa").value;
       const chips = {};
       if (skills) chips.skills = [skills];
       if (cli) chips.cli = [cli];
       if (github) chips.github = github;
-      if (maa) chips.maa = maa;
       return chips;
     }
 
@@ -1422,16 +1366,10 @@
           msg.textContent = data.error || "发送失败";
           return;
         }
-        if (chips.maa) {
-          msg.className = "ok";
-          msg.textContent = data.message || "已下发方舟动作。";
-          return;
-        }
         input.value = "";
         document.getElementById("chip-skill").value = "";
         document.getElementById("chip-cli").value = "";
         document.getElementById("chip-github").value = "";
-        document.getElementById("chip-maa").value = "";
       } catch (exc) {
         msg.className = "error";
         msg.textContent = String(exc);
@@ -2440,243 +2378,6 @@
       }
     });
 
-    function sklandMsg(data, fallbackOk) {
-      const msg = document.getElementById("skland-msg");
-      if (!data || data.ok === false) {
-        msg.className = "error";
-        msg.textContent = (data && data.error) || "失败";
-        return;
-      }
-      msg.className = "ok";
-      msg.textContent = data.message || fallbackOk || "";
-    }
-
-    function dash(value) {
-      return value === null || value === undefined || value === "" ? "—" : String(value);
-    }
-
-    function renderSkland(data) {
-      const stats = document.getElementById("skland-stats");
-      const meta = document.getElementById("skland-meta");
-      const extra = document.getElementById("skland-extra");
-      stats.innerHTML = "";
-      extra.textContent = "";
-      if (!data || data.ok === false) {
-        meta.className = "error skland-meta";
-        meta.textContent = (data && data.error) || "加载失败";
-        return;
-      }
-      meta.className = "hint skland-meta";
-      meta.textContent = data.hint || "";
-      const items = [
-        { num: data.synced ? dash(data.ap) + " / " + dash(data.ap_max) : "—", lbl: "实时理智" },
-        { num: data.synced ? dash(data.orundum) + " / " + dash(data.orundum_cap) : "—", lbl: "本周剿灭玉" },
-        { num: data.synced ? dash(data.device) + " / " + dash(data.device_total) : "—", lbl: "保全增补仪" },
-        { num: data.synced ? dash(data.strip) + " / " + dash(data.strip_total) : "—", lbl: "保全增补条" },
-      ];
-      for (const item of items) {
-        const box = document.createElement("div");
-        box.className = "gh-stat";
-        const num = document.createElement("p");
-        num.className = "num";
-        num.textContent = item.num;
-        const lbl = document.createElement("p");
-        lbl.className = "lbl";
-        lbl.textContent = item.lbl;
-        box.appendChild(num);
-        box.appendChild(lbl);
-        stats.appendChild(box);
-      }
-      if (data.synced) {
-        let card = "月卡无效";
-        if (data.monthly_card) {
-          card = data.subscription_end ? "月卡有效至 " + data.subscription_end : "月卡有效";
-        }
-        const when = data.sync ? "同步 " + data.sync : "";
-        extra.textContent = [card, when, "干员 " + dash(data.char_count) + " 名（不在此列出）"]
-          .filter(Boolean)
-          .join(" · ");
-      }
-    }
-
-    async function loadSkland() {
-      try {
-        const data = await api().load_skland();
-        renderSkland(data);
-        if (data && data.ok === false) {
-          sklandMsg(data);
-        } else {
-          document.getElementById("skland-msg").textContent = "";
-        }
-      } catch (exc) {
-        renderSkland({ ok: false, error: String(exc) });
-        sklandMsg({ ok: false, error: String(exc) });
-      }
-    }
-
-    document.getElementById("skland-sync").addEventListener("click", async () => {
-      const btn = document.getElementById("skland-sync");
-      btn.disabled = true;
-      try {
-        const data = await api().sync_skland();
-        renderSkland(data);
-        sklandMsg(data, "森空岛已同步。");
-      } catch (exc) {
-        sklandMsg({ ok: false, error: String(exc) });
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    function farmMsg(data, fallbackOk) {
-      const msg = document.getElementById("farm-msg");
-      if (!data || data.ok === false) {
-        msg.className = "error";
-        msg.textContent = (data && data.error) || "失败";
-        return;
-      }
-      msg.className = "ok";
-      msg.textContent = data.message || fallbackOk || "";
-    }
-
-    document.getElementById("farm-plan").addEventListener("click", async () => {
-      const btn = document.getElementById("farm-plan");
-      const body = document.getElementById("farm-body");
-      btn.disabled = true;
-      try {
-        const data = await api().compute_farm_plan();
-        body.textContent = data.text || data.error || "";
-        if (!data || data.ok === false) {
-          body.className = "farm-body error";
-          farmMsg(data);
-        } else {
-          body.className = "farm-body hint";
-          farmMsg(data, "已按今天的账本算出。");
-        }
-      } catch (exc) {
-        body.className = "farm-body error";
-        body.textContent = String(exc);
-        farmMsg({ ok: false, error: String(exc) });
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    function maaMsg(data, fallbackOk) {
-      const msg = document.getElementById("maa-msg");
-      if (!data || data.ok === false) {
-        msg.className = "error";
-        msg.textContent = (data && data.error) || "失败";
-        return;
-      }
-      msg.className = data.status === "error" ? "error" : "ok";
-      msg.textContent = data.message || fallbackOk || "";
-    }
-
-    function renderMaa(data) {
-      const box = document.getElementById("maa-options");
-      box.innerHTML = "";
-      if (!data || data.ok === false) {
-        const p = document.createElement("p");
-        p.className = "error";
-        p.textContent = (data && data.error) || "加载失败";
-        box.appendChild(p);
-        return;
-      }
-      for (const item of data.options || []) {
-        const label = document.createElement("label");
-        label.className = "check";
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.checked = Boolean(item.checked);
-        input.dataset.id = item.id;
-        input.addEventListener("change", async () => {
-          try {
-            const next = await api().save_maa_option({
-              id: item.id,
-              checked: input.checked,
-            });
-            renderMaa(next);
-            maaMsg(next, "勾选已保存。");
-          } catch (exc) {
-            input.checked = !input.checked;
-            maaMsg({ ok: false, error: String(exc) });
-          }
-        });
-        label.appendChild(input);
-        label.appendChild(document.createTextNode(item.label));
-        box.appendChild(label);
-      }
-      document.getElementById("maa-launcher").value = data.launcher_exe || "";
-      document.getElementById("maa-game").value = data.game_exe || "";
-      document.getElementById("maa-exe").value = data.maa_exe || "";
-      const msg = document.getElementById("maa-msg");
-      if (data.message) {
-        msg.className = data.status === "error" ? "error" : "hint";
-        msg.textContent = data.message;
-      }
-    }
-
-    async function loadMaa() {
-      try {
-        const data = await api().load_maa();
-        renderMaa(data);
-        if (data && data.ok === false) {
-          maaMsg(data);
-        }
-      } catch (exc) {
-        renderMaa({ ok: false, error: String(exc) });
-        maaMsg({ ok: false, error: String(exc) });
-      }
-    }
-
-    document.getElementById("maa-save").addEventListener("click", async () => {
-      try {
-        const data = await api().save_maa_paths({
-          launcher_exe: document.getElementById("maa-launcher").value,
-          game_exe: document.getElementById("maa-game").value,
-          maa_exe: document.getElementById("maa-exe").value,
-        });
-        renderMaa(data);
-        maaMsg(data, "路径已保存。");
-      } catch (exc) {
-        maaMsg({ ok: false, error: String(exc) });
-      }
-    });
-    document.getElementById("maa-auth").addEventListener("click", async () => {
-      try {
-        const data = await api().maa_authorize();
-        renderMaa(data);
-        maaMsg(data, "授权完成。");
-      } catch (exc) {
-        maaMsg({ ok: false, error: String(exc) });
-      }
-    });
-    document.getElementById("maa-open").addEventListener("click", async () => {
-      try {
-        const data = await api().maa_open_game();
-        maaMsg(data, "正在确认明日方舟窗口。");
-      } catch (exc) {
-        maaMsg({ ok: false, error: String(exc) });
-      }
-    });
-    document.getElementById("maa-start").addEventListener("click", async () => {
-      try {
-        const data = await api().maa_start_daily();
-        maaMsg(data, "正在准备清日常。");
-      } catch (exc) {
-        maaMsg({ ok: false, error: String(exc) });
-      }
-    });
-    document.getElementById("maa-stop").addEventListener("click", async () => {
-      try {
-        const data = await api().maa_stop();
-        maaMsg(data, "已请求停止。");
-      } catch (exc) {
-        maaMsg({ ok: false, error: String(exc) });
-      }
-    });
-
     async function reload() {
       dateEl.textContent = todayLabel();
       const active = document.querySelector(".tab.active");
@@ -2688,15 +2389,11 @@
     const LOG_KIND_LABEL = {
       crash: "崩溃",
       watchdog: "看门狗",
-      daily: "清日常",
       task_error: "任务出错",
-      depot: "仓库",
       screenshot: "截图路径",
     };
     const LOG_SOURCE_LABEL = {
       desk: "桌宠",
-      maa_gui: "MAA GUI",
-      maa_depot: "MAA 仓库",
     };
     let logSnap = null;
     let logSource = "all";
@@ -2715,14 +2412,11 @@
 
     function logItems() {
       const desk = ((logSnap && logSnap.desk) || {}).items || [];
-      const gui = ((logSnap && logSnap.maa_gui) || {}).items || [];
-      const depot = ((logSnap && logSnap.maa_depot) || {}).items || [];
-      return desk.concat(gui, depot);
+      return desk;
     }
 
     function itemVisible(item) {
       if (logSource === "desk" && item.source !== "desk") return false;
-      if (logSource === "maa" && item.source === "desk") return false;
       if (logKind !== "all" && item.kind !== logKind) return false;
       return true;
     }
@@ -2744,7 +2438,6 @@
       const sources = [
         ["all", "全部"],
         ["desk", "桌宠"],
-        ["maa", "MAA"],
       ];
       for (const [id, label] of sources) {
         sourceBox.appendChild(makeChip(label, logSource === id, () => {
@@ -2802,7 +2495,6 @@
       const err = document.getElementById("log-error");
       const hl = document.getElementById("log-highlights");
       const deskPath = document.getElementById("log-desk-path");
-      const maaPath = document.getElementById("log-maa-path");
       err.hidden = true;
       err.textContent = "";
       hl.innerHTML = "";
@@ -2810,9 +2502,7 @@
         err.hidden = false;
         err.textContent = (logSnap && logSnap.error) || "读取失败";
         deskPath.textContent = "";
-        maaPath.textContent = "";
         document.getElementById("log-desk").innerHTML = "";
-        document.getElementById("log-maa").innerHTML = "";
         document.getElementById("log-source-filters").innerHTML = "";
         document.getElementById("log-kind-filters").innerHTML = "";
         return;
@@ -2825,7 +2515,7 @@
           btn.className = "log-hl";
           btn.textContent = "重点 · " + (LOG_SOURCE_LABEL[item.source] || item.source) + " · " + (item.time || "") + " " + (item.title || "");
           btn.addEventListener("click", () => {
-            logSource = item.source === "desk" ? "desk" : "maa";
+            logSource = "desk";
             logKind = item.kind || "all";
             renderLogSheet();
           });
@@ -2834,25 +2524,18 @@
       } else {
         const p = document.createElement("p");
         p.className = "empty";
-        p.textContent = logSnap.empty ? "今日没有崩溃、看门狗或清日常/MAA 任务出错记录。" : "没有单独标出的重点。";
+        p.textContent = logSnap.empty ? "今日没有桌宠出错记录。" : "没有单独标出的重点。";
         hl.appendChild(p);
       }
       const desk = logSnap.desk || {};
-      const gui = logSnap.maa_gui || {};
-      const depot = logSnap.maa_depot || {};
       deskPath.textContent = [desk.path, desk.note].filter(Boolean).join("  ");
-      maaPath.textContent = [gui.path, gui.note, depot.path].filter(Boolean).join("  ");
       renderLogFilters();
       renderLogList(
         document.getElementById("log-desk"),
         desk.items || [],
-        logSource === "maa" ? "已过滤，当前只看 MAA。" : (desk.note || "今日桌宠无出错段。")
+        desk.note || "今日桌宠无出错段。"
       );
-      renderLogList(
-        document.getElementById("log-maa"),
-        (gui.items || []).concat(depot.items || []),
-        logSource === "desk" ? "已过滤，当前只看桌宠。" : (gui.note || "今日 MAA 无任务出错。")
-      );
+
     }
 
     async function openLogSheet() {
@@ -2865,7 +2548,6 @@
       document.getElementById("log-error").hidden = true;
       document.getElementById("log-highlights").innerHTML = '<p class="empty">正在读取…</p>';
       document.getElementById("log-desk").innerHTML = "";
-      document.getElementById("log-maa").innerHTML = "";
       try {
         const data = await api().load_log_errors();
         logSnap = data;

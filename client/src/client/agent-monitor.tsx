@@ -4,7 +4,7 @@ import { Markdown } from "./Markdown";
 import { TaskVideos } from "./video";
 
 type Settings = { parallel: number; call_timeout: number; task_timeout: number; pet_progress: boolean };
-type Event = { seq: number; kind: string; ts: number; data: string | { tool?: string; status?: string; duration_ms?: number } };
+type Event = { seq: number; kind: string; ts: number; data: string | { tool?: string; status?: string; duration_ms?: number; message?: string } };
 type Task = { id: string; session: string; channel: string; text: string; state: string; answer: string; error: string;
   created: number; elapsed: number; events?: Event[]; source: { message_id?: string; send_back?: boolean } };
 const STATES: Record<string, string> = { queued: "排队中", running: "执行中", cancelling: "正在停止", succeeded: "完成",
@@ -68,13 +68,13 @@ export function AgentMonitor({ info, debug = false }: { info: BackendInfo | null
     <details className="mt-4">
       <summary className="cursor-pointer text-sm">执行设置</summary>
       <div className="mt-3 flex flex-wrap gap-4 text-sm">
-        {([["parallel", "同时执行任务数", 1, 4], ["call_timeout", "单次调用时限（秒）", 10, 300], ["task_timeout", "任务总时限（秒）", 10, 1800]] as const).map(([key, label, min, max]) =>
+        {([["parallel", "同时执行任务数", 1, 4], ["call_timeout", "调用等待时限（秒）", 10, 300], ["task_timeout", "任务总时限（秒）", 10, 1800]] as const).map(([key, label, min, max]) =>
           <label key={key}>{label}<input className="ml-2 w-20 rounded bg-white/10 p-2" type="number" min={min} max={max} value={settings[key]}
             onChange={e => { setDirty(true); setSettings({ ...settings, [key]: Number(e.target.value) }); }} /></label>)}
         <label><input type="checkbox" checked={settings.pet_progress} onChange={e => { setDirty(true); setSettings({ ...settings, pet_progress: e.target.checked }); }} /> 凯尔希播报真实进度</label>
         <button className="rounded bg-white/10 px-3 py-2" disabled={busy || !dirty || debug} onClick={() => void run("save_agent_task_settings", settings)}>保存执行设置</button>
       </div>
-      <p className="mt-2 text-xs text-white/40">新设置应用于之后的任务。共享写入工具会排队，查询可并行。</p>
+      <p className="mt-2 text-xs text-white/40">新设置应用于之后的任务。模型持续输出时继续等待，单次最多 5 分钟；工具执行受调用时限约束。视频笔记总时限至少 15 分钟，可随时停止。共享写入工具会排队，查询可并行。</p>
     </details>
     <label className="mt-4 block text-sm">查看范围 <select className="ml-2 rounded bg-[#202329] p-2" value={channel}
       onChange={e => { setChannel(e.target.value); select(""); setDetail(null); }}><option value="feishu">飞书聊天</option><option value="">全部任务</option><option value="desktop">桌面对话</option><option value="video">视频读取</option></select></label>
@@ -96,7 +96,7 @@ export function AgentMonitor({ info, debug = false }: { info: BackendInfo | null
         {!debug && <TaskVideos info={info} taskId={detail.id} state={detail.state} />}
         <details open><summary className="cursor-pointer text-sm">任务时间线</summary><ol className="mt-2 space-y-2 text-xs text-white/60">
           {(detail.events || []).filter(e => !["token", "think", "done"].includes(e.kind)).map(e => <li key={e.seq}>
-            {new Date(e.ts * 1000).toLocaleTimeString()} · {typeof e.data === "string" ? e.data : e.data.tool ? `${e.kind === "tool_start" ? "调用" : "返回"} ${e.data.tool} ${e.data.status || ""} ${e.data.duration_ms !== undefined ? `${e.data.duration_ms}ms` : ""}` : e.kind === "llm_start" ? "开始调用模型" : "模型返回"}
+            {new Date(e.ts * 1000).toLocaleTimeString()} · {typeof e.data === "string" ? e.data : e.kind === "failure" ? e.data.message || "任务失败" : e.data.tool ? `${e.kind === "tool_start" ? "调用" : "返回"} ${e.data.tool} ${e.data.status || ""} ${e.data.duration_ms !== undefined ? `${e.data.duration_ms}ms` : ""}` : e.kind === "llm_start" ? "开始调用模型" : "模型返回"}
           </li>)}</ol></details>
         <details><summary className="cursor-pointer text-sm">本会话聊天记录（{history.length} 条）</summary><div className="mt-3 max-h-80 overflow-auto space-y-3">
           {history.map((item, i) => <div key={i} className="rounded-lg bg-white/5 p-3"><p className="mb-1 text-xs text-white/40">{item.role === "user" ? "博士" : "凯尔希"}</p><Markdown text={item.text} /></div>)}

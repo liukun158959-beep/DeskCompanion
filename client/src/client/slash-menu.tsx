@@ -16,13 +16,14 @@ export const NEED_REPO = new Set(["github_recent", "github_roadmap"]);
 
 export const MCP_SEP = "\u001f";
 
-export type SlashParent = "skill" | "tool" | "doc" | "mcp";
+export type SlashParent = "skill" | "tool" | "doc" | "mcp" | "attachment";
 
 export const SLASH_PARENTS: { id: SlashParent; label: string }[] = [
   { id: "skill", label: "技能" },
   { id: "tool", label: "已注册工具" },
   { id: "doc", label: "飞书文档" },
   { id: "mcp", label: "MCP" },
+  { id: "attachment", label: "附件" },
 ];
 
 export type SlashItem = { id: string; label: string; description?: string };
@@ -136,7 +137,7 @@ export function SlashMenu(props: {
         </div>
       </div>
       <p data-slash-hint className="shrink-0 border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
-        ← → 切换技能、工具、飞书文档、MCP · ↑ ↓ 移动 · 回车选中 · Esc 关闭
+        ← → 切换技能、工具、飞书文档、MCP、附件 · ↑ ↓ 移动 · 回车选中 · Esc 关闭
       </p>
     </div>
   );

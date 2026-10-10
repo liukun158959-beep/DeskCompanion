@@ -1,0 +1,29 @@
+Tool: built-in image_gen, edit
+Input: docs/releases/v0.2.3-preview.png
+Purpose: colored feature-focused version poster preview; no packaging or formal release.
+
+Edit the provided v0.2.3 release poster. Preserve the 知行 / ZhiXing branding, the correct v0.2.3 version, recognizable white-haired cat-eared chibi companion and human studying together, warm paper texture and hand-drawn manga linework. Keep a 16:9 landscape canvas. Make a polished COLORED, INFORMATION-RICH version announcement, using gentle watercolor accents in sage green, dusty teal, warm amber, muted coral and slate blue. Faces and props softly colored; dark ink text remains highly readable. Avoid neon and overly saturated backgrounds.
+
+The user wants the CENTER TEXT to describe THIS VERSION'S FEATURES. Remove the enormous old slogan “追寻前沿技术，人与 AI 共建”. Replace it with a compact centered editorial heading “v0.2.3 更新亮点” and immediately underneath “视频学习更深入，Agent 调用更透明”, followed by the short overview “长视频分段续读 · 全量消息可视化 · 本地与飞书资料管理”. This feature overview must be prominent and readable, with strong hierarchy, not a tiny caption.
+
+Rebalance the composition: the charming study scene and brand header occupy about the top quarter, the central feature overview about one sixth, and SIX clearly separated illustrated feature panels in a 3-column by 2-row grid occupy the remaining space. Each panel has a colored hand-drawn tab, a compact relevant illustration, a bold heading and two substantial legible text lines. Aim for a detailed yet calm editorial infographic, not six empty icon cards. Increase useful information density over the original; use succinct copy, not filler UI glyphs. Render all the following Chinese text accurately and verbatim:
+Panel 1 heading “视频概念学习”
+lines “梳理定义、机制与关系” / “自动生成飞书学习笔记”
+illustration: video subtitle strips become a notebook with a small flowchart.
+Panel 2 heading “长视频分段续读”
+lines “按章节提炼，保存进度” / “中断后继续，复用已完成片段”
+illustration: 8 chapter blocks, a checkpoint and a resume arrow.
+Panel 3 heading “Agent 全量调试”
+lines “查看 LLM 完整发送与返回” / “版本号连点 5 次打开调试”
+illustration: contrasting incoming and outgoing message stacks with JSON braces and a magnifier.
+Panel 4 heading “本地与飞书资料”
+lines “支持读取文件与文件夹” / “飞书文档按知识库分组”
+illustration: local folder connected to grouped knowledge notebooks.
+Panel 5 heading “轻量工具栏与附件”
+lines “文字菜单，入口更清晰” / “悬浮窗口，加载时也可关闭”
+illustration: slim text menu above an active conversation and small floating attachment window.
+Panel 6 heading “连接与执行更稳”
+lines “连接诊断，失败原因更明确” / “模型连接中断可有限重试”
+illustration: restored connection and completed task segments.
+At the very bottom put only the small status “新版本预览 · 尚未打包”.
+No old slogan, no v0.2.2, no QR code, fake download button, watermark, zero-failure guarantee or irrelevant game imagery. Maintain clean spacing, straight readable text baselines, meticulous Chinese typography and complete uncropped panels. The result should look like the next colored and more useful edition of the same poster, with enough resolution to read the feature descriptions.

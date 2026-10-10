@@ -1,0 +1,6 @@
+Tool: built-in image_gen edit
+Input: docs/releases/v0.2.3-preview-color.png, user-approved.
+Output: desk_companion/ui/release-v0.2.3.png
+The colored feature-rich input prompt is in v0.2.3-preview-color-prompt.txt.
+
+Make ONE surgical edit to the provided approved ZhiXing v0.2.3 release poster. Remove ONLY the tiny text '新版本预览 · 尚未打包' at the bottom center and fill that small area naturally with the existing ivory watercolor paper texture. The poster is now for the formal release. Keep absolutely everything else unchanged: colors, landscape aspect ratio, exact layout, characters, faces, Chinese text, all six feature panels, all version numbers, branding, illustrations and borders. Do not add any new text, do not regenerate or redesign the poster, do not crop any panel. Preserve the approved image with maximum fidelity.

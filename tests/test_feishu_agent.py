@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 from atlas.testing import FakeLLM
 from desk_companion import assistant, memory, logutil
 from desk_companion.feishu_agent import EVENT_KEY, FeishuAgent, Inbox, accepted, chunks, identify
+from desk_companion.feishu_connection import ConnectionFailure, classify
 from desk_companion.local_api.host import HeadlessApp
 from desk_companion.local_api import server
 
@@ -300,7 +301,8 @@ class FeishuAgentTests(unittest.TestCase):
     def test_connection_check_distinguishes_remote_occupancy_and_invalid_credentials(self):
         for count, running in ((0, False), (1, False), (1, True)):
             replies = [json.dumps({"ok": True, "data": {"online_instance_cnt": count}}),
-                       json.dumps({"apps": [{"running": running}]})]
+                       json.dumps({"apps": [{"app_id": "test-app", "running": running}]}),
+                       json.dumps({"appId": "test-app"})]
             with patch("desk_companion.feishu_agent._run_lark", side_effect=replies) as cli:
                 result = self.gateway.check_connection("test-profile")
                 self.assertTrue(result["ok"])
@@ -319,6 +321,25 @@ class FeishuAgentTests(unittest.TestCase):
         with patch("desk_companion.feishu_agent._run_lark", side_effect=[json.dumps(row) for row in values]) as cli:
             self.assertEqual(identify("dedicated")["profile"], "dedicated")
             self.assertTrue(all(call.args[0][:2] == ["--profile", "dedicated"] for call in cli.call_args_list))
+
+    def test_successful_cli_exit_with_invalid_bot_secret_has_actionable_error(self):
+        # auth status exits successfully even when an individual identity fails verification.
+        for message in ("Bot identity: verify failed: The client secret is invalid.", "invalid_client"):
+            values = [{"profile": "test-profile", "appId": "test-app"}, {"identities": {
+                "bot": {"available": False, "verified": False, "message": message},
+                "user": {"available": True, "openId": "ou_owner"}}}]
+            with self.subTest(message=message), patch("desk_companion.feishu_agent._run_lark",
+                    side_effect=[json.dumps(row) for row in values]):
+                with self.assertRaisesRegex(RuntimeError, "App Secret 无效.*长连接设置"):
+                    identify("test-profile")
+
+    def test_bot_error_does_not_echo_untrusted_cli_message(self):
+        values = [{"profile": "test-profile", "appId": "test-app"}, {"identities": {
+            "bot": {"available": False, "verified": False, "message": "invalid_client private-secret"}}}]
+        with patch("desk_companion.feishu_agent._run_lark", side_effect=[json.dumps(row) for row in values]):
+            with self.assertRaises(RuntimeError) as failure:
+                identify("test-profile")
+        self.assertNotIn("private-secret", str(failure.exception))
 
     def test_network_retry_uses_saved_interval_and_can_be_disabled(self):
         stub = self.root / "network_exit.py"
@@ -342,6 +363,95 @@ class FeishuAgentTests(unittest.TestCase):
                             self.assertIn("自动重连已关闭", gateway.status()["error"])
                     finally:
                         gateway.stop(False)
+
+    def test_transient_bot_verification_has_safe_retryable_reason(self):
+        values = [{"profile": "test-profile", "appId": "test-app"}, {"identities": {
+            "bot": {"available": False, "verified": False, "message": "verify failed: TLS timeout private-secret"}}}]
+        with patch("desk_companion.feishu_agent._run_lark", side_effect=[json.dumps(row) for row in values]):
+            with self.assertRaises(ConnectionFailure) as failure:
+                identify("test-profile")
+        self.assertTrue(failure.exception.retryable)
+        self.assertEqual(failure.exception.kind, "network")
+        self.assertNotIn("private-secret", str(failure.exception))
+        self.assertEqual(classify({"status": "not_configured"}, verification=True).kind, "configuration")
+
+    def test_startup_identity_recovers_after_transient_failure_without_manual_login(self):
+        self.gateway._save(True)
+        config = json.loads((self.root/"feishu_agent.json").read_text(encoding="utf-8"))
+        config.update(profile="test-profile", retry_min=1, retry_max=4)
+        (self.root/"feishu_agent.json").write_text(json.dumps(config))
+        ready = threading.Event()
+        with patch("desk_companion.feishu_agent.identify", side_effect=[classify("TLS timeout"), BINDING.copy()]) as identity, \
+             patch.object(self.gateway, "_start", side_effect=ready.set):
+            self.gateway.autostart()
+            self.assertEqual(self.gateway.status()["state"], "reconnecting")
+            self.assertGreater(self.gateway.status()["next_retry_at"], time.time())
+            self.assertTrue(ready.wait(3))
+            self.gateway._identity_retry.join(1)
+        self.assertEqual(identity.call_count, 2)
+        self.assertEqual(self.gateway._binding, BINDING)
+        self.host.run_channel_chat.assert_not_called()
+
+    def test_identity_retry_can_be_cancelled_and_never_changes_owner(self):
+        self.gateway._save(True)
+        with patch("desk_companion.feishu_agent.identify", side_effect=classify("network failed")) as identity, \
+             patch.object(self.gateway, "_start") as start:
+            self.gateway.enable()
+            self.gateway.stop()
+            self.assertFalse(self.gateway._identity_retry.is_alive())
+            self.assertEqual(self.gateway.status()["next_retry_at"], 0)
+            identity.assert_called_once()
+            start.assert_not_called()
+        self.assertFalse(json.loads((self.root/"feishu_agent.json").read_text(encoding="utf-8"))["enabled"])
+
+    def test_permanent_credentials_do_not_retry_or_echo_cli_secrets(self):
+        with patch("desk_companion.feishu_agent.identify", side_effect=classify("invalid_client private-secret")), \
+             patch.object(self.gateway, "_start") as start:
+            with self.assertRaisesRegex(ConnectionFailure, "App Secret 无效"):
+                self.gateway.enable()
+            start.assert_not_called()
+        self.assertIsNone(self.gateway._identity_retry)
+        self.assertEqual(self.gateway.status()["state"], "error")
+        self.assertNotIn("private-secret", json.dumps(self.gateway.status()))
+
+    def test_retry_refuses_changed_application_or_owner(self):
+        self.gateway._save(True)
+        config=json.loads((self.root/"feishu_agent.json").read_text(encoding="utf-8"))
+        config.update(profile="test-profile", retry_min=1, retry_max=4)
+        (self.root/"feishu_agent.json").write_text(json.dumps(config))
+        with patch("desk_companion.feishu_agent.identify", side_effect=[classify("network failed"), {**BINDING, "owner_id": "ou_other"}]), \
+             patch.object(self.gateway, "_start") as start:
+            self.gateway.enable()
+            self.gateway._identity_retry.join(3)
+            start.assert_not_called()
+        self.assertEqual(self.gateway.status()["failure_kind"], "binding")
+        self.assertEqual(json.loads((self.root/"feishu_agent.json").read_text(encoding="utf-8"))["binding"]["owner_id"], "ou_owner")
+
+    def test_api_setup_network_exit_one_reconnects_then_accepts_ready(self):
+        stub=self.root/"flaky_event.py"
+        counter=self.root/"attempts"
+        stub.write_text("import sys,json\nfrom pathlib import Path\n" +
+            f"p=Path({str(counter)!r})\nn=int(p.read_text())+1 if p.exists() else 1\np.write_text(str(n))\n" +
+            "if n==1:\n print(json.dumps({'ok':False,'error':{'type':'network','message':'TLS timeout private-secret'}}),file=sys.stderr,flush=True)\n sys.exit(1)\n" +
+            f"print('[event] ready event_key={EVENT_KEY}',file=sys.stderr,flush=True)\nsys.stdin.read()\n", "utf-8")
+        (self.root/"feishu_agent.json").write_text(json.dumps({"retry_min":1,"retry_max":4}))
+        with patch("desk_companion.feishu_agent.identify", return_value=BINDING.copy()), \
+             patch("desk_companion.feishu_agent._lark_cmd", return_value=[sys.executable,str(stub)]), \
+             patch.object(self.gateway,"_consume_menu"):
+            self.gateway.enable()
+            self.assertTrue(self.gateway._ready.wait(5))
+            self.assertEqual(counter.read_text(), "2")
+            self.assertTrue(self.gateway.status()["connected"])
+            self.assertTrue(any(e["stage"]=="reconnecting" and e["kind"]=="network" for e in self.gateway.status()["connection_events"]))
+            self.assertNotIn("private-secret", json.dumps(self.gateway.status()))
+            self.gateway.stop()
+
+    def test_local_connection_check_is_scoped_to_selected_application(self):
+        values=[{"ok":True,"data":{"online_instance_cnt":0}},
+                {"apps":[{"app_id":"other-app","running":True},{"app_id":"test-app","running":False}]},
+                {"appId":"test-app"}]
+        with patch("desk_companion.feishu_agent._run_lark", side_effect=[json.dumps(v) for v in values]):
+            self.assertFalse(self.gateway.check_connection("test-profile")["local_running"])
 
 
 if __name__ == "__main__":

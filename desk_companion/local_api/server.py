@@ -25,8 +25,10 @@ RPC_METHODS = frozenset({
     "load_video_login", "save_video_login", "clear_video_login",
     "list_video_tasks", "start_video_task", "continue_video_task",
     "load_video_settings", "save_video_settings", "list_task_videos", "export_task_video",
+    "load_wiki_connection", "save_wiki_connection",
     "load_onboarding", "complete_onboarding", "report_pet_status", "check_updates",
     "list_agent_tasks", "get_agent_task", "cancel_agent_task", "continue_agent_task", "save_agent_task_settings", "load_task_progress",
+    "list_debug_calls", "get_debug_call", "set_debug_recording", "explain_debug_call",
     "load_board", "delete_agenda", "delete_task", "create_agenda", "load_log_errors", "load_skills",
     "load_persona", "save_persona",
     "load_model", "save_model", "test_model",
@@ -37,15 +39,13 @@ RPC_METHODS = frozenset({
     "load_feishu_agent", "start_feishu_agent", "stop_feishu_agent",
     "list_feishu_agent_profiles", "save_feishu_agent_settings",
     "update_feishu_agent_credentials", "check_feishu_agent_connection",
-    "load_maa", "load_depot", "load_raise", "add_raise", "remove_raise",
-    "load_github", "load_skland", "sync_skland",
-    "save_maa_paths", "save_maa_option",
-    "maa_open_game", "maa_start_daily", "maa_stop", "maa_authorize",
-    "compute_farm_plan", "generate_week_review",
+    "load_github",
+    "generate_week_review",
     "write_today_summary_doc", "write_week_review_doc",
     "list_feishu_docs", "list_mcp_tools", "load_composer_options",
     "load_knowledge", "save_knowledge", "download_knowledge", "delete_model",
     "add_knowledge", "delete_knowledge", "rebuild_knowledge", "ask_knowledge",
+    "pick_local_sources", "stage_local_sources", "read_local_source", "cancel_local_source_request",
     "load_notebook", "new_notebook", "save_notebook_note", "delete_notebook_note",
     "export_notebook_markdown", "export_notebook_feishu", "summarize_notebook",
     "open_notebook_file", "reveal_notebook_file", "delete_notebook_file",
@@ -71,11 +71,9 @@ def _health(connection, request):
         response = connection.respond(200, "shutting down\n")
         response.headers["Cache-Control"] = "no-store"
         return response
-    # 非 WS 的普通 HTTP：/health 返回 200，物品图走 /depot-icon/，其余交给 WS 握手或 404
+    # 非 WS 的普通 HTTP：健康检查与已认证的静态资源
     if request.path == "/health":
         return connection.respond(200, "ok\n")
-    if request.path.startswith("/depot-icon/"):
-        return _depot_icon(connection, request.path)
     if request.path.startswith("/pet-assets/"):
         return _pet_asset(connection, request.path)
     if request.path.startswith("/news-cover/"):
@@ -149,29 +147,6 @@ def _pet_asset(connection, request_path: str):
     return Response(200, "OK", headers, body)
 
 
-def _depot_icon(connection, path: str):
-    from urllib.parse import parse_qs, urlsplit
-
-    from websockets.asyncio.server import Response
-    from websockets.datastructures import Headers
-
-    from ..depot_view import read_icon
-
-    parts = urlsplit(path)
-    if TOKEN:
-        token = parse_qs(parts.query).get("token", [""])[0]
-        if token != TOKEN:
-            return connection.respond(401, "图标请求的 token 不对。\n")
-    item_id = parts.path.removeprefix("/depot-icon/").strip("/")
-    try:
-        body = read_icon(item_id)
-    except RuntimeError as exc:
-        return connection.respond(404, f"{exc}\n")
-    headers = Headers()
-    headers["Content-Type"] = "image/png"
-    headers["Content-Length"] = str(len(body))
-    headers["Cache-Control"] = "no-store"
-    return Response(200, "OK", headers, body)
 
 
 def _dispatch(method: str, args: dict) -> dict:
@@ -182,18 +157,25 @@ def _dispatch(method: str, args: dict) -> dict:
     if fn is None:
         return {"ok": False, "error": f"Bridge 无此方法：{method}"}
     try:
+        target = fn
+        def fn(**kwargs):
+            from ..agent_debug import context
+            with context(session=HOST.state.session_id, channel="backend"):
+                return target(**kwargs)
         if method in {"check_updates", "list_agent_tasks", "get_agent_task", "cancel_agent_task", "continue_agent_task", "save_agent_task_settings", "load_task_progress",
+                      "list_debug_calls", "get_debug_call", "set_debug_recording", "explain_debug_call",
                       "load_video_settings", "save_video_settings", "list_task_videos", "export_task_video",
+                      "load_wiki_connection", "save_wiki_connection",
                       "load_news", "save_news_settings", "check_news_targets", "run_news",
                       "load_feishu_agent", "start_feishu_agent", "stop_feishu_agent",
                       "list_feishu_agent_profiles", "save_feishu_agent_settings",
-                      "update_feishu_agent_credentials", "check_feishu_agent_connection"}:
+                      "update_feishu_agent_credentials", "check_feishu_agent_connection",
+                      "pick_local_sources", "stage_local_sources", "read_local_source", "cancel_local_source_request", "list_feishu_docs"}:
             result = fn(**args) if args else fn()
         else:
             # 桌面数据操作仍串行；Agent 的共享写入也与界面修改互斥。
             with HOST.turn_lock:
                 mutating = {"add_fact", "update_fact", "delete_fact", "delete_memory_turn", "clear_chat",
-                            "save_maa_paths", "save_maa_option", "maa_open_game", "maa_start_daily", "maa_stop",
                             "write_today_summary_doc", "write_week_review_doc", "export_notebook_feishu", "compress_context"}
                 if method in mutating:
                     from ..resource_lock import WRITES
@@ -223,7 +205,7 @@ async def _handler(ws):
         if mtype == "rpc":
             method = str(msg.get("method", ""))
             args = msg.get("args") or {}
-            # 数据方法可能有阻塞 IO（飞书/MAA/GitHub），丢线程池不堵事件循环
+            # 数据方法可能有阻塞 IO（飞书/GitHub），丢线程池不堵事件循环
             res = await asyncio.to_thread(_dispatch, method, args)
             await ws.send(json.dumps({"type": "rpc_result", "id": msg.get("id"), "result": res}))
         elif mtype == "chat":
@@ -300,7 +282,8 @@ async def _handle_notebook(ws, msg: dict) -> None:
 
     def run() -> None:
         try:
-            with HOST.turn_lock:
+            from ..agent_debug import context
+            with HOST.turn_lock, context(session=str(msg.get("session_id") or ""), channel="notebook"):
                 found = HOST.run_notebook(
                     str(msg.get("session_id") or ""),
                     str(msg.get("text") or ""),
@@ -340,6 +323,8 @@ async def main() -> None:
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--token", type=str, default="")
     args = parser.parse_args()
+    from ..agent_debug import install
+    install({"channel": "backend"})
     TOKEN = args.token
     HOST = HeadlessApp()
     SHUTDOWN = asyncio.Event()
@@ -349,6 +334,8 @@ async def main() -> None:
         async with serve(_handler, "127.0.0.1", args.port, process_request=_health):
             print(f"local_api ready on 127.0.0.1:{args.port}", flush=True)
             await SHUTDOWN.wait()
+            from ..local_sources import cancel_all
+            cancel_all()
     finally:
         SHUTDOWN.set()
         HOST.automation.stop()

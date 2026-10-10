@@ -24,6 +24,7 @@ mdurl==0.1.2
 openai==2.54.0
 packaging==26.3
 pillow==12.3.0
+psutil==7.2.2
 pip==26.0.1
 proxy_tools==0.1.0
 pycparser==3.0
@@ -36,6 +37,7 @@ pythonnet==3.2.0
 pywebview==6.2.1
 pywin32==312
 PyYAML==6.0.3
+pypdf==6.19.0
 referencing==0.37.0
 rich==14.3.4
 rpds-py==2026.9.1

@@ -52,7 +52,6 @@ const BASE_SCALE = 1.5;
 const PIN_LIFT_Y = 24;
 
 let win = null;
-let jobWin = null;
 let bubbleOpen = false;
 let pinned = START_PIN;
 let clickThrough = START_CLICK_THROUGH;
@@ -137,14 +136,6 @@ function onLine(line) {
     }
     if (msg.event === "show_pet") {
       win.show();
-      return;
-    }
-    if (msg.event === "show_job_board") {
-      showJobBoard();
-      return;
-    }
-    if (msg.event === "hide_job_board") {
-      hideJobBoard();
       return;
     }
     if (msg.event === "set_click_through") {
@@ -324,52 +315,6 @@ function applyBubble(open) {
   emit(bubbleOpen ? "bubble_opened" : "bubble_closed", {});
 }
 
-function hideJobBoard() {
-  if (!jobWin) {
-    return;
-  }
-  jobWin.close();
-}
-
-function showJobBoard() {
-  if (jobWin) {
-    jobWin.show();
-    return;
-  }
-  const JOB_W = 380;
-  const JOB_H = 280;
-  const work = screen.getPrimaryDisplay().workArea;
-  jobWin = new BrowserWindow({
-    width: JOB_W,
-    height: JOB_H,
-    x: work.x + Math.max(0, work.width - JOB_W - 16),
-    y: work.y + Math.max(0, work.height - JOB_H - 16),
-    title: "清日常",
-    frame: true,
-    alwaysOnTop: false,
-    skipTaskbar: false,
-    resizable: true,
-    minimizable: true,
-    backgroundColor: "#fff6ec",
-    webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: false,
-    },
-  });
-  jobWin.setMenuBarVisibility(false);
-  jobWin.on("closed", () => {
-    jobWin = null;
-  });
-  if (process.env.ELECTRON_RENDERER_URL) {
-    const base = process.env.ELECTRON_RENDERER_URL.replace(/\/$/, "");
-    jobWin.loadURL(`${base}/job.html`);
-    return;
-  }
-  jobWin.loadURL("pet://local/ui/job.html");
-}
-
 function createWindow() {
   const lay = layoutFor(currentScale);
   let x = START_X;
@@ -451,63 +396,8 @@ function createWindow() {
 }
 
 function popupMenu() {
-  request("maa_menu", {}, 800)
-    .then((maa) => {
-      showPetMenu(maa);
-    })
-    .catch((err) => {
-      elog(`maa_menu ${err}`);
-      showPetMenu({
-        ok: false,
-        options: [],
-        message: String(err && err.message ? err.message : err),
-      });
-    });
-}
-
-function showPetMenu(maa) {
-  const optionItems = (maa && maa.options ? maa.options : []).map((opt) => ({
-    label: opt.label,
-    type: "checkbox",
-    checked: Boolean(opt.checked),
-    click: (item) => {
-      request("maa_set_option", { id: opt.id, checked: item.checked }).catch((err) => {
-        elog(`maa_set_option ${err}`);
-      });
-    },
-  }));
-  const maaMenu = [
-    ...optionItems,
-    { type: "separator" },
-    {
-      label: "授权一次 MAA",
-      click: () => {
-        request("maa_authorize", {}).catch((err) => elog(`maa_authorize ${err}`));
-      },
-    },
-    {
-      label: "打开游戏",
-      click: () => {
-        request("maa_open_game", {}).catch((err) => elog(`maa_open_game ${err}`));
-      },
-    },
-    {
-      label: "开始清日常",
-      click: () => {
-        request("maa_start_daily", {}).catch((err) => elog(`maa_start_daily ${err}`));
-      },
-    },
-    {
-      label: "停止",
-      click: () => {
-        request("maa_stop", {}).catch((err) => elog(`maa_stop ${err}`));
-      },
-    },
-  ];
   const menu = Menu.buildFromTemplate([
     { label: "打开看板", click: () => emit("open_board", {}) },
-    { type: "separator" },
-    { label: "明日方舟", submenu: maaMenu },
     { type: "separator" },
     { label: "待机", click: () => win.webContents.send("play-motion", "Idle") },
     { label: "疑问", click: () => win.webContents.send("play-motion", "Talk") },

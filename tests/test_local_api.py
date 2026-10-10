@@ -84,6 +84,19 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(message["result"]["ok"])
             self.assertEqual(message["result"]["result"]["latest_version"], "0.3.0")
 
+    async def test_attachment_cancel_and_picker_are_available_while_agent_lock_is_held(self):
+        import uuid
+        ident = uuid.uuid4().hex
+        with self.host.turn_lock:
+            for method in ("cancel_local_source_request", "pick_local_sources"):
+                async with connect(self.url, proxy=None) as ws:
+                    await ws.send(json.dumps({"type": "rpc", "id": method, "method": method,
+                                              "args": {"request_id": ident}}))
+                    reply = json.loads(await asyncio.wait_for(ws.recv(), 5))["result"]
+                    self.assertTrue(reply["ok"], reply)
+                    if method == "pick_local_sources":
+                        self.assertTrue(reply["result"]["cancelled"])
+
     async def test_video_settings_rpc_does_not_block_on_desktop_turn_and_rejects_bad_values(self):
         with self.host.turn_lock:
             async with connect(self.url, proxy=None) as ws:
@@ -132,6 +145,11 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
         rows = memory.list_chat(self.host.state.session_id)
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[-1]["react_loops"], 2)
+        task = self.host.tasks.list()["items"][0]
+        events = self.host.tasks.get(task["id"])["events"]
+        tool = next(e["data"] for e in events if e["kind"] == "tool_end")
+        self.assertIn("input", tool)
+        self.assertIn("离线工具结果", json.dumps(tool["result"], ensure_ascii=False))
         self.assertGreater(rows[-1]["total_tokens"], 0)
         self.assertFalse(self.host._agent_running)
         self.assertIsNone(self.host.agent.llm.sampling)

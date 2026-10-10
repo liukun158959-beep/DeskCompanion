@@ -12,7 +12,12 @@ function load(rpc, invoke = async () => {}) {
   const mod = new Module(filename, module);
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const original = mod.require.bind(mod);
-  mod.require = id => id === '@tauri-apps/api/core' ? { invoke } : id === './api' ? { rpc } : id === './Markdown' ? {
+  const connectionRpc = async (info, method, args) => {
+    const result = await rpc(info, method, args);
+    if (method === 'load_wiki_connection' && !result.settings) return { settings: { wiki_url: '', video_parent_url: '', profile: '', auto_video_save: false } };
+    return result;
+  };
+  mod.require = id => id === '@tauri-apps/api/core' ? { invoke } : id === './api' ? { rpc: connectionRpc } : id === './Markdown' ? {
     MdLink: props => React.createElement('a', { href: props.href }, props.children),
     Markdown: props => React.createElement('p', null, props.text) } : original(id);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS,
@@ -129,7 +134,7 @@ test('dedicated video page submits separate jobs, follows selected context and l
   assert.deepEqual(calls.find(call => call[0] === 'continue_video_task')[1], { task_id: 'old', text: '展开 03:20' });
   assert.equal(button('继续追问').props.disabled, true);
   act(() => renderer.root.findByProps({ id: 'video-url' }).props.onChange({ target: { value: ' https://youtu.be/abcdefghijk ' } }));
-  await act(async () => button('读取并总结').props.onClick());
+  await act(async () => button('读取并分析').props.onClick());
   assert.deepEqual(calls.find(call => call[0] === 'start_video_task')[1], { url: 'https://youtu.be/abcdefghijk' });
   await act(async () => button('停止任务').props.onClick());
   assert.deepEqual(calls.find(call => call[0] === 'cancel_agent_task')[1], { task_id: 'new' });
@@ -158,5 +163,51 @@ test('switching video history ignores late detail from the previously selected t
   const rendered = JSON.stringify(renderer.toJSON());
   assert.ok(rendered.includes('B 的答案'));
   assert.ok(!rendered.includes('A 的答案'));
+  act(() => renderer.unmount());
+});
+
+test('wiki connection loads persisted destination and saves explicit automatic archive settings', async () => {
+  const calls = [];
+  const settings = { wiki_url: 'https://example.feishu.cn/wiki/home', video_parent_url: 'https://example.feishu.cn/wiki/video', profile: 'my-app', auto_video_save: true };
+  let saved = 0;
+  const { WikiConnectionSettings } = load(async (_, method, args) => {
+    calls.push([method, args]);
+    return { ok: true, settings: method === 'save_wiki_connection' ? args.payload : settings };
+  });
+  let renderer;
+  await act(async () => { renderer = create(React.createElement(WikiConnectionSettings, { info: { port: 1 }, onSaved: () => { saved++; } })); });
+  assert.equal(renderer.root.findByProps({ 'aria-label': '视频笔记父文档链接' }).props.value, settings.video_parent_url);
+  assert.equal(renderer.root.findByProps({ 'aria-label': '读取完成后自动保存视频笔记' }).props.checked, true);
+  act(() => renderer.root.findByProps({ 'aria-label': '读取完成后自动保存视频笔记' }).props.onChange({ target: { checked: false } }));
+  await act(async () => renderer.root.findByType('button').props.onClick());
+  assert.deepEqual(calls.at(-1), ['save_wiki_connection', { payload: { ...settings, auto_video_save: false } }]);
+  assert.equal(saved, 1);
+  act(() => renderer.unmount());
+});
+
+test('wiki connection waits for load and reports rejected destination without claiming success', async () => {
+  let resolve;
+  const pending = new Promise(done => { resolve = done; });
+  const { WikiConnectionSettings } = load(async (_, method) => method === 'load_wiki_connection' ? pending : { ok: false, error: '视频父文档不属于这个知识库' });
+  let renderer;
+  await act(async () => { renderer = create(React.createElement(WikiConnectionSettings, { info: { port: 1 } })); });
+  assert.equal(renderer.root.findByType('button').props.disabled, true);
+  await act(async () => resolve({ settings: { wiki_url: 'https://example.feishu.cn/wiki/root', video_parent_url: '', profile: '', auto_video_save: false } }));
+  await act(async () => renderer.root.findByType('button').props.onClick());
+  const text = JSON.stringify(renderer.toJSON());
+  assert.ok(text.includes('视频父文档不属于这个知识库'));
+  assert.ok(!text.includes('知识库已连接'));
+  act(() => renderer.unmount());
+});
+
+test('automatically saved source exposes link and disables duplicate manual creation', async () => {
+  const source = { source_id: 'a'.repeat(24), title: '概念视频', author: '作者', platform: 'Bilibili', url: 'https://www.bilibili.com/video/BV1ojfDBSEPv',
+    subtitle_notice: '完整可用字幕', chapters: [], export_state: 'saved', document_url: 'https://example.feishu.cn/wiki/note' };
+  const { TaskVideos } = load(async () => ({ items: [source] }));
+  let renderer;
+  await act(async () => { renderer = create(React.createElement(TaskVideos, { info: { port: 1 }, taskId: 'task', state: 'succeeded' })); });
+  assert.equal(renderer.root.findByType('button').props.disabled, true);
+  assert.ok(JSON.stringify(renderer.toJSON()).includes('已保存到飞书'));
+  assert.ok(renderer.root.findAllByType('a').some(link => link.props.href === source.document_url));
   act(() => renderer.unmount());
 });

@@ -36,7 +36,6 @@ READ_SKILL_SPEC = {
     "name": "read_skill",
     "description": (
         "读取一份技能的正文。"
-        "分析日志用 maa-log-analysis（须先 read_recent_errors）；"
         "写今日工作总结用 feishu-doc-writing；"
         "本周复盘用 weekly-retro（自动化任务「周复盘」子界面生成，不要用 github_recent 冒充一周）；"
         "总结 GitHub 仓库最近用 github-repo-summary（须先 github_recent）。"

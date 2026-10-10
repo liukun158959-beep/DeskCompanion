@@ -61,20 +61,15 @@ export function initBubble() {
   const todayFocus = document.getElementById("today-focus");
   const todayRest = document.getElementById("today-rest");
   const todayRefresh = document.getElementById("today-refresh");
-  const maaStatus = document.getElementById("maa-status");
-  const maaOpts = document.getElementById("maa-opts");
-  const maaOpen = document.getElementById("maa-open");
-  const maaStart = document.getElementById("maa-start");
-  const maaStop = document.getElementById("maa-stop");
 
   function panelEl(name) {
     return document.getElementById("panel-" + name);
   }
 
   function setPanel(name) {
-    currentPanel = name === "maa" || name === "chat" ? name : "today";
+    currentPanel = name === "chat" ? name : "today";
     document.body.dataset.panel = currentPanel;
-    ["today", "maa", "chat"].forEach((key) => {
+    ["today", "chat"].forEach((key) => {
       const el = panelEl(key);
       el.hidden = key !== currentPanel;
     });
@@ -83,9 +78,6 @@ export function initBubble() {
     });
     if (currentPanel === "today") {
       void loadToday(false);
-    }
-    if (currentPanel === "maa") {
-      void loadMaa();
     }
     if (currentPanel === "chat") {
       input.focus();
@@ -255,54 +247,8 @@ export function initBubble() {
     });
   }
 
-  function renderMaa(snap) {
-    maaStatus.textContent = (snap && snap.message) || (snap && snap.status) || "还没开始。";
-    maaOpts.innerHTML = "";
-    (snap && snap.options ? snap.options : []).forEach((opt) => {
-      const li = document.createElement("li");
-      const btn = document.createElement("button");
-      const on = Boolean(opt.checked);
-      // 透明窗里原生 checkbox 点不到；用按钮，点击路径和「开始」相同。
-      btn.type = "button";
-      btn.className = "check";
-      btn.setAttribute("aria-checked", on ? "true" : "false");
-      const mark = document.createElement("span");
-      mark.className = "mark";
-      mark.setAttribute("aria-hidden", "true");
-      btn.appendChild(mark);
-      btn.appendChild(document.createTextNode(opt.label));
-      btn.addEventListener("click", () => {
-        const nextChecked = btn.getAttribute("aria-checked") !== "true";
-        window.petAPI.call("maa_set_option", { id: opt.id, checked: nextChecked }).then((next) => {
-          renderMaa(next);
-        }).catch((err) => {
-          maaStatus.textContent = String(err && err.message ? err.message : err);
-        });
-      });
-      li.appendChild(btn);
-      maaOpts.appendChild(li);
-    });
-  }
 
-  function loadMaa() {
-    return window.petAPI.call("maa_menu", {}).then((snap) => {
-      renderMaa(snap);
-    }).catch((err) => {
-      maaStatus.textContent = String(err && err.message ? err.message : err);
-      maaOpts.innerHTML = "";
-    });
-  }
 
-  function runMaa(method) {
-    return window.petAPI.call(method, {}).then((result) => {
-      if (result && result.message) {
-        maaStatus.textContent = result.message;
-      }
-      return loadMaa();
-    }).catch((err) => {
-      maaStatus.textContent = String(err && err.message ? err.message : err);
-    });
-  }
 
   input.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter") {
@@ -335,15 +281,6 @@ export function initBubble() {
   });
   todayRefresh.addEventListener("click", () => {
     void loadToday(true);
-  });
-  maaOpen.addEventListener("click", () => {
-    void runMaa("maa_open_game");
-  });
-  maaStart.addEventListener("click", () => {
-    void runMaa("maa_start_daily");
-  });
-  maaStop.addEventListener("click", () => {
-    void runMaa("maa_stop");
   });
 
   function showBubble(panel) {
@@ -396,10 +333,6 @@ export function initBubble() {
       todayBanner.hidden = false;
       todayBanner.textContent = text || "";
       return showBubble("today");
-    },
-    maaNotice(text) {
-      maaStatus.textContent = text || "";
-      return showBubble("maa").then(() => loadMaa());
     },
   };
 }

@@ -1,8 +1,8 @@
 import { Card, CardBody, CardHeader, CardTitle } from "reend-components";
 
-// 四张状态卡只转述接口里已有的字段。没有的连接信息不编。
+// 状态卡只转述接口里已有的字段。没有的连接信息不编。
 
-export type StatusKind = "feishu" | "github" | "maa" | "skland";
+export type StatusKind = "feishu" | "github";
 
 export type StatusView = {
   kind: StatusKind;
@@ -14,11 +14,9 @@ export type StatusView = {
 const TITLES: Record<StatusKind, string> = {
   feishu: "飞书",
   github: "GitHub",
-  maa: "MAA",
-  skland: "森空岛",
 };
 
-export const STATUS_KINDS: StatusKind[] = ["feishu", "github", "maa", "skland"];
+export const STATUS_KINDS: StatusKind[] = ["feishu", "github"];
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -62,38 +60,16 @@ export function statusFromPayload(kind: StatusKind, data: unknown): StatusView {
     const line = login ? `已登录 ${login}` : "已登录";
     return { kind, title, state: "ready", line: repos === null ? line : `${line}，${repos} 个仓库` };
   }
-  if (kind === "maa") {
-    const line = text(row.message) || text(row.error) || text(row.status) || "已连接";
-    const failed = row.status === "error" || text(row.task_error).length > 0;
-    return { kind, title, state: failed ? "error" : "ready", line };
-  }
-  if (row.has_token === false) {
-    return { kind, title, state: "off", line: text(row.hint) || "未配置" };
-  }
-  if (row.synced === true && row.ap != null) {
-    const max = row.ap_max;
-    return {
-      kind,
-      title,
-      state: "ready",
-      line: max == null ? `理智 ${row.ap}` : `理智 ${row.ap}/${max}`,
-    };
-  }
-  return { kind, title, state: "off", line: text(row.hint) || "未同步" };
+  return { kind, title, state: "off", line: "未连接" };
 }
 
-export function StatusGrid(props: { cards: StatusView[]; onOpenMaa?: () => void; onOpenFeishu?: () => void }) {
+export function StatusGrid(props: { cards: StatusView[]; onOpenFeishu?: () => void }) {
   if (props.cards.length === 0) return null;
   return (
-    <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mt-6 grid gap-3 sm:grid-cols-2">
       {props.cards.map((card) => {
-        const open =
-          card.kind === "maa" && props.onOpenMaa
-            ? props.onOpenMaa
-            : card.kind === "feishu" && props.onOpenFeishu
-              ? props.onOpenFeishu
-              : null;
-        const target = card.kind === "maa" && open ? "maa" : card.kind === "feishu" && open ? "feishu" : undefined;
+        const open = card.kind === "feishu" ? props.onOpenFeishu : undefined;
+        const target = open ? "feishu" : undefined;
         return (
           <Card
             key={card.kind}

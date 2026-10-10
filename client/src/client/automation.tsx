@@ -10,7 +10,7 @@ type Job = { id?: string; name: string; action: string; enabled: boolean; cadenc
   schedule_text?: string; last_result?: string; last_error?: string; last_task_id?: string };
 type Event = { seq: number; kind: string; ts: number; data: string | { tool?: string; status?: string; duration_ms?: number } };
 type Task = { id: string; state: string; answer: string; error: string; source: { run_id?: string }; events?: Event[] };
-const labels: Record<string, string> = { ai_news: "AI/Agent 资讯日报", retro_gen: "生成本周复盘", retro_write: "覆盖写入复盘文档", maa_daily: "MAA 清日常" };
+const labels: Record<string, string> = { ai_news: "AI/Agent 资讯日报", retro_gen: "生成本周复盘", retro_write: "覆盖写入复盘文档" };
 const states: Record<string, string> = { collecting: "采集核实中", draft: "待发布预览", publishing: "正在归档和推送", published: "已发布", archived: "已归档，未推送群", failed: "未完成",
   queued: "排队中", running: "执行中", succeeded: "完成", timed_out: "超时", interrupted: "已中断", cancelled: "已停止", ok: "完成", fail: "失败", missed: "错过时段" };
 const blankJob = (): Job => ({ name: "每日 AI/Agent 工程资讯", action: "ai_news", enabled: false, cadence: "daily", weekdays: [], hour: 9, minute: 0, doc: "" });

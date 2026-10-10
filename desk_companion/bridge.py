@@ -33,6 +33,27 @@ class Bridge:
     def list_agent_tasks(self, channel: str = "", session: str = "") -> dict:
         return self._host.tasks.list(channel, session)
 
+    def list_debug_calls(self, channel: str = "", task_id: str = "", before=None) -> dict:
+        from .agent_debug import listing
+        return listing(channel, task_id, before)
+
+    def get_debug_call(self, call_id: str) -> dict:
+        from .agent_debug import detail
+        return detail(call_id)
+
+    def set_debug_recording(self, enabled: bool) -> dict:
+        from .agent_debug import configure
+        return configure(enabled)
+
+    def explain_debug_call(self, call_id: str, question: str = "") -> dict:
+        from .agent_debug import detail
+        detail(call_id)
+        if not isinstance(question, str) or len(question) > 4000:
+            raise ValueError("请填写不超过4000字的问题。")
+        task = self._host.tasks.submit(question.strip() or "请解读这次 Agent 调用，说明输入组成、行动与返回，以及需要注意的异常。",
+            "debug-" + call_id, "debug", workflow="debug_explain", debug_call_id=call_id, auto_video_archive=False)
+        return {"ok": True, "task_id": task}
+
     def get_agent_task(self, task_id: str, focus: bool = True) -> dict:
         from .memory import list_chat
         if type(focus) is not bool:
@@ -48,6 +69,14 @@ class Bridge:
     def load_video_settings(self) -> dict:
         from .video import load_settings
         return {"ok": True, "settings": load_settings()}
+
+    def load_wiki_connection(self) -> dict:
+        from .wiki_connection import load_settings
+        return {"ok": True, "settings": load_settings()}
+
+    def save_wiki_connection(self, payload: dict) -> dict:
+        from .wiki_connection import save_settings
+        return save_settings(payload)
 
     def load_video_login(self) -> dict:
         from .video_login import status
@@ -85,7 +114,8 @@ class Bridge:
         key = hashlib.sha256(task["answer"].strip().encode()).hexdigest()
         for item in items:
             saved = get_source(task["session"], item["source_id"]).get("exports", {}).get(key, {})
-            item.update(export_state=saved.get("state", ""), document_url=saved.get("url", ""))
+            item.update(export_state=saved.get("state", ""), document_url=saved.get("url", ""),
+                        presentation_warnings=saved.get("presentation_warnings", []))
         return {"ok": True, "items": items}
 
     def export_task_video(self, task_id: str, source_id: str, confirmed_absent: bool = False) -> dict:
@@ -174,8 +204,24 @@ class Bridge:
     def delete_model(self, repo: str) -> dict:
         return self._host.board_delete_model(repo)
 
-    def add_knowledge(self, doc_id: str, label: str) -> dict:
-        return self._host.board_add_knowledge(doc_id, label)
+    def add_knowledge(self, doc_id: str, label: str, source: dict | None = None) -> dict:
+        return self._host.board_add_knowledge(doc_id, label, source)
+
+    def pick_local_sources(self, kind: str = "file", request_id: str = "") -> dict:
+        from .local_sources import pick
+        return pick(kind, request_id)
+
+    def stage_local_sources(self, paths: list, kind: str = "file", request_id: str = "") -> dict:
+        from .local_sources import stage
+        return stage(paths, kind, request_id)
+
+    def cancel_local_source_request(self, request_id: str) -> dict:
+        from .local_sources import cancel
+        return cancel(request_id)
+
+    def read_local_source(self, source_id: str, offset: int = 0, limit: int = 12000) -> dict:
+        from .local_sources import read_page
+        return {"ok": True, "source": read_page(source_id, offset, limit)}
 
     def delete_knowledge(self, doc_id: str) -> dict:
         return self._host.board_delete_knowledge(doc_id)
@@ -377,47 +423,6 @@ class Bridge:
 
         return feishu_logout()
 
-    def load_maa(self) -> dict:
-        return self._host.board_maa()
-
-    def load_depot(self) -> dict:
-        return self._host.board_depot()
-
-    def load_raise(self) -> dict:
-        return self._host.board_raise()
-
-    def add_raise(self, operator: str, rank: str) -> dict:
-        return self._host.board_add_raise(operator, rank)
-
-    def remove_raise(self, operator: str, rank: str) -> dict:
-        return self._host.board_remove_raise(operator, rank)
 
     def load_github(self) -> dict:
         return self._host.board_github()
-
-    def save_maa_paths(self, payload: dict) -> dict:
-        return self._host.save_maa_paths(payload)
-
-    def save_maa_option(self, payload: dict) -> dict:
-        return self._host.save_maa_option(payload)
-
-    def maa_open_game(self) -> dict:
-        return self._host.maa_open_game()
-
-    def maa_start_daily(self) -> dict:
-        return self._host.maa_start_daily()
-
-    def maa_stop(self) -> dict:
-        return self._host.maa_stop()
-
-    def maa_authorize(self) -> dict:
-        return self._host.maa_authorize()
-
-    def load_skland(self) -> dict:
-        return self._host.board_skland()
-
-    def sync_skland(self) -> dict:
-        return self._host.sync_skland()
-
-    def compute_farm_plan(self) -> dict:
-        return self._host.compute_farm_plan()

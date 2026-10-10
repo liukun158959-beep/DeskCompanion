@@ -100,6 +100,9 @@ class HeadlessApp(App):
             from ..feishu_docs import doc_turn_block
 
             model_message = model_message + "\n\n" + doc_turn_block(doc_picks)
+        if picked.get("attachments"):
+            from ..local_sources import turn_block
+            model_message += "\n\n" + turn_block(picked["attachments"])
         if resume_note:
             model_message += resume_note
         thoughts: list[str] = []
@@ -178,6 +181,8 @@ class HeadlessApp(App):
             blocked.append("飞书文档")
         if picked.get("mcp"):
             blocked.append("MCP")
+        if picked.get("attachments"):
+            blocked.append("本地附件（请先入库，或关闭知识库直接阅读）")
         if blocked:
             raise RuntimeError(
                 "知识库打开时不要同时点选" + "、".join(blocked) + "。关掉知识库，或先去掉这些点选。"
@@ -266,10 +271,10 @@ class HeadlessApp(App):
 
         return self._knowledge_call(lambda: delete_model(repo))
 
-    def board_add_knowledge(self, doc_id: str, label: str) -> dict:
+    def board_add_knowledge(self, doc_id: str, label: str, source: dict | None = None) -> dict:
         from ..knowledge import add_doc
 
-        return self._knowledge_call(lambda: add_doc(doc_id, label))
+        return self._knowledge_call(lambda: add_doc(doc_id, label, source))
 
     def board_delete_knowledge(self, doc_id: str) -> dict:
         from ..knowledge import delete_doc

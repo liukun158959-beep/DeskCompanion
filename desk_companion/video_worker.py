@@ -131,7 +131,7 @@ def resolve_short_url(url, proxy=""):
 
 
 def bilibili_metadata(ydl, url):
-    """网页被限流时尝试平台公开元数据接口；字幕仍由 yt-dlp 处理。"""
+    """只读取元数据与字幕接口，不请求播放格式；验证业务状态码。"""
     parsed = urlsplit(url)
     match = re.fullmatch(r"/video/(BV[0-9A-Za-z]{10}|av[0-9]+)/?", parsed.path)
     if not match:
@@ -139,9 +139,16 @@ def bilibili_metadata(ydl, url):
     from yt_dlp.networking import Request
     vid = match[1]
     params = {"bvid": vid} if vid.startswith("BV") else {"aid": vid[2:]}
-    with ydl.urlopen(Request("https://api.bilibili.com/x/web-interface/view?" + urlencode(params),
-                            headers={"Referer": "https://www.bilibili.com/", "User-Agent": "Mozilla/5.0"})) as response:
-        payload = json.loads(response.read(1_000_000))
+    headers = {"Referer": url, "User-Agent": "Mozilla/5.0"}
+    def api(path, query):
+        with ydl.urlopen(Request("https://api.bilibili.com" + path + "?" + urlencode(query), headers=headers)) as response:
+            raw = response.read(1_000_001)
+        if len(raw) > 1_000_000:
+            raise RuntimeError("Bilibili 字幕接口返回过大。")
+        value = json.loads(raw)
+        if not isinstance(value, dict): raise RuntimeError("Bilibili 接口返回格式异常。")
+        return value
+    payload = api("/x/web-interface/view", params)
     if payload.get("code") != 0:
         raise RuntimeError("Bilibili 视频信息暂不可读。")
     data = payload["data"]
@@ -150,14 +157,49 @@ def bilibili_metadata(ydl, url):
     if part > len(pages):
         raise RuntimeError("所选分 P 不存在。")
     page = pages[part - 1]
-    ie = ydl.get_info_extractor("BiliBili")
-    try:
-        subtitles = ie._get_subtitles(data["bvid"], page["cid"], data["aid"])
-    except Exception:
-        subtitles = {}
-    return {"webpage_url": url, "title": data["title"] + (" · " + page.get("part", "") if len(pages) > 1 else ""),
+    info = {"webpage_url": url, "title": data["title"] + (" · " + page.get("part", "") if len(pages) > 1 else ""),
             "uploader": (data.get("owner") or {}).get("name", ""), "description": data.get("desc", ""),
-            "duration": page.get("duration"), "subtitles": subtitles}
+            "duration": page.get("duration"), "subtitles": {}, "chapters": []}
+    try:
+        ie = ydl.get_info_extractor("BiliBili")
+        query = ie._sign_wbi({"aid": data["aid"], "cid": page["cid"]}, data["bvid"])
+        player = api("/x/player/wbi/v2", query)
+        code = player.get("code")
+        diagnostic = {"stage": "bilibili_subtitle_api", "code": code if type(code) is int else None}
+        info["subtitle_diagnostic"] = diagnostic
+        if type(code) is not int or code != 0:
+            if code == -101:
+                info.update(subtitle_status="login_required", subtitle_notice="B站字幕接口要求重新登录。请在视频读取页登录并使用此登录态，再重试。")
+                diagnostic["kind"] = "login_required"
+            else:
+                info.update(subtitle_status="unavailable", subtitle_notice="B站字幕接口暂未成功返回（" + (str(code) if type(code) is int else "状态码缺失") + "），不能判断为视频没有字幕。请稍后重试。")
+                diagnostic["kind"] = "platform_restricted" if code in (-352, -403, -412, 429) else "api_error"
+            return info
+        player_data = player.get("data") or {}
+        if player_data.get("need_login_subtitle"):
+            info.update(subtitle_status="login_required", subtitle_notice="B站要求登录后才能读取字幕。请在视频读取页登录并使用此登录态，再重试。")
+            diagnostic["kind"] = "login_required"
+            return info
+        subtitle = player_data.get("subtitle")
+        if not isinstance(subtitle, dict) or not isinstance(subtitle.get("subtitles"), list):
+            raise RuntimeError("Bilibili 字幕接口返回格式异常。")
+        for track in subtitle["subtitles"]:
+            if not isinstance(track, dict): continue
+            language, caption_url = track.get("lan"), track.get("subtitle_url")
+            if isinstance(language, str) and language and isinstance(caption_url, str) and caption_url:
+                info["subtitles"].setdefault(language, []).append({"ext": "json", "url": caption_url})
+        if subtitle["subtitles"] and not info["subtitles"]:
+            info.update(subtitle_status="unavailable", subtitle_notice="B站已返回字幕目录，但没有可读取的字幕地址，请稍后重试。")
+            diagnostic["kind"] = "invalid_tracks"
+            return info
+        diagnostic.update(kind="available" if info["subtitles"] else "missing", track_count=sum(len(t) for t in info["subtitles"].values()))
+        for chapter in player_data.get("view_points") or []:
+            if isinstance(chapter, dict) and type(chapter.get("from")) in (int, float) and math.isfinite(chapter["from"]) and chapter["from"] >= 0:
+                info["chapters"].append({"title": chapter.get("content", ""), "start_time": chapter["from"]})
+    except Exception as exc:
+        info.update(subtitle_status="unavailable", subtitle_notice="B站字幕接口读取失败，不能判断为视频没有字幕。" + classify_error(exc))
+        info["subtitle_diagnostic"] = {"stage": "bilibili_subtitle_api", "kind": "request_failed", "error_type": type(exc).__name__}
+    return info
 
 
 def retrieve(url, settings, emit):
@@ -198,14 +240,9 @@ def retrieve(url, settings, emit):
                 discard=not row["expires"], comment=None, comment_url=None,
                 rest={"HttpOnly": None} if row["http_only"] else {}))
         try:
-            info = ydl.extract_info(url, download=False)
+            info = bilibili_metadata(ydl, url) if platform == "Bilibili" else ydl.extract_info(url, download=False)
         except Exception as exc:
-            if platform != "Bilibili":
-                raise RuntimeError(classify_error(exc)) from None
-            try:
-                info = bilibili_metadata(ydl, url)
-            except Exception:
-                raise RuntimeError(classify_error(exc)) from None
+            raise RuntimeError(classify_error(exc)) from None
         if not isinstance(info, dict) or info.get("_type") in {"playlist", "multi_video"}:
             raise RuntimeError("请提供单个视频或指定分 P 的链接。")
         if not info.get("title") or (str(info["title"]).startswith("youtube video #") and not info.get("description")):
@@ -219,6 +256,8 @@ def retrieve(url, settings, emit):
                  "chapters": [{"title": clean(c.get("title"), 200), "start": c.get("start_time", 0)} for c in (info.get("chapters") or [])[:300]],
                  "segments": [], "truncated": False, "subtitle_status": "missing", "subtitle_language": "", "automatic": False}
         emit({"status": "已获取视频信息，正在读取可用字幕。"})
+        if info.get("subtitle_diagnostic"):
+            value["subtitle_diagnostic"] = info["subtitle_diagnostic"]
         tracks = select_tracks(info)
         failed, failure_reason = False, ""
         # 至多尝试两份可读字幕，防止平台失败时长期重试。
@@ -248,6 +287,9 @@ def retrieve(url, settings, emit):
             if value["truncated"]:
                 value["subtitle_notice"] += "字幕过长，仅保留前段，不能视为全片内容。"
             emit({"status": f"已读取 {len(value['segments'])} 段字幕，正在准备总结来源。"})
+        elif info.get("subtitle_status") in {"unavailable", "login_required"} and not failed:
+            value.update(subtitle_status=info["subtitle_status"], subtitle_notice=info["subtitle_notice"])
+            emit({"status": value["subtitle_notice"]})
         elif failed:
             value.update(subtitle_status="unavailable", subtitle_notice="字幕读取失败。" + failure_reason + " 当前只能介绍标题、简介和章节。")
             emit({"status": "字幕未能读取，已保留视频信息。"})

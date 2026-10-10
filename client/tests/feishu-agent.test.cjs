@@ -24,6 +24,21 @@ function mount(rpc) {
 }
 const idle = { ok: true, enabled: false, connected: false, state: 'stopped', error: '', diagnostic: '', last_reply: '', binding: {} };
 
+test('retrying identity exposes schedule and diagnostics without declaring connected', async () => {
+  const app = mount(async (_info, method) => method === 'load_feishu_agent' ? {
+    ...idle, enabled: true, state: 'reconnecting', connection_attempts: 2, next_retry_at: 1791500000,
+    connection_events: [{ at: 1791499998, stage: 'reconnecting', kind: 'network', message: '暂时校验失败', retry_in: 2 }],
+  } : { profiles: [] });
+  await act(async () => {});
+  const output = JSON.stringify(app.renderer.toJSON());
+  assert.ok(output.includes('下次重试'));
+  assert.ok(output.includes('连接诊断'));
+  assert.ok(output.includes('暂时校验失败'));
+  assert.equal(app.button('接入飞书').props.disabled, true);
+  assert.equal(app.button('停止接入').props.disabled, false);
+  app.renderer.unmount();
+});
+
 test('Feishu page starts and stops bot connection through the shared API', async () => {
   const calls = [];
   const app = mount(async (_info, method) => {

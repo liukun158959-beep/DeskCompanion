@@ -53,7 +53,7 @@ export type StreamHandlers = {
   onKnowledge?: (trace: ChatItem["knowledge"]) => void;
 };
 
-export type ChatChips = { skills: string[]; cli: string[]; github: string };
+export type ChatChips = { skills: string[]; cli: string[]; github: string; attachments?: string[] };
 
 export type NotebookDone = {
   answer: string;

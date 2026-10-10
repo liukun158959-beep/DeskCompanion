@@ -1,5 +1,6 @@
 """视频来源与真实 Atlas 工具循环：隔离数据，不写入真实飞书。"""
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -15,7 +16,7 @@ from atlas.testing import FakeLLM
 from desk_companion import assistant, video
 from desk_companion.facts import bind_turn_user
 from desk_companion.video_tools import specs
-from desk_companion.video_worker import parse_subtitles, select_tracks, safe_caption_url, retrieve
+from desk_companion.video_worker import parse_subtitles, select_tracks, safe_caption_url, retrieve, bilibili_metadata
 
 URL = "https://www.youtube.com/watch?v=abcdefghijk"
 SOURCE = {"url": URL, "title": "Agent demo", "author": "Example", "description": "实际简介",
@@ -84,17 +85,92 @@ class VideoTests(unittest.TestCase):
         with self.assertRaises(ValueError): video.save_settings("http://user:secret@proxy:80", "")
         with self.assertRaises(ValueError): video.save_settings("", "C:/missing-cookies.txt")
 
+    def test_failed_refresh_retains_complete_transcript_exports_and_original_fetch_time(self):
+        first = video.read_video("a", URL)
+        original = video.get_source("a", first["source_id"])
+        original["exports"] = {"saved": {"state": "saved", "url": "https://example.feishu.cn/docx/saved"}}
+        video.atomic_write(video.source_path("a", first["source_id"]), original)
+        self.mock_extract.side_effect = None
+        self.mock_extract.return_value = {**SOURCE, "segments": [], "subtitle_status": "unavailable",
+                                         "subtitle_notice": "字幕接口请求超时。"}
+        fallback = video.read_video("a", URL, True)
+        retained = video.get_source("a", first["source_id"])
+        self.assertEqual(retained["segments"], original["segments"])
+        self.assertEqual(retained["exports"], original["exports"])
+        self.assertEqual(retained["fetched_at"], original["fetched_at"])
+        self.assertIn("不是本次实时获取", fallback["subtitle_notice"])
+        self.assertEqual(fallback["refresh_failure"]["status"], "unavailable")
+        self.assertNotIn("config_key", fallback["refresh_failure"])
+        video.read_video("a", URL)
+        self.assertEqual(self.mock_extract.call_count, 2, 'failure backoff prevents immediate repeated requests')
+        self.mock_extract.side_effect = RuntimeError("视频网络连接失败或超时。")
+        again = video.read_video("a", URL, True)
+        self.assertEqual(again["segment_count"], 2)
+
+    def test_complete_backup_recovers_from_empty_main_cache_without_cross_session_reuse(self):
+        first = video.read_video("a", URL)
+        value = video.get_source("a", first["source_id"])
+        video.atomic_write(video.source_path("a", first["source_id"]), {**value, "segments": [], "subtitle_status": "missing"})
+        self.mock_extract.side_effect = None
+        self.mock_extract.return_value = {**SOURCE, "segments": [], "subtitle_status": "missing"}
+        recovered = video.read_video("a", URL, True)
+        self.assertEqual(len(recovered["transcript"]["items"]), 2)
+        other = video.read_video("b", URL)
+        self.assertEqual(other["transcript"]["items"], [])
+
+    def test_bilibili_api_errors_are_not_reported_as_missing_captions(self):
+        from unittest.mock import Mock
+        metadata = {"code":0,"data":{"aid":123,"bvid":"BV1v9V5zSEHA","title":"测试",
+                    "pages":[{"cid":456,"duration":90}]}}
+        downloader = Mock()
+        downloader.get_info_extractor.return_value._sign_wbi.side_effect = lambda query, _id: query
+        for response, status in [({"code":-352,"message":"private-test-secret"},"unavailable"),
+                                 ({"code":-101},"login_required"),
+                                 ({"code":0,"data":{"need_login_subtitle":True}},"login_required"),
+                                 ({"code":0,"data":{}},"unavailable"),
+                                 ({"code":0,"data":{"subtitle":{"subtitles":[{"lan":"ai-zh","subtitle_url":""}]}}},"unavailable"),
+                                 ({"code":0,"data":{"subtitle":{"subtitles":[]}}},None)]:
+            downloader.urlopen.side_effect = [io.BytesIO(json.dumps(metadata).encode()),io.BytesIO(json.dumps(response).encode())]
+            result = bilibili_metadata(downloader,"https://www.bilibili.com/video/BV1v9V5zSEHA")
+            self.assertEqual(result.get("subtitle_status"), status)
+            self.assertNotIn("private-test-secret", json.dumps(result))
+        downloader.urlopen.side_effect = [io.BytesIO(json.dumps(metadata).encode()),TimeoutError("private-test-secret")]
+        self.assertEqual(bilibili_metadata(downloader,"https://www.bilibili.com/video/BV1v9V5zSEHA")["subtitle_status"],"unavailable")
+
+    def test_bilibili_reads_subtitles_and_chapters_in_one_signed_request_without_playback_formats(self):
+        metadata = {"code":0,"data":{"aid":123,"bvid":"BV1v9V5zSEHA","title":"测试",
+                    "pages":[{"cid":456,"duration":90}]}}
+        player = {"code":0,"data":{"subtitle":{"subtitles":[{"lan":"ai-zh","subtitle_url":"//aisubtitle.hdslb.com/caption.json"}]},
+                  "view_points":[{"from":0,"content":"开头"},{"from":30,"content":"原理"}]}}
+        with patch("yt_dlp.YoutubeDL") as factory, patch("desk_companion.video_worker.caption_bytes", return_value=json.dumps({"body":[{"from":0,"content":"实际字幕"}]})):
+            downloader = factory.return_value.__enter__.return_value
+            downloader.get_info_extractor.return_value._sign_wbi.side_effect = lambda query,_id: {**query,"w_rid":"test-signature"}
+            downloader.urlopen.side_effect = [io.BytesIO(json.dumps(metadata).encode()),io.BytesIO(json.dumps(player).encode())]
+            result = retrieve("https://www.bilibili.com/video/BV1v9V5zSEHA",{},lambda _:None)
+            downloader.extract_info.assert_not_called()
+            self.assertEqual(downloader.urlopen.call_count, 2)
+            self.assertIn("w_rid=test-signature", downloader.urlopen.call_args.args[0].url)
+        self.assertEqual(result["subtitle_status"],"available")
+        self.assertEqual(result["segments"][0]["text"],"实际字幕")
+        self.assertEqual([c["start"] for c in result["chapters"]],[0,30])
+
     def test_saved_document_deduplicates_after_refresh_and_preserves_provenance(self):
         source = video.read_video("a", URL)
+        note = ("## 作者论证\n\n[00:30]({}&t=30)：调用工具并验证结果。\n\n"
+                "## 补充解释与我的分析\n\n工具返回成功不等于业务结果正确，应验证目标状态。\n\n"
+                "补充示例（非视频原例）：创建日程后读取并检查时间。\n\n"
+                "外部资料：[接口文档](https://example.invalid/docs)，仅取得摘要，细节未核实。").format(URL)
         with patch("desk_companion.feishu_auth.create_markdown_doc", return_value={"url": "https://example.feishu.cn/docx/test"}) as create:
-            a = video.export_summary("a", source["source_id"], "实际字幕总结")
+            a = video.export_summary("a", source["source_id"], note)
             video.read_video("a", URL, True)
-            b = video.export_summary("a", source["source_id"], "实际字幕总结")
+            b = video.export_summary("a", source["source_id"], note)
         self.assertEqual(a["url"], b["url"])
         self.assertTrue(b["already_saved"])
         self.assertEqual(create.call_count, 1)
-        self.assertIn(URL, create.call_args.args[1])
+        self.assertNotIn(URL, create.call_args.args[1])
         self.assertIn("已获取平台字幕", create.call_args.args[1])
+        from desk_companion.video_document import render_note
+        self.assertTrue(create.call_args.args[1].endswith(render_note(SOURCE, note)[0]))
 
     def test_unknown_write_is_not_repeated_or_leaked(self):
         source = video.read_video("a", URL)
@@ -141,7 +217,8 @@ class VideoTests(unittest.TestCase):
             return process
         start = time.monotonic()
         with patch.object(video.subprocess, "Popen", side_effect=popen):
-            with self.assertRaises(RuntimeError): video.extract(URL, {}, statuses.append, timeout=.3)
+            # Windows 冷启动可能超过 300ms，仍需验证状态送达后挂起的进程被杀掉。
+            with self.assertRaises(RuntimeError): video.extract(URL, {}, statuses.append, timeout=1)
         self.assertLess(time.monotonic() - start, 4)
         self.assertIsNotNone(created[0].poll())
         self.assertEqual(statuses, ["metadata"])

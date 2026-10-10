@@ -1,13 +1,9 @@
 /// <reference types="vite/client" />
 import type { ChatItem } from "./api";
 import type { BoardPayload } from "./board";
-import type { DepotPayload } from "./depot";
 import type { ContextView, MemoryPayload } from "./memory";
-import type { RaisePayload } from "./raise";
-import type { LogPayload, MaaSnap } from "./maa";
 import type { FeishuSnap } from "./feishu";
 import { statusFromPayload, type StatusKind, type StatusView } from "./status";
-import skillRaw from "../../../skills/maa-log-analysis/SKILL.md?raw";
 
 // 仅开发态。浏览器打开 /client.html?debug=1 不连 Tauri、不打模型，直接铺一条样本回复。
 // 代理用 window.__deskDebug.snapshot() 读气泡里的标签，确认列表和代码块真的排出来了。
@@ -15,7 +11,6 @@ import skillRaw from "../../../skills/maa-log-analysis/SKILL.md?raw";
 export const COMPOSER_FIXTURE = {
   ok: true,
   skills: [
-    { id: "maa-log-analysis", label: "maa-log-analysis", description: "看日志为什么挂了" },
     { id: "feishu-doc-writing", label: "feishu-doc-writing", description: "写今日工作总结" },
     { id: "weekly-retro", label: "weekly-retro", description: "写本周复盘" },
     { id: "github-repo-summary", label: "github-repo-summary", description: "总结仓库近况" },
@@ -93,42 +88,6 @@ export type BubbleSnap = {
 
 export const BOARD_NOW = "2026-10-05T15:00:00+08:00";
 
-const DEPOT_SAMPLE_ICON =
-  "data:image/svg+xml," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="8" fill="#1d4e89"/><path d="M32 14 L46 32 L32 50 L18 32 Z" fill="#ffffff"/></svg>',
-  );
-
-export const DEPOT_FIXTURE: DepotPayload = {
-  ok: true,
-  depot_sync: "2026-10-06T08:00:00+08:00",
-  depot_day: "2026-10-06",
-  today: true,
-  count: 4,
-  groups: [
-    {
-      id: "chip",
-      label: "芯片",
-      items: [{ id: "3221", name: "近卫芯片", tier: 3, count: 2, icon_id: null, icon: DEPOT_SAMPLE_ICON }],
-    },
-    {
-      id: "elite",
-      label: "精英材料",
-      items: [{ id: "30012", name: "固源岩", tier: 2, count: 12, icon_id: null, icon: DEPOT_SAMPLE_ICON }],
-    },
-    {
-      id: "other",
-      label: "其余",
-      items: [{ id: "32001", name: "芯片助剂", tier: 4, count: 1, icon_id: null }],
-    },
-    {
-      id: "unlisted",
-      label: "对不上材料表",
-      items: [{ id: "", name: "手写材料", tier: null, count: 7, icon_id: null }],
-    },
-  ],
-};
-
 // 日程故意打乱。待办一条在样本时刻之前，一条在之后。
 export const BOARD_FIXTURE: BoardPayload = {
   ok: true,
@@ -155,56 +114,11 @@ export const BOARD_FIXTURE: BoardPayload = {
 export const STATUS_RAW: Record<StatusKind, unknown> = {
   feishu: { ok: true, logged_in: true, user_name: "博士" },
   github: { ok: false, error: "gh auth login" },
-  maa: { ok: true, status: "idle", message: "还没开始。" },
-  skland: { ok: true, has_token: false, hint: "还没有森空岛凭证。" },
 };
 
 export const STATUS_FIXTURE: StatusView[] = (Object.keys(STATUS_RAW) as StatusKind[]).map((kind) =>
   statusFromPayload(kind, STATUS_RAW[kind]),
 );
-
-export const MAA_SKILL_RAW = skillRaw;
-
-export const MAA_IDLE_FIXTURE: MaaSnap = {
-  ok: true,
-  status: "idle",
-  message: "还没开始。",
-  running: false,
-  current_task: "",
-  task_error: "",
-};
-
-export const MAA_LOG_FIXTURE: LogPayload = {
-  ok: true,
-  highlights: [{ time: "15:01:00", title: "任务出错: 仓库识别", text: "任务出错: 仓库识别" }],
-  desk: { path: "desk_companion.log", note: "", items: [] },
-  maa_gui: {
-    path: "gui.log",
-    note: "",
-    items: [{ time: "15:01:00", title: "任务出错: 仓库识别", text: "任务出错: 仓库识别" }],
-  },
-  maa_depot: {
-    path: "asst.log",
-    note: "",
-    items: [{ time: "15:01:02", title: "没对上「全部」页签", text: "failed to match DepotAllTab" }],
-  },
-};
-
-export const MAA_EMPTY_LOG: LogPayload = {
-  ok: true,
-  highlights: [],
-  desk: { path: "desk_companion.log", note: "今日没有出错。", items: [] },
-  maa_gui: { path: "gui.log", note: "", items: [] },
-  maa_depot: { path: "asst.log", note: "", items: [] },
-};
-
-export const MAA_UNKNOWN_LOG: LogPayload = {
-  ok: true,
-  highlights: [],
-  desk: { path: "desk_companion.log", items: [{ title: "崩溃", text: "CRASH 样本，技能表里没有这条。" }] },
-  maa_gui: { path: "gui.log", items: [] },
-  maa_depot: { path: "asst.log", items: [] },
-};
 
 export const FEISHU_LOGGED_OUT: FeishuSnap = {
   ok: true,
@@ -270,19 +184,6 @@ export const MEMORY_FIXTURE: MemoryPayload = {
   items: [
     { role: "user", text: "用中文短句回我" },
     { role: "pet", text: "好。" },
-  ],
-};
-
-export const RAISE_FIXTURE: RaisePayload = {
-  ok: true,
-  depot_day: "2026-10-06",
-  roster: [
-    { operator: "银灰", rank: "精一" },
-    { operator: "陈", rank: "精一" },
-  ],
-  lines: [
-    { name: "近卫芯片", tier: 3, need: 10, have: 2, in_depot: true, short: 8 },
-    { name: "固源岩", tier: 2, need: 12, have: 0, in_depot: false, short: 12 },
   ],
 };
 
@@ -384,8 +285,8 @@ export const NOTE_FIXTURE = {
 };
 
 export const KNOWLEDGE_CATALOG = [
-  { title: "注意力机制", url: "https://example.feishu.cn/docx/doc-token", token: "doc-token" },
-  { title: "面试提纲", url: "https://example.feishu.cn/docx/interview", token: "interview" },
+  { title: "注意力机制", url: "https://example.feishu.cn/docx/doc-token", token: "doc-token", source: "wiki", space_id: "tech", space_name: "前沿技术" },
+  { title: "面试提纲", url: "https://example.feishu.cn/docx/interview", token: "interview", source: "wiki", space_id: "learning", space_name: "学习与实践" },
 ];
 
 function knowledgeStepSnap(root: ParentNode): { step: string; open: string; label: string }[] {
@@ -396,20 +297,17 @@ function knowledgeStepSnap(root: ParentNode): { step: string; open: string; labe
   }));
 }
 
-export function debugPane(): "chat" | "board" | "maa" | "feishu" | "settings" | "depot" | "raise" | "memory" | "knowledge" | "note" | "automation" | "monitor" | "video" | null {
+export function debugPane(): "chat" | "board" | "feishu" | "settings" | "memory" | "knowledge" | "note" | "automation" | "monitor" | "video" | null {
   if (!import.meta.env.DEV) return null;
   const value = new URLSearchParams(location.search).get("debug");
   if (value === "1" || value === "chat") return "chat";
   if (value === "note") return "note";
   if (value === "board") return "board";
-  if (value === "maa") return "maa";
   if (value === "feishu") return "feishu";
   if (value === "automation") return "automation";
   if (value === "monitor") return "monitor";
   if (value === "video") return "video";
   if (value === "settings") return "settings";
-  if (value === "depot") return "depot";
-  if (value === "raise") return "raise";
   if (value === "memory") return "memory";
   if (value === "knowledge") return "knowledge";
   return null;
@@ -432,31 +330,14 @@ export type BoardSnap = {
 
 export type StatusSnap = { kind: string; state: string; line: string }[];
 
-export type MaaSnapShot = {
-  pane: string;
-  running: string;
-  message: string;
-  task: string;
-  startDisabled: boolean;
-  stopDisabled: boolean;
-  kind: string;
-  hits: { source: string; text: string }[];
-  fetches: string;
-};
-
 export function installDeskDebug(api: {
   seed: (items: ChatItem[]) => void;
   seedBoard: (payload: BoardPayload, nowIso: string) => void;
   seedStatus: (raw: Record<string, unknown>) => void;
   openBoard: (refresh?: boolean) => void;
   requestToday: () => void;
-  openMaa: () => void;
-  analyzeMaa: () => void;
-  seedMaaLogs: (logs: LogPayload) => void;
   openFeishu: () => void;
   seedFeishu: (snap: FeishuSnap) => void;
-  seedDepot: (payload: DepotPayload) => void;
-  seedRaise: (payload: RaisePayload) => void;
   seedMemory: (payload: MemoryPayload) => void;
   shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
   setSampling: (effort: string, temperature: number, topP: number) => void;
@@ -475,13 +356,8 @@ export function installDeskDebug(api: {
     seedStatus: api.seedStatus,
     openBoard: api.openBoard,
     requestToday: api.requestToday,
-    openMaa: api.openMaa,
-    analyzeMaa: api.analyzeMaa,
-    seedMaaLogs: api.seedMaaLogs,
     openFeishu: api.openFeishu,
     seedFeishu: api.seedFeishu,
-    seedDepot: api.seedDepot,
-    seedRaise: api.seedRaise,
     seedMemory: api.seedMemory,
     shouldReloadBoard: api.shouldReloadBoard,
     setSampling: api.setSampling,
@@ -607,83 +483,6 @@ export function installDeskDebug(api: {
         state: el.getAttribute("data-state") || "",
         line: (el.querySelector("[data-status-line]") as HTMLElement | null)?.innerText || "",
       }));
-    },
-    maaSnapshot(): MaaSnapShot {
-      const root = document.querySelector("[data-maa]");
-      const start = document.querySelector("[data-maa-start]") as HTMLButtonElement | null;
-      const stop = document.querySelector("[data-maa-stop]") as HTMLButtonElement | null;
-      const board = document.querySelector("[data-board]");
-      return {
-        pane: document.querySelector("[data-pane]")?.getAttribute("data-pane") || "",
-        running: root?.getAttribute("data-maa-running") || "",
-        message: (document.querySelector("[data-maa-message]") as HTMLElement | null)?.innerText || "",
-        task: (document.querySelector("[data-maa-task]") as HTMLElement | null)?.innerText || "",
-        startDisabled: !!start?.disabled,
-        stopDisabled: !!stop?.disabled,
-        kind: document.querySelector("[data-maa-analysis]")?.getAttribute("data-maa-kind") || "",
-        hits: [...document.querySelectorAll("[data-maa-hit]")].map((el) => ({
-          source: el.getAttribute("data-source") || "",
-          text: (el as HTMLElement).innerText,
-        })),
-        fetches: board?.getAttribute("data-board-fetches") || "",
-      };
-    },
-    depotSnapshot(): {
-      pane: string;
-      ok: string;
-      error: string;
-      sync: string;
-      day: string;
-      today: string;
-      empty: string;
-      groups: string[];
-      items: { name: string; count: string; group: string; tier: string; icon: string }[];
-    } {
-      const root = document.querySelector("[data-depot]");
-      return {
-        pane: document.querySelector("[data-pane]")?.getAttribute("data-pane") || "",
-        ok: root?.getAttribute("data-depot-ok") || "",
-        error: (document.querySelector("[data-depot-error]") as HTMLElement | null)?.innerText || "",
-        sync: (document.querySelector("[data-depot-sync]") as HTMLElement | null)?.innerText || "",
-        day: document.querySelector("[data-depot-sync]")?.getAttribute("data-depot-day") || "",
-        today: document.querySelector("[data-depot-sync]")?.getAttribute("data-depot-today") || "",
-        empty: (document.querySelector("[data-depot-empty]") as HTMLElement | null)?.innerText || "",
-        groups: [...document.querySelectorAll("[data-depot-group]")].map((el) => el.getAttribute("data-depot-group") || ""),
-        items: [...document.querySelectorAll("[data-depot-item]")].map((el) => ({
-          name: el.getAttribute("data-name") || "",
-          count: el.getAttribute("data-count") || "",
-          group: el.getAttribute("data-group") || "",
-          tier: el.getAttribute("data-tier") || "",
-          icon: el.getAttribute("data-icon") || "",
-        })),
-      };
-    },
-    raiseSnapshot(): {
-      pane: string;
-      ok: string;
-      error: string;
-      day: string;
-      targets: { name: string; rank: string }[];
-      lines: { name: string; need: string; have: string; short: string; recorded: string }[];
-    } {
-      const root = document.querySelector("[data-raise]");
-      return {
-        pane: document.querySelector("[data-pane]")?.getAttribute("data-pane") || "",
-        ok: root?.getAttribute("data-raise-ok") || "",
-        error: (document.querySelector("[data-raise-error]") as HTMLElement | null)?.innerText || "",
-        day: document.querySelector("[data-raise-sync]")?.getAttribute("data-raise-day") || "",
-        targets: [...document.querySelectorAll("[data-raise-target]")].map((el) => ({
-          name: el.getAttribute("data-name") || "",
-          rank: el.getAttribute("data-rank") || "",
-        })),
-        lines: [...document.querySelectorAll("[data-raise-line]")].map((el) => ({
-          name: el.getAttribute("data-name") || "",
-          need: el.getAttribute("data-need") || "",
-          have: el.getAttribute("data-have") || "",
-          short: el.getAttribute("data-short") || "",
-          recorded: el.getAttribute("data-recorded") || "",
-        })),
-      };
     },
     memorySnapshot(): {
       pane: string;
@@ -986,13 +785,8 @@ declare global {
       seedStatus: (raw: Record<string, unknown>) => void;
       openBoard: (refresh?: boolean) => void;
       requestToday: () => void;
-      openMaa: () => void;
-      analyzeMaa: () => void;
-      seedMaaLogs: (logs: LogPayload) => void;
       openFeishu: () => void;
       seedFeishu: (snap: FeishuSnap) => void;
-      seedDepot: (payload: DepotPayload) => void;
-      seedRaise: (payload: RaisePayload) => void;
       seedMemory: (payload: MemoryPayload) => void;
       shouldReloadBoard: (opts: { refresh: boolean; seen: boolean; debug: boolean }) => boolean;
       setSampling: (effort: string, temperature: number, topP: number) => void;
@@ -1041,26 +835,6 @@ declare global {
       snapshot: () => BubbleSnap[];
       boardSnapshot: () => BoardSnap;
       statusSnapshot: () => StatusSnap;
-      maaSnapshot: () => MaaSnapShot;
-      depotSnapshot: () => {
-        pane: string;
-        ok: string;
-        error: string;
-        sync: string;
-        day: string;
-        today: string;
-        empty: string;
-        groups: string[];
-        items: { name: string; count: string; group: string; tier: string; icon: string }[];
-      };
-      raiseSnapshot: () => {
-        pane: string;
-        ok: string;
-        error: string;
-        day: string;
-        targets: { name: string; rank: string }[];
-        lines: { name: string; need: string; have: string; short: string; recorded: string }[];
-      };
       memorySnapshot: () => {
         pane: string;
         face: string;

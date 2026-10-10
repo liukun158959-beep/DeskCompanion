@@ -175,8 +175,10 @@ def fetch_docx_markdown(doc: str, label: str) -> str:
     title = (label or "").strip() or "（无标题）"
     if not target or any(ch.isspace() for ch in target):
         raise RuntimeError(f"《{title}》没有可用的文档地址。")
+    from .wiki_connection import profile_for
+    profile = profile_for(target)
     raw = _run_lark(
-        [
+        (["--profile", profile] if profile else []) + [
             "docs",
             "+fetch",
             "--as",

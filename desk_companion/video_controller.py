@@ -20,10 +20,15 @@ def snapshot(host):
 def start(host, url):
     _, canonical = normalize_url(url)
     session = "video-" + uuid.uuid4().hex
-    text = ("请读取并用中文总结这个视频：" + canonical +
-            "\n先调用 read_video，依据实际字幕总结核心观点、技术细节与带时间点的出处。"
-            "未取得字幕时只说明实际取得的元数据和局限；这次只读取和总结，不要保存、写入或执行其它修改。")
-    task_id = host.tasks.submit(text, session, "video", source={"workflow": "video", "video_url": canonical})
+    text = ("请读取这个视频并用中文生成简洁易懂的学习笔记：" + canonical +
+            "\n先调用 read_video 并读完可用字幕分页，围绕视频的主题和学习目标组织内容。"
+            "概念科普优先讲清术语定义、解决的问题和相互关系，只拓展必要的关联名词，"
+            "用一个短例子串起来；不要长篇复述作者论证或展开无关评析。保留少量关键时间点出处。"
+            "作者观点、补充知识和你的分析简洁区分；当前技术能力或关键争议可联网核实。"
+            "未取得字幕时只说明实际取得的元数据和局限。你只需读取并输出笔记；"
+            "应用会依据用户设置在任务成功后自动归档，生成回答即可；其它修改不属于本次任务。")
+    task_id = host.tasks.submit(text, session, "video", source={"workflow": "video", "video_url": canonical},
+                                workflow="video_note", video_url=canonical)
     host._focused_task = task_id
     return {"ok": True, "task_id": task_id}
 

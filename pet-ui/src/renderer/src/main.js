@@ -100,9 +100,6 @@ window.petAPI.onBridge((msg) => {
     case "today_notice":
       bubble.todayNotice(p.text);
       break;
-    case "maa_notice":
-      bubble.maaNotice(p.text);
-      break;
     case "hide_bubble":
       bubble.hideBubble();
       break;

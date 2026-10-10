@@ -9,11 +9,13 @@ import subprocess
 import threading
 import time
 import uuid
+from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
 
 from .feishu_tools import CREATE_NO_WINDOW, _lark_cmd, _run_lark
 from .paths import data_root
+from .feishu_connection import ConnectionFailure, classify
 
 EVENT_KEY = "im.message.receive_v1"
 MENU_EVENT = "application.bot.menu_v6"
@@ -37,19 +39,25 @@ def json_data(raw: str) -> dict:
 
 
 def identify(profile: str = "") -> dict:
-    current = json_data(_run_lark((["--profile", profile] if profile else []) + ["whoami"]))
+    try:
+        current = json_data(_run_lark((["--profile", profile] if profile else []) + ["whoami"], timeout=20))
+    except Exception as exc:
+        raise classify(exc) from None
     profile = current.get("profile")
     if not isinstance(profile, str) or not profile:
-        raise RuntimeError("飞书 CLI 没有配置应用，请先执行 lark-cli config init。")
-    verified = json_data(_run_lark(["--profile", profile, "auth", "status", "--json", "--verify"]))
+        raise ConnectionFailure("configuration", "飞书 CLI 没有配置应用，请先执行 lark-cli config init。")
+    try:
+        verified = json_data(_run_lark(["--profile", profile, "auth", "status", "--json", "--verify"], timeout=20))
+    except Exception as exc:
+        raise classify(exc, verification=True) from None
     identities = verified.get("identities") or {}
     bot, user = identities.get("bot") or {}, identities.get("user") or {}
     if bot.get("available") is not True or bot.get("verified") is not True:
-        raise RuntimeError("飞书应用机器人身份不可用，请检查 CLI 应用配置和机器人能力。")
+        raise classify(bot, verification=True)
     if user.get("available") is not True or not str(user.get("openId") or "").startswith("ou_"):
-        raise RuntimeError("请先在飞书页登录，用登录用户绑定允许私聊的本人身份。")
+        raise ConnectionFailure("user_auth", "请先在飞书页登录，用登录用户绑定允许私聊的本人身份。")
     if verified.get("appId") != current.get("appId"):
-        raise RuntimeError("飞书应用身份发生变化，请重新检查 CLI 配置。")
+        raise ConnectionFailure("binding", "飞书应用身份发生变化，请重新检查 CLI 配置。")
     return {"profile": profile, "app_id": verified["appId"], "app_name": bot.get("appName", ""),
             "owner_id": user["openId"], "owner_name": user.get("userName", "")}
 
@@ -182,6 +190,33 @@ class FeishuAgent:
         self._diagnostic = ""
         self._last_reply = ""
         self._inbox = None
+        self._verifying = False
+        self._identity_retry = None
+        self._consume_failure = None
+        self._connection_events = deque(maxlen=30)
+        self._connection_attempts = 0
+        self._next_retry_at = 0
+        self._connected_at = 0
+        self._failure_kind = ""
+
+    def _connection_event(self, stage, fault=None, delay=0):
+        with self._lock:
+            row = {"at": time.time(), "stage": stage, "kind": fault.kind if fault else "",
+                   "message": str(fault) if fault else "", "retry_in": delay}
+            self._connection_events.append(row)
+            if stage in {"verifying", "connecting"}:
+                self._connection_attempts += 1
+            self._next_retry_at = row["at"] + delay if delay else 0
+            if fault:
+                self._failure_kind = fault.kind
+            if stage == "connected":
+                self._connected_at = row["at"]
+                self._failure_kind = ""
+        from .logutil import log
+        try:
+            log(f"飞书连接 stage={stage} kind={row['kind']} retry_in={delay}")
+        except OSError:
+            pass
 
     def settings(self) -> dict:
         config = self._config()
@@ -222,7 +257,7 @@ class FeishuAgent:
     def _require_stopped(self):
         if self._closing.is_set():
             raise RuntimeError("知行正在退出。")
-        if (self._supervisor and self._supervisor.is_alive()) or (self._worker and self._worker.is_alive()) or (self._menu_thread and self._menu_thread.is_alive()):
+        if self._verifying or (self._identity_retry and self._identity_retry.is_alive()) or (self._supervisor and self._supervisor.is_alive()) or (self._worker and self._worker.is_alive()) or (self._menu_thread and self._menu_thread.is_alive()):
             raise RuntimeError("请先停止接入，并等待当前任务结束后再修改设置。")
 
     def update_credentials(self, profile: str, app_secret: str) -> dict:
@@ -259,16 +294,17 @@ class FeishuAgent:
             if type(count) is not int or count < 0:
                 raise RuntimeError("连接数无效")
             local = json.loads(_run_lark([*args, "event", "status", "--json"]))
+            current = json_data(_run_lark([*args, "whoami"], timeout=20))
             apps = local.get("apps", [])
-            running = any(row.get("running") is True for row in apps)
+            running = any(row.get("running") is True and (row.get("app_id") or row.get("appId")) == current.get("appId")
+                          for row in apps)
             return {"ok": True, "count": count, "local_running": running,
                     "message": f"平台在线连接：{count}；本机监听：{'运行中' if running else '未运行'}。" +
                     ("可以尝试接入。" if count == 0 else "本机消费者可共享同一 CLI 连接。" if running else "仍有其他服务连接，请等待清除或停止原服务。"),
                     "checked_at": time.strftime("%Y-%m-%d %H:%M:%S")}
         except Exception as exc:
-            invalid = "invalid_client" in str(exc) or "client secret is invalid" in str(exc).lower()
-            return {"ok": False, "error": "本机 App Secret 无效，请填写重置后的密钥并更新。" if invalid else
-                    "无法检查平台连接，请检查应用凭证、网络和 CLI 配置。"}
+            fault = classify(exc)
+            return {"ok": False, "error": str(fault), "failure_kind": fault.kind, "retryable": fault.retryable}
 
     def _config(self) -> dict:
         path = config_path()
@@ -287,27 +323,87 @@ class FeishuAgent:
                     "error": self._error, "diagnostic": self._diagnostic, "last_reply": self._last_reply,
                     "binding": self._binding or config.get("binding", {}), "event": EVENT_KEY,
                     "mode": "本人私聊", "config_path": str(config_path()), "settings": self.settings(),
-                    "menu_connected": self._menu_ready, "menu_error": self._menu_error}
+                    "menu_connected": self._menu_ready, "menu_error": self._menu_error,
+                    "connection_attempts": self._connection_attempts, "connected_at": self._connected_at,
+                    "next_retry_at": self._next_retry_at, "failure_kind": self._failure_kind,
+                    "connection_events": list(self._connection_events)}
 
     def enable(self) -> dict:
         with self._lock:
             if self._closing.is_set():
                 raise RuntimeError("知行正在退出，不能启动飞书连接。")
-            if self._supervisor and self._supervisor.is_alive():
+            if self._verifying or (self._identity_retry and self._identity_retry.is_alive()) or (self._supervisor and self._supervisor.is_alive()):
                 return self.status()
             if self._worker and self._worker.is_alive():
                 raise RuntimeError("上次 Agent 仍在结束当前任务，请稍后再接入。")
             profile = self.settings()["profile"]
+            self._stop.clear()
+            self._verifying = True
+            self._state = "connecting"
+            self._error = ""
+            self._connection_event("verifying")
+        try:
             identity = identify(profile) if profile else identify()
-            if self._closing.is_set():
-                raise RuntimeError("知行正在退出，不能启动飞书连接。")
-            previous = self._config().get("binding") or {}
-            if previous and any(previous.get(key) != identity[key] for key in ("app_id", "owner_id", "profile")):
-                raise RuntimeError("已绑定的应用或用户与当前 CLI 不同。请检查 CLI profile；不要将个人工具连接到另一身份。")
-            self._binding = identity
-            self._save(True)
-            self._start()
-            return self.status()
+            with self._lock:
+                self._activate_identity(identity)
+                return self.status()
+        except Exception as exc:
+            with self._lock:
+                if self._closing.is_set() or self._stop.is_set():
+                    raise RuntimeError("飞书接入已停止，不再启动监听。") from None
+                fault = classify(exc)
+                self._error = str(fault)
+                settings = self.settings()
+                if fault.retryable and settings["auto_reconnect"]:
+                    self._binding = self._config().get("binding") or {}
+                    self._save(True)
+                    self._state = "reconnecting"
+                    self._connection_event("reconnecting", fault, settings["retry_min"])
+                    self._identity_retry = threading.Thread(target=self._retry_identity, args=(profile, settings),
+                                                           daemon=True, name="feishu-identity-retry")
+                    self._identity_retry.start()
+                    return self.status()
+                self._state = "error"
+                self._connection_event("error", fault)
+                raise fault from None
+        finally:
+            with self._lock:
+                self._verifying = False
+
+    def _activate_identity(self, identity):
+        if self._closing.is_set() or self._stop.is_set():
+            raise RuntimeError("知行正在退出或接入已停止，不能启动飞书连接。")
+        previous = self._config().get("binding") or {}
+        if previous and any(previous.get(key) != identity[key] for key in ("app_id", "owner_id", "profile")):
+            raise ConnectionFailure("binding", "已绑定的应用或用户与当前 CLI 不同。请检查 CLI profile；不要将个人工具连接到另一身份。")
+        self._binding = identity
+        self._save(True)
+        self._start()
+
+    def _retry_identity(self, profile, settings):
+        delay = settings["retry_min"]
+        while not self._stop.wait(delay) and not self._closing.is_set():
+            self._connection_event("verifying")
+            try:
+                identity = identify(profile) if profile else identify()
+                with self._lock:
+                    if self._stop.is_set() or self._closing.is_set():
+                        return
+                    self._activate_identity(identity)
+                return
+            except Exception as exc:
+                with self._lock:
+                    if self._stop.is_set() or self._closing.is_set():
+                        return
+                    fault = classify(exc)
+                    self._error = str(fault)
+                    if not fault.retryable:
+                        self._state = "error"
+                        self._connection_event("error", fault)
+                        return
+                    delay = min(delay * 2, settings["retry_max"])
+                    self._state = "reconnecting"
+                    self._connection_event("reconnecting", fault, delay)
 
     def _save(self, enabled: bool):
         config = self._config()
@@ -322,8 +418,10 @@ class FeishuAgent:
                 self.enable()
         except Exception as exc:
             with self._lock:
+                if self._stop.is_set() or self._closing.is_set():
+                    return
                 self._state = "error"
-                self._error = str(exc)
+                self._error = str(classify(exc))
 
     def _start(self):
         self._stop.clear()
@@ -385,6 +483,7 @@ class FeishuAgent:
                 except (OSError, ValueError):
                     pass
             self._state = "stopped"
+            self._connection_event("stopped")
             menu = self._menu_process
             if menu and menu.stdin:
                 try:
@@ -408,6 +507,8 @@ class FeishuAgent:
             self._supervisor.join(timeout=1)
         if self._menu_thread and self._menu_thread is not threading.current_thread():
             self._menu_thread.join(timeout=1)
+        if self._identity_retry and self._identity_retry is not threading.current_thread():
+            self._identity_retry.join(timeout=1)
         return self.status()
 
     def _consume_menu(self):
@@ -521,6 +622,9 @@ class FeishuAgent:
                 self._ready.clear()
                 with self._lock:
                     self._state = "connecting"
+                    self._consume_failure = None
+                    connected_before = self._connected_at
+                    self._connection_event("connecting")
                 command = [*_lark_cmd(), "--profile", self._binding["profile"], "event", "consume", EVENT_KEY, "--as", "bot"]
                 env = os.environ.copy()
                 env["PATH"] = str(Path(command[0]).parent) + os.pathsep + env.get("PATH", "")
@@ -552,27 +656,33 @@ class FeishuAgent:
                 for pipe in (process.stdin, process.stdout, process.stderr):
                     if pipe and not pipe.closed:
                         pipe.close()
-                was_ready = self._ready.is_set()
+                was_ready = self._ready.is_set() or self._connected_at != connected_before
                 self._ready.clear()
                 with self._lock:
                     self._process = None
                 if self._stop.is_set():
                     return
-                if code in (1, 2, 3):
+                fault = self._consume_failure or classify({}, exit_code=code)
+                if code not in (1, 2, 3) and not self._consume_failure:
+                    fault = classify("network disconnected", exit_code=code)
+                if not fault.retryable:
                     with self._lock:
                         self._state = "error"
-                        self._error = self._error or "飞书监听无法启动，请检查机器人权限、事件订阅和长连接占用。"
+                        self._error = str(fault)
+                        self._connection_event("error", fault)
                     return
                 if not settings["auto_reconnect"]:
                     with self._lock:
                         self._state = "error"
-                        self._error = self._error or "飞书连接中断，自动重连已关闭，请手动重新接入。"
+                        self._error = str(fault) + "自动重连已关闭，请手动重新接入。"
+                        self._connection_event("error", fault)
                     return
                 if was_ready:
                     delay = settings["retry_min"]
                 with self._lock:
                     self._state = "reconnecting"
-                    self._error = self._error or "飞书连接中断，正在重连。"
+                    self._error = str(fault)
+                    self._connection_event("reconnecting", fault, delay)
                 if self._stop.wait(delay):
                     return
                 delay = min(delay * 2, settings["retry_max"])
@@ -580,7 +690,9 @@ class FeishuAgent:
             self._ready.clear()
             with self._lock:
                 self._state = "error"
-                self._error = str(exc)
+                fault = classify(exc)
+                self._error = str(fault)
+                self._connection_event("error", fault)
         finally:
             self._ready.clear()
 
@@ -594,6 +706,7 @@ class FeishuAgent:
                         if not self._stop.is_set():
                             self._state = "connected"
                             self._error = ""
+                            self._connection_event("connected")
                             self._ready.set()
                             self._wake.set()
                     continue
@@ -606,15 +719,14 @@ class FeishuAgent:
                             envelope = ""
                         continue
                     envelope = ""
+                    if not isinstance(value, dict):
+                        continue
                     error = value.get("error") or {}
                     if value.get("ok") is False:
                         with self._lock:
-                            if error.get("subtype") == "failed_precondition":
-                                self._error = "这个应用已有其他服务的长连接。请停止原服务，等待平台连接数归零后重试；本机 CLI 无法远程停止它。"
-                            elif error.get("subtype") == "missing_scope":
-                                self._error = "机器人缺少权限：" + "、".join(error.get("missing_scopes") or []) + "。请在应用后台开通并发布，用户登录不能代替机器人授权。"
-                            else:
-                                self._error = str(error.get("message") or "飞书监听失败。")[:1000]
+                            self._consume_failure = classify(error)
+                            self._error = str(self._consume_failure)
+                            self._ready.clear()
                 elif "WARN" in text or "drop" in text.lower():
                     with self._lock:
                         self._diagnostic = "飞书监听报告了事件丢失或处理警告，请查看 CLI 事件诊断。"

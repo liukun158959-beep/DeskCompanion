@@ -14,12 +14,11 @@ from .logutil import log
 from .memory import TZ
 
 CONFIG_NAME = "automation_jobs.json"
-ACTIONS = ("retro_gen", "retro_write", "maa_daily", "ai_news")
+ACTIONS = ("retro_gen", "retro_write", "ai_news")
 ACTION_ORDER = ACTIONS
 ACTION_LABELS = {
     "retro_gen": "生成本周复盘",
     "retro_write": "覆盖写入飞书",
-    "maa_daily": "开始清日常",
     "ai_news": "AI/Agent 资讯日报",
 }
 RESULTS = ("", "ok", "fail", "missed", "queued", "running")
@@ -74,6 +73,9 @@ def load_store() -> dict:
     names = []
     ids = []
     for index, item in enumerate(jobs):
+        # 旧游戏作业不再加载或执行，其余作业继续正常运行。
+        if isinstance(item, dict) and item.get("action") == "maa_daily":
+            continue
         rec = _parse_job(item, path, index)
         if rec["id"] in ids:
             raise RuntimeError(f"{path} 有重复 id {rec['id']}。")
@@ -379,9 +381,6 @@ class AutomationScheduler:
         pet = getattr(host, "pet", None)
         if pet is not None and pet.busy:
             return True
-        maa = getattr(host, "maa", None)
-        if maa is not None and getattr(maa, "_running", False):
-            return True
         return False
 
     def _execute(self, job_id: str) -> None:
@@ -408,11 +407,6 @@ class AutomationScheduler:
 
                 markdown = _week_summary_markdown()
                 overwrite_markdown_doc(doc, markdown)
-            elif action == "maa_daily":
-                result = self.host.maa_start_daily()
-                if not result.get("ok"):
-                    raise RuntimeError(result.get("error") or "开始清日常失败。")
-                self._wait_maa()
             else:
                 raise RuntimeError(f"不认识的动作 {action}。")
         except Exception as extra:
@@ -503,12 +497,6 @@ class AutomationScheduler:
         with self._lock:
             self._queued.clear()
 
-    def _wait_maa(self) -> None:
-        maa = self.host.maa
-        while getattr(maa, "_running", False):
-            time.sleep(1)
-        if getattr(maa, "status", "") == "error":
-            raise RuntimeError(maa.message or "清日常失败。")
 
     def _notify(self) -> None:
         host = self.host

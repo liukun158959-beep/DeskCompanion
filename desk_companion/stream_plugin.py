@@ -21,11 +21,6 @@ TOOL_STATUS = {
     "read_skill": "正在查阅这项任务的操作规程。",
     "list_skills": "正在检查可用技能。",
     "read_recent_errors": "正在检查最近的错误日志。",
-    "get_arknights_skland": "正在读取理智和周玉记录。",
-    "get_arknights_operator": "正在查询干员培养进度。",
-    "get_arknights_today_plan": "正在核对今天的刷图计划。",
-    "start_arknights_daily": "正在向 MAA 下达日常任务。",
-    "stop_arknights_daily": "正在停止 MAA 当前动作。",
 }
 
 

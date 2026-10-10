@@ -10,7 +10,7 @@ Windows 上常驻的个人 Agent 工作台：对话、记忆、任务执行、�
 
 项目原名 DeskCompanion。更名后仍沿用 `%LOCALAPPDATA%/DeskCompanion` 用户数据目录和原客户端标识，已有配置、聊天、记忆、素材及版本介绍偏好继续使用。源码目录和内部 Python 模块名保持兼容。
 
-Live2D Core 和凯尔希素材不随公开包分发；未配置形象时桌宠窗口显示入口卡片，对话、记忆和笔记仍可使用。知识库检索运行库与权重、飞书 CLI、GitHub CLI、MAA 需按需另外安装。
+Live2D Core 和凯尔希素材不随公开包分发；未配置形象时桌宠窗口显示入口卡片，对话、记忆和笔记仍可使用。知识库检索运行库与权重、飞书 CLI、GitHub CLI 需按需另外安装。
 
 ## 本机跑（当前 Tauri 客户端）
 
@@ -28,17 +28,23 @@ pnpm tauri dev
 
 主窗启动时显示动画和当前准备阶段，助手连接、会话读取完成后切入主界面。失败会显示原因和「重新加载」；后端未能启动时按提示检查终端并重启客户端。
 
+顶部工具栏提供新对话、任务、视频与主题切换。连续点击版本号5次打开 Agent 调试弹窗，查看每次实际发送的完整消息、工具定义、模型返回与原始 SSE，比较相邻请求、检查工具结果，或按需调用模型协助解读。支持导出 JSON 与暂停记录；完整载荷从新调用开始保存在本机。见 [Agent 调试窗口](docs/AGENT_DEBUG.md)。
+
+源码版已移除明日方舟清日常、仓库、培养计划及森空岛同步，旧游戏定时任务不再加载执行。原有本地账号配置与游戏安装保留。Agent 通用规则与视频规则已精简，保留日程、记忆、资料来源、字幕覆盖和保存回执等必要约束。
+
 没有模型配置时自动打开首次引导，按「了解功能 → 连接模型 → 可选功能」准备。API 地址填服务商的 Base URL（通常含 `/v1`），模型名填控制台的准确模型 ID，API Key 填独立密码框。支持 OpenAI Chat Completions 兼容接口；模型调用工具还需支持 tool calling。保存后点「测试连通」，测试会发一条简短请求并可能计费。已有配置不会强制重新引导；「设置 → 打开使用引导」可随时重新查看配置、数据目录和其他能力的入口。
 
 Live2D Cubism Core 和形象包不在本仓库。源码运行的 Core 放到 `client/public/Core/live2dcubismcore.js`，凯尔希形象放到 `client/public/skins/kaltsit/`（包含 `kaltsit.model3.json` 及其引用的素材）。便携版的素材位置在使用引导里显示，缺少素材时显示主窗入口卡片。
 
 旧入口仍保留：在 `pet-ui` 执行 `npm install`、`npm run build`，回到项目根目录执行 `python -m desk_companion`。旧入口使用 `pet-ui/public/Core/` 和 `skins/`，依然需要 Electron、pywebview 和托盘依赖。
 
-看板侧边栏「模型」填写 API Key。看板「自动化任务 → 明日方舟」同步森空岛前，在本项目 `.env` 写 `SKLAND_TOKEN=`（浏览器登录森空岛后打开 `https://web-api.skland.com/account/info/hg`，复制 `data.content`）。不要把这串发到对话或推进 Git。多个方舟官服时再写 `SKLAND_UID=`。问「今天刷什么」走看板按钮或对话工具，仓必须是今天。
+看板侧边栏「模型」填写 API 地址、模型名和 API Key。
 
 ## 视频信息与字幕总结
 
-源码版现已支持在桌面对话或飞书私聊发送 Bilibili / YouTube 链接，读取实际字幕并总结、继续追问，以及保存到飞书文档。监控台提供字幕状态、平台章节、视频网络/登录设置和保存入口。缺少字幕时只介绍已取得的元数据；不下载音视频、不编造全片观点。详见 [视频总结说明](docs/VIDEO_SUMMARIES.md)。此功能尚未包含在已发布的 v0.2.2 包中。
+源码版现已支持在桌面对话或飞书私聊发送 Bilibili / YouTube 链接，读取实际字幕并生成简洁学习笔记、继续追问，以及保存到飞书文档。内容围绕视频主题组织：概念科普讲清术语含义与关系，补充必要背景和短例子；当前技术能力可联网核实，补充知识与视频观点分开标明，也可明确要求进一步展开。监控台提供字幕状态、平台章节、视频网络/登录设置和保存入口。文档使用飞书内嵌网页呈现原视频，核心流程或概念关系可整理成飞书原生流程图。缺少字幕时只介绍已取得的元数据，不编造全片观点。详见 [视频总结说明](docs/VIDEO_SUMMARIES.md)。此功能从 v0.2.3 起包含在 Windows 发布包中。
+
+视频页与知识库页支持连接飞书知识空间，选择独立的视频笔记父文档，开启读取完成后自动生成子文档。知识空间中的文档可勾选加入现有本地检索库；日报继续写入资讯工作流自己的父文档。归档保留来源与保存回执，失败不丢失已完成答案，相同来源与正文复用链接。
 
 ## 每日资讯与定时任务
 
@@ -52,7 +58,7 @@ Live2D Cubism Core 和形象包不在本仓库。源码运行的 Core 放到 `cl
 
 ## 仓库里有什么
 
-- `desk_companion/` Python 壳：宠物窗、看板、飞书、MAA 远控、GitHub 状态
+- `desk_companion/` Python 壳：宠物窗、看板、飞书、GitHub 状态
 - `client/` Tauri + React 主客户端与 Live2D 宠物窗，本地 WebSocket 连接 Python 后端
 - `pet-ui/` 保留的 Electron 旧入口
 - `docs/prd_desktop_pet.md` 产品拍板
@@ -60,7 +66,7 @@ Live2D Cubism Core 和形象包不在本仓库。源码运行的 Core 放到 `cl
 
 ## 不会进 Git 的
 
-`.env`、`user_state.json`、`maa.json`、`arknights_account.json`、`memory/`、`skins/` 素材、`_refs/`、Live2D Core。
+`.env`、`user_state.json`、`memory/`、`skins/` 素材、`_refs/`、Live2D Core。
 
 ## GitHub 页
 

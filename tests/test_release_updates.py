@@ -3,6 +3,7 @@ import io
 import tempfile
 import time
 import unittest
+import tomllib
 from pathlib import Path
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
@@ -50,6 +51,8 @@ class UpdateTests(unittest.TestCase):
         self.assertTrue((info.MANIFEST.parent/manifest["image"]).is_file())
         for file in ("client/package.json", "client/src-tauri/tauri.conf.json"):
             self.assertEqual(json.loads((root/file).read_text(encoding="utf-8"))["version"], manifest["version"])
+        for file, section in (("pyproject.toml", "project"), ("client/src-tauri/Cargo.toml", "package")):
+            self.assertEqual(tomllib.loads((root/file).read_text(encoding="utf-8"))[section]["version"], manifest["version"])
 
 
 class NotificationTests(unittest.TestCase):

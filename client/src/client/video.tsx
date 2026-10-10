@@ -3,7 +3,7 @@ import { rpc, type BackendInfo } from "./api";
 import { Markdown, MdLink } from "./Markdown";
 import { invoke } from "@tauri-apps/api/core";
 
-type VideoEvent = { seq: number; kind: string; ts: number; data: string | { tool?: string; status?: string } };
+type VideoEvent = { seq: number; kind: string; ts: number; data: string | { tool?: string; status?: string; message?: string } };
 type VideoTask = { id: string; channel: string; text: string; state: string; answer: string; error: string;
   created: number; elapsed: number; events?: VideoEvent[]; source: { video_url?: string } };
 const STATES: Record<string, string> = { queued: "排队中", running: "读取与整理中", cancelling: "正在停止", succeeded: "已完成",
@@ -66,9 +66,9 @@ export function VideoPane({ info, debug = false }: { info: BackendInfo | null; d
           value={url} onChange={event => setUrl(event.target.value)} placeholder="粘贴 Bilibili / YouTube 单个视频链接" disabled={busy} />
         <button className="rounded-lg bg-primary px-5 py-3 text-sm text-primary-foreground disabled:opacity-40"
           disabled={!info || debug || busy || !url.trim()} onClick={() => void run("start_video_task", { url: url.trim() })}>
-          {busy ? "正在提交…" : "读取并总结"}</button>
+          {busy ? "正在提交…" : "读取并分析"}</button>
       </div>
-      <p className="mt-3 text-sm text-muted-foreground">读取标题、简介、章节和实际字幕，生成带时间点的中文总结。没有取得字幕时会说明原因与覆盖范围。</p>
+      <p className="mt-3 text-sm text-muted-foreground">围绕视频主题讲清重点，用概念关系、必要的背景拓展和短例子帮助理解。当前技术能力可联网核实，补充知识与视频观点分别标明；缺少字幕时会说明原因与覆盖范围。</p>
       <p className="mt-1 text-xs text-muted-foreground">每个新链接使用独立会话。切换页面后任务继续执行，可在此查看结果、追问并保存到飞书。</p>
     </section>
     <VideoLogin info={info} debug={debug} url={url.trim() || detail?.source.video_url || ""} />
@@ -97,10 +97,10 @@ export function VideoPane({ info, debug = false }: { info: BackendInfo | null; d
           {!debug && <TaskVideos key={detail.id} info={info} taskId={detail.id} state={detail.state} />}
           <details><summary className="cursor-pointer text-sm">任务时间线</summary>
             <ol className="mt-3 space-y-2 text-xs text-muted-foreground">{(detail.events || []).filter(event => ["status", "tool_start", "tool_end", "failure"].includes(event.kind)).map(event =>
-              <li key={event.seq}>{new Date(event.ts * 1000).toLocaleTimeString()} · {typeof event.data === "string" ? event.data : `${event.kind === "tool_start" ? "调用" : "返回"} ${event.data.tool || "工具"} ${event.data.status || ""}`}</li>)}</ol>
+              <li key={event.seq}>{new Date(event.ts * 1000).toLocaleTimeString()} · {typeof event.data === "string" ? event.data : event.kind === "failure" ? event.data.message || "任务失败" : `${event.kind === "tool_start" ? "调用" : "返回"} ${event.data.tool || "工具"} ${event.data.status || ""}`}</li>)}</ol>
           </details>
           <label className="block text-sm">继续追问<textarea className="mt-2 block w-full rounded-lg border border-border bg-background p-3" rows={3}
-            value={question} onChange={event => setQuestion(event.target.value)} placeholder="例如：展开讲讲 03:20 的技术细节；或重新获取这个视频的字幕。" /></label>
+            value={question} onChange={event => setQuestion(event.target.value)} placeholder="例如：这个类比省略了什么？用一个实际项目解释这些概念如何配合；或只给我简短摘要。" /></label>
           <p className="text-xs text-muted-foreground">保留所选视频会话的上下文；来自飞书的任务在此追问只生成本地回答。</p>
           <button className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-40" disabled={!info || busy || debug || active(detail) || !question.trim()}
             onClick={() => void run("continue_video_task", { task_id: detail.id, text: question.trim() })}>继续追问</button>
@@ -109,10 +109,67 @@ export function VideoPane({ info, debug = false }: { info: BackendInfo | null; d
     </div>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <VideoSettings info={info} debug={debug} expanded />
+    <WikiConnectionSettings info={info} debug={debug} />
   </div>;
 }
 
 type Settings = { proxy: string; cookie_file: string };
+
+type WikiSettings = { wiki_url: string; video_parent_url: string; profile: string; auto_video_save: boolean };
+
+export function WikiConnectionSettings({ info, debug = false, onSaved }: {
+  info: BackendInfo | null; debug?: boolean; onSaved?: () => void;
+}) {
+  const [settings, setSettings] = useState<WikiSettings>({ wiki_url: "", video_parent_url: "", profile: "", auto_video_save: false });
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    setLoaded(false);
+    if (!info || debug) return;
+    let live = true;
+    rpc<{ settings: WikiSettings }>(info, "load_wiki_connection").then(result => {
+      if (!result.settings || typeof result.settings.auto_video_save !== "boolean") throw new Error("知识库连接设置未加载，请重启更新后的桌宠。");
+      if (live) { setSettings(result.settings); setLoaded(true); }
+    }).catch(err => { if (live) setMessage(String(err)); });
+    return () => { live = false; };
+  }, [info, debug]);
+  async function save() {
+    if (!info || debug || !loaded || busy) return;
+    setBusy(true); setMessage("");
+    try {
+      const result = await rpc<{ ok?: boolean; error?: string; settings: WikiSettings }>(info, "save_wiki_connection", { payload: settings });
+      if (result.ok === false) throw new Error(result.error || "知识库连接失败。");
+      setSettings(result.settings);
+      setMessage(settings.wiki_url ? "知识库已连接。可在知识库页勾选云端文档加入本地检索。" : "已断开知识库连接。");
+      onSaved?.();
+    } catch (err) { setMessage(String(err)); }
+    finally { setBusy(false); }
+  }
+  return <section aria-label="飞书知识库连接" className="mt-4 rounded-lg border border-border bg-card/70 p-4">
+    <h2 className="text-sm font-medium">飞书知识库连接</h2>
+    <p className="mt-2 text-sm text-muted-foreground">连接知识空间后，云端文档会列入可添加的知识来源。视频页、桌面对话和飞书私聊读取完成后，可自动归档到独立的视频父文档。</p>
+    <div className="mt-3 space-y-3 text-sm">
+      <label className="block">知识库页面链接<input aria-label="知识库页面链接" type="url" className="mt-1 block w-full rounded border border-border bg-background p-2"
+        value={settings.wiki_url} disabled={!loaded || busy} placeholder="https://…feishu.cn/wiki/…"
+        onChange={e => setSettings({ ...settings, wiki_url: e.target.value })} /></label>
+      <label className="block">视频笔记父文档链接<input aria-label="视频笔记父文档链接" type="url" className="mt-1 block w-full rounded border border-border bg-background p-2"
+        value={settings.video_parent_url} disabled={!loaded || busy} placeholder="同一知识库中用于管理视频笔记的父文档"
+        onChange={e => setSettings({ ...settings, video_parent_url: e.target.value })} /></label>
+      <label className="block">飞书应用配置名（可选）<input aria-label="飞书应用配置名" className="mt-1 block w-full rounded border border-border bg-background p-2"
+        value={settings.profile} disabled={!loaded || busy} placeholder="留空使用当前登录的应用"
+        onChange={e => setSettings({ ...settings, profile: e.target.value })} /></label>
+      <label className="flex items-center gap-2"><input type="checkbox" aria-label="读取完成后自动保存视频笔记" checked={settings.auto_video_save}
+        disabled={!loaded || busy} onChange={e => setSettings({ ...settings, auto_video_save: e.target.checked })} />读取完成后自动保存视频笔记</label>
+      <p className="text-xs text-muted-foreground">原视频使用飞书内嵌网页；需要说明流程或概念关系时，笔记可包含飞书原生流程图。</p>
+      <p className="text-xs text-muted-foreground">保存按钮会核实目标文档属于同一知识库。完整读取可用字幕后才自动保存；追问保留在会话中，可手动保存。本轮说“不要保存”会跳过归档。关闭开关影响之后提交的任务。</p>
+      {settings.wiki_url && <MdLink href={settings.wiki_url}>打开知识库</MdLink>}
+      <button className="rounded bg-secondary px-3 py-2 disabled:opacity-40" disabled={!loaded || busy || debug} onClick={() => void save()}>
+        {busy ? "正在检查连接…" : "保存知识库连接"}</button>
+      {message && <p role="status">{message}</p>}
+    </div>
+  </section>;
+}
 
 type LoginState = { platform: string; state: "missing" | "saved" | "expired" | "error"; saved_at?: number; error?: string };
 export function VideoLogin({ info, debug = false, url = "" }: { info: BackendInfo | null; debug?: boolean; url?: string }) {
@@ -176,7 +233,7 @@ export function VideoLogin({ info, debug = false, url = "" }: { info: BackendInf
 }
 type Source = { source_id: string; title: string; author: string; url: string; platform: string;
   subtitle_notice: string; subtitle_language: string; segment_count: number; truncated: boolean;
-  chapters: { title: string; start: number }[]; export_state?: string; document_url?: string };
+  chapters: { title: string; start: number }[]; export_state?: string; document_url?: string; presentation_warnings?: string[] };
 
 export function VideoSettings({ info, debug = false, expanded = false }: { info: BackendInfo | null; debug?: boolean; expanded?: boolean }) {
   const [settings, setSettings] = useState<Settings>({ proxy: "", cookie_file: "" });
@@ -270,9 +327,10 @@ export function TaskVideos({ info, taskId, state }: { info: BackendInfo | null; 
       {source.chapters.length > 0 && <details className="mt-2"><summary>平台章节（{source.chapters.length}）</summary>
         <ul className="mt-2 space-y-1">{source.chapters.map((chapter, i) => <li key={i}>{Math.floor(chapter.start / 60)}:{String(Math.floor(chapter.start % 60)).padStart(2, "0")} · {chapter.title}</li>)}</ul>
       </details>}
-      <button className="mt-2 rounded bg-secondary px-3 py-2 disabled:opacity-40" disabled={!!busy || state !== "succeeded" || (source.export_state === "pending" && !absent[source.source_id])}
-        onClick={() => void save(source)}>{busy === source.source_id ? "正在保存…" : "保存当前答案到飞书文档"}</button>
+      <button className="mt-2 rounded bg-secondary px-3 py-2 disabled:opacity-40" disabled={!!busy || state !== "succeeded" || source.export_state === "saved" || !!saved[source.source_id] || (source.export_state === "pending" && !absent[source.source_id])}
+        onClick={() => void save(source)}>{busy === source.source_id ? "正在保存…" : source.export_state === "saved" || saved[source.source_id] ? "已保存到飞书" : "保存当前答案到飞书文档"}</button>
       {(saved[source.source_id] || source.document_url) && <MdLink href={saved[source.source_id] || source.document_url}>打开视频笔记</MdLink>}
+      {source.presentation_warnings?.length ? <p className="mt-1 text-xs text-muted-foreground">{source.presentation_warnings.join("；")}</p> : null}
     </div>)}
     {error && <p className="mt-2 text-destructive" role="alert">{error}</p>}
   </section>;

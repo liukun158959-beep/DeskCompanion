@@ -206,6 +206,7 @@ def public_view() -> dict:
             "url": doc["url"],
             "chars": doc["chars"],
             "chunks": len(own),
+            **_source_metadata(doc),
         })
         for row in own:
             chunks.append({
@@ -493,11 +494,27 @@ def delete_model(repo: str) -> dict:
     return public_view()
 
 
-def add_doc(doc_id: str, label: str) -> dict:
+def _source_metadata(doc):
+    from .wiki_connection import cached_source
+    source = {**doc, **(cached_source(doc['id']) if doc.get('source') != 'local' else {})}
+    return {key: source[key] for key in ('source', 'space_id', 'space_name', 'local_path', 'folder_name') if key in source}
+
+
+def add_doc(doc_id: str, label: str, source: dict | None = None) -> dict:
     target = (doc_id or "").strip()
     title = (label or "").strip() or "（无标题）"
     if not target:
         raise RuntimeError("添加文档需要飞书地址或 token。")
+    metadata = {}
+    if source:
+        if not isinstance(source, dict): raise ValueError('文档来源信息不正确。')
+        metadata = {key: str(source.get(key) or '')[:200] for key in ('source', 'space_id', 'space_name')}
+    if target.startswith('local:'):
+        from .local_sources import get
+        local = get(target[6:])
+        if local['kind'] != 'file': raise ValueError('请选择文件夹内的文件加入知识库。')
+        metadata = {'source': 'local', 'space_name': local.get('folder_name') or '本地文件',
+                    'folder_name': local.get('folder_name', ''), 'local_path': local['path']}
     _require_models()
     settings = load_settings()
     with _LOCK:
@@ -505,6 +522,8 @@ def add_doc(doc_id: str, label: str) -> dict:
         _require_same_index(index, settings)
         if any(doc["id"] == target for doc in index["docs"]):
             raise RuntimeError(f"《{title}》已经在库里。")
+        if metadata.get('local_path') and any(doc.get('local_path') == metadata['local_path'] for doc in index['docs']):
+            raise RuntimeError(f'《{title}》已经在库里，可重建索引更新内容。')
     body = _fetch(target, title)
     made = _chunks_for(target, title, body, settings)
     _attach_vectors(made)
@@ -519,6 +538,7 @@ def add_doc(doc_id: str, label: str) -> dict:
             "url": target if target.startswith("http") else "",
             "chars": len(body),
             "updated": _now(),
+            **metadata,
         })
         index["chunks"].extend(made)
         _stamp(index, settings)
@@ -794,6 +814,12 @@ def _stamp(index: dict, settings: dict) -> None:
 
 
 def _fetch(doc_id: str, title: str) -> str:
+    if doc_id.startswith('local:'):
+        from .local_sources import get, extract
+        path = Path(get(doc_id[6:])['path'])
+        from .local_sources import _linked
+        if _linked(path): raise ValueError('本地文件已变为链接，请重新选择原始文件。')
+        return extract(path)
     from .feishu_docs import fetch_docx_markdown
 
     return fetch_docx_markdown(doc_id, title)

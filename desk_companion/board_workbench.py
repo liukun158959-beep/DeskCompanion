@@ -17,14 +17,6 @@ CLI_CHIPS = (
     ("read_video", "视频信息与字幕"),
     ("read_video_transcript", "视频字幕原文"),
 )
-MAA_CHIPS = (
-    ("open_game", "打开游戏"),
-    ("start_daily", "开始清日常"),
-    ("stop", "停止清日常"),
-    ("sync_skland", "同步森空岛"),
-    ("today_farm", "今天刷什么"),
-)
-NEED_REPO_TOOLS = frozenset({"github_recent", "github_roadmap"})
 
 
 class BoardWorkbench:
@@ -56,7 +48,6 @@ class BoardWorkbench:
             "skills": skills,
             "cli": [{"id": key, "label": label} for key, label in CLI_CHIPS],
             "github": github,
-            "maa": [{"id": key, "label": label} for key, label in MAA_CHIPS],
         }
 
     def new_chat_session(self) -> dict:
@@ -108,11 +99,18 @@ class BoardWorkbench:
 
     def list_feishu_docs(self) -> dict:
         from .feishu_docs import list_my_docx
-
-        try:
-            return {"ok": True, "items": list_my_docx()}
-        except Exception as extra:
-            return {"ok": False, "error": str(extra)}
+        from .wiki_connection import catalog, load_settings, enrich_catalog
+        items, errors = [], []
+        for get in (list_my_docx, catalog):
+            try:
+                items.extend(get())
+            except Exception as extra:
+                items.extend(getattr(extra, 'items', []))
+                errors.append(str(extra))
+        unique = {item["token"]: item for item in items}
+        grouped = enrich_catalog(list(unique.values())) if unique else []
+        return {"ok": bool(items) or not errors, "items": grouped,
+                "error": "\n".join(errors), "wiki_connected": bool(load_settings().get("wiki_url"))}
 
     def write_week_review_doc(self, payload: dict) -> dict:
         from .board_data import load_today_snapshot, save_today_fields
@@ -185,12 +183,7 @@ class BoardWorkbench:
         if self.pet.busy or self._agent_running:
             return {"ok": False, "error": "凯尔希正在说话。"}
         try:
-            maa = chips.get("maa")
             retro = chips.get("retro")
-            if maa:
-                if any(chips.get(key) for key in ("skills", "cli", "github", "retro")):
-                    raise RuntimeError("方舟动作不能和技能、CLI、仓库或复盘同时点选。")
-                return self._run_maa_chip(str(maa))
             if retro:
                 raise RuntimeError(
                     "复盘请用自动化任务「周复盘」生成或写入，不要和聊天混在一条发送里。"
@@ -201,21 +194,6 @@ class BoardWorkbench:
         except Exception as extra:
             return {"ok": False, "error": str(extra)}
 
-    def _run_maa_chip(self, action: str) -> dict:
-        allowed = {key for key, _label in MAA_CHIPS}
-        if action not in allowed:
-            raise RuntimeError(f"没有方舟动作 {action!r}。")
-        if action == "open_game":
-            return self.maa_open_game()
-        if action == "start_daily":
-            return self.maa_start_daily()
-        if action == "stop":
-            return self.maa_stop()
-        if action == "sync_skland":
-            return self.sync_skland()
-        if action == "today_farm":
-            return self.compute_farm_plan()
-        raise RuntimeError(f"没有方舟动作 {action!r}。")
 
     def _compose_turn(self, text: str, chips: dict) -> str:
         body = (text or "").strip()
@@ -224,7 +202,8 @@ class BoardWorkbench:
         github = chips.get("github") or ""
         docs = chips.get("docs") or []
         mcp = chips.get("mcp") or []
-        extra_keys = set(chips) - {"skills", "cli", "github", "maa", "retro", "docs", "mcp"}
+        attachments = chips.get("attachments") or []
+        extra_keys = set(chips) - {"skills", "cli", "github", "retro", "docs", "mcp", "attachments"}
         if extra_keys:
             raise RuntimeError(f"不认识的点选：{', '.join(sorted(extra_keys))}。")
         if skills and (
@@ -246,9 +225,11 @@ class BoardWorkbench:
             raise RuntimeError("选了 GitHub 近况或路线图时必须同时选一个已列出的仓库。")
         _check_doc_picks(docs)
         _check_mcp_picks(mcp)
-        if not body and not skills and not cli and not github and not docs and not mcp:
+        if type(attachments) is not list or len(attachments) > 50 or any(not isinstance(x, str) for x in attachments):
+            raise RuntimeError("本地附件必须为最多 50 个资料编号。")
+        if not body and not skills and not cli and not github and not docs and not mcp and not attachments:
             raise RuntimeError("输入框是空的。")
-        if not skills and not cli and not github and not docs and not mcp:
+        if not skills and not cli and not github and not docs and not mcp and not attachments:
             return body
         lines = ["【本轮指定】"]
         for name in skills:
@@ -266,6 +247,11 @@ class BoardWorkbench:
                 f"- 飞书文档《{_doc_title_link(doc)}》的正文已附在本轮【文档正文】，"
                 "只根据正文回答，不要编文档里没有的内容。"
             )
+        if attachments:
+            from .local_sources import get
+            for ident in attachments:
+                source = get(ident)
+                lines.append(f'- 本地附件《{source["name"]}》（编号 {ident}），资料见本轮【本地附件】。')
         from .mcp_client import mcp_fn_name
 
         for item in mcp:

@@ -34,7 +34,7 @@ class VideoPageTests(unittest.TestCase):
         self.assertEqual({row["channel"] for row in rows}, {"video"})
         self.assertEqual(rows[0]["source"]["video_url"], "https://www.youtube.com/watch?v=abcdefghijk")
         self.assertEqual(len(video_controller.snapshot(self.host)["items"]), 2)
-        self.assertIn("不要保存", rows[0]["text"])
+        self.assertIn("应用会依据用户设置在任务成功后自动归档", rows[0]["text"])
         before = len(self.host.tasks.list()["items"])
         for url in ("https://localhost/video", "file:///cookies.txt", "https://youtube.com.evil/watch?v=abcdefghijk"):
             with self.assertRaises(ValueError):
