@@ -30,7 +30,7 @@ import { AgentMonitor } from "./agent-monitor";
 import { AgentDebugDialog } from "./agent-debug";
 import { TopToolbar } from "./top-toolbar";
 import { LocalSourcesDialog, type LocalSource } from "./local-sources";
-import { SideWorkspace, previewSource } from "./side-workspace";
+import { SideWorkspace, previewSource, openTerminal } from "./side-workspace";
 import { LoadingText } from "./loading-text";
 import { AutomationPane } from "./automation";
 import { VideoPane, WikiConnectionSettings } from "./video";
@@ -2100,11 +2100,11 @@ export function App() {
           model={modelItems.find(m => m.id === activeModelId)?.model || ""} connected={!!info || !!debugKind} busy={busy || noteBusy} dark={dark}
           onTheme={() => setDark(!dark)} onNewChat={() => { setPane("chat"); setChatFace("thread"); void newSession(); }}
           onMonitor={() => setPane("monitor")} onVideo={() => setPane("video")} onDebug={() => setAgentDebugOpen(true)}
-          onFile={() => setLocalDialog("file")} onFolder={() => setLocalDialog("folder")} />
+          onFile={() => setLocalDialog("file")} onFolder={() => setLocalDialog("folder")} onTerminal={openTerminal} />
         {localDialog && <LocalSourcesDialog info={info} initialKind={localDialog} debug={!!debugPane()} onClose={() => { setLocalDialog(null); setLocalDialogMinimized(false); }} onPreview={previewSource} onMinimizedChange={setLocalDialogMinimized}
           onAttach={sources => { setPickedAttachments(prev => [...new Map([...prev, ...sources].map(s => [s.id, s])).values()]); setLocalDialog(null); setPane("chat"); setChatFace("thread"); setNoteSessionId(null); }}
           onIndex={source => knowledgeCall("add_knowledge", { doc_id: `local:${source.id}`, label: source.name })} />}
-        <SideWorkspace info={info} enabled={pane === "chat" && chatFace === "thread"} debug={!!debugKind}
+        <SideWorkspace info={info} session={noteSessionId || thread?.sessionId || ""} onTerminalDraft={text => { setDraft(previous => `${previous}${previous ? "\n\n" : ""}${text}`); setComposerNotice("终端输出已加入草稿，尚未发送。"); }} enabled={pane === "chat" && chatFace === "thread"} debug={!!debugKind}
           suspended={agentDebugOpen || showGuide || !!cropSrc || releaseIntro.open || (!!localDialog && !localDialogMinimized)}
           attachments={pickedAttachments}
           onAttach={sources => { setPickedAttachments(prev => [...new Map([...prev, ...sources].map(s => [s.id, s])).values()]); setComposerNotice("资料已加入本轮，尚未发送。"); }}

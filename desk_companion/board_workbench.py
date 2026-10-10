@@ -16,6 +16,8 @@ CLI_CHIPS = (
     ("web_search", "联网搜索"),
     ("read_video", "视频信息与字幕"),
     ("read_video_transcript", "视频字幕原文"),
+    ("execute_command", "沙箱执行命令"),
+    ("read_terminal_output", "命令执行记录"),
 )
 
 

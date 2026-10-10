@@ -12,6 +12,42 @@ class Bridge:
         from .onboarding import status
         return status()
 
+    def terminal_status(self, refresh=False, distro=None):
+        from .terminal import manager
+        return manager().status(refresh, distro)
+
+    def terminal_start(self, command, session="", cwd="/workspace", timeout=60, owner="user", task_id="", request_id=""):
+        from .terminal import manager
+        return manager().start(command, session, cwd, timeout, owner, task_id, request_id)
+
+    def terminal_list(self, session=None):
+        from .terminal import manager
+        return manager().list(session)
+
+    def terminal_read(self, job_id, offset=0):
+        from .terminal import manager
+        return manager().read(job_id, offset)
+
+    def terminal_input(self, job_id, text=None, cols=None, rows=None):
+        from .terminal import manager
+        return manager().input(job_id, text, cols, rows)
+
+    def terminal_cancel(self, job_id):
+        from .terminal import manager
+        return manager().cancel(job_id)
+
+    def terminal_files(self, session=""):
+        from .terminal import manager
+        return manager().files(session)
+
+    def terminal_import_files(self, source_ids, session=""):
+        from .terminal import manager
+        return manager().import_files(session, source_ids)
+
+    def terminal_preview_file(self, name, session=""):
+        from .terminal import manager
+        return manager().preview_file(session, name)
+
     def check_updates(self) -> dict:
         from .release_info import check_updates
         return check_updates()

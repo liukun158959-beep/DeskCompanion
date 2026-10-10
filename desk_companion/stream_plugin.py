@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from atlas.core.plugin import BasePlugin
 
 TOOL_STATUS = {
+    "execute_command": "正在沙箱中执行命令，可在侧栏终端查看输出或停止。",
+    "read_terminal_output": "正在读取命令执行记录。",
     "read_video": "正在读取视频信息与字幕。",
     "read_video_transcript": "正在核对视频字幕原文。",
     "save_video_summary": "正在将视频总结保存到飞书文档。",

@@ -6,10 +6,10 @@ export function versionTap(previous: { count: number; time: number }, now: numbe
   return { count: count >= 5 ? 0 : count, time: now, open: count >= 5 };
 }
 
-export function TopToolbar({ title, model, connected, busy, dark, onTheme, onNewChat, onMonitor, onVideo, onDebug, onFile, onFolder }: {
+export function TopToolbar({ title, model, connected, busy, dark, onTheme, onNewChat, onMonitor, onVideo, onDebug, onFile, onFolder, onTerminal }: {
   title: string; model: string; connected: boolean; busy: boolean; dark: boolean;
   onTheme: () => void; onNewChat: () => void; onMonitor: () => void; onVideo: () => void; onDebug: () => void;
-  onFile?: () => void; onFolder?: () => void;
+  onFile?: () => void; onFolder?: () => void; onTerminal?: () => void;
 }) {
   const taps = useRef({ count: 0, time: 0 });
   return <header data-top-toolbar className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border bg-card/85 px-4 py-1">
@@ -21,6 +21,7 @@ export function TopToolbar({ title, model, connected, busy, dark, onTheme, onNew
       <button className="desk-menu-item" onClick={onNewChat}>新对话</button>
       <button className="desk-menu-item" onClick={onMonitor}>任务</button>
       <button className="desk-menu-item" onClick={onVideo}>视频</button>
+      <button className="desk-menu-item" disabled={!connected} onClick={onTerminal}>终端</button>
       <button className="desk-menu-item" disabled={!connected} onClick={onFile}>文件</button>
       <button className="desk-menu-item" disabled={!connected} onClick={onFolder}>文件夹</button>
       <button className="desk-menu-item" aria-label="切换主题" onClick={onTheme}>{dark ? "浅色" : "深色"}</button>

@@ -280,6 +280,8 @@ class TaskManager:
         except Exception:
             self.finish(task_id, "failed", "无法启动独立任务，请检查后端日志或重启桌宠。")
         finally:
+            from .terminal import manager
+            manager().cancel_task(task_id)
             if tree:
                 tree.close()
             if process:

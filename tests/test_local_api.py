@@ -84,6 +84,26 @@ class LocalApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(message["result"]["ok"])
             self.assertEqual(message["result"]["result"]["latest_version"], "0.3.0")
 
+    async def test_terminal_worker_uses_shared_rpc_without_waiting_for_agent_turn_lock(self):
+        from desk_companion import terminal, agent_debug
+        from unittest.mock import Mock
+        import base64
+        controller = Mock()
+        controller.start.return_value = {"ok": True, "job": {"id": "j1"}}
+        controller.read.return_value = {"ok": True, "job": {"id": "j1", "state": "succeeded", "output_bytes": 6, "exit_code": 0},
+                                        "data": base64.b64encode(b"hello\n").decode(), "offset": 6}
+        tool = next(s for s in terminal.tool_specs(lambda: "worker-session") if s["name"] == "execute_command")
+        self.assertEqual(tool["retry_max"], 0)
+        self.assertFalse(self.host.agent.tools.get("execute_command").isIdempotent)
+        self.assertEqual(self.host.agent.tools.get("execute_command").retry_max, 0)
+        with patch.object(terminal, "_manager", controller), patch.dict(os.environ, {
+                "DESK_TERMINAL_PORT": str(self.port), "DESK_TERMINAL_TOKEN": "test-token"}):
+            with self.host.turn_lock, agent_debug.context(task_id="worker-task"):
+                result = await asyncio.wait_for(asyncio.to_thread(tool["func"], {"command": "echo hello"}), 5)
+        self.assertEqual(json.loads(result)["output"], "hello\n")
+        self.assertEqual(controller.start.call_args.args[1], "worker-session")
+        self.assertEqual(controller.start.call_args.args[4:6], ("agent", "worker-task"))
+
     async def test_attachment_cancel_and_picker_are_available_while_agent_lock_is_held(self):
         import uuid
         ident = uuid.uuid4().hex

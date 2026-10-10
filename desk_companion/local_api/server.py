@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import hmac
+import os
 
 from websockets.asyncio.server import serve
 
@@ -22,6 +23,8 @@ from .host import HeadlessApp
 # 白名单：bridge 上可无头调用的数据方法。窗口/UI 类（close_bubble/fit_card/
 # open_url/ask_today/ask_logs/close_board/send_chat）与流式（send_board_chat）不在此。
 RPC_METHODS = frozenset({
+    "terminal_status", "terminal_start", "terminal_list", "terminal_read", "terminal_input", "terminal_cancel",
+    "terminal_files", "terminal_import_files", "terminal_preview_file",
     "load_video_login", "save_video_login", "clear_video_login",
     "list_video_tasks", "start_video_task", "continue_video_task",
     "load_video_settings", "save_video_settings", "list_task_videos", "export_task_video",
@@ -162,7 +165,7 @@ def _dispatch(method: str, args: dict) -> dict:
             from ..agent_debug import context
             with context(session=HOST.state.session_id, channel="backend"):
                 return target(**kwargs)
-        if method in {"check_updates", "list_agent_tasks", "get_agent_task", "cancel_agent_task", "continue_agent_task", "save_agent_task_settings", "load_task_progress",
+        if method.startswith("terminal_") or method in {"check_updates", "list_agent_tasks", "get_agent_task", "cancel_agent_task", "continue_agent_task", "save_agent_task_settings", "load_task_progress",
                       "list_debug_calls", "get_debug_call", "set_debug_recording", "explain_debug_call",
                       "load_video_settings", "save_video_settings", "list_task_videos", "export_task_video",
                       "load_wiki_connection", "save_wiki_connection",
@@ -326,6 +329,8 @@ async def main() -> None:
     from ..agent_debug import install
     install({"channel": "backend"})
     TOKEN = args.token
+    os.environ["DESK_TERMINAL_PORT"] = str(args.port)
+    os.environ["DESK_TERMINAL_TOKEN"] = TOKEN
     HOST = HeadlessApp()
     SHUTDOWN = asyncio.Event()
     asyncio.create_task(asyncio.to_thread(HOST.feishu_agent.autostart))
@@ -342,6 +347,8 @@ async def main() -> None:
         await scheduler
         if HOST._tasks is not None:
             HOST._tasks.shutdown()
+        from ..terminal import manager
+        await asyncio.to_thread(manager().shutdown)
         await asyncio.to_thread(HOST.feishu_agent.stop, False)
 
 

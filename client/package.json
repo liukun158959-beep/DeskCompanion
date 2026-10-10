@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test tests/startup.test.cjs tests/onboarding.test.cjs tests/pet-assets.test.cjs tests/pet-menu.test.cjs tests/feishu-agent.test.cjs tests/agent-monitor.test.cjs tests/agent-debug.test.cjs tests/automation.test.cjs tests/release.test.cjs tests/video.test.cjs tests/local-sources.test.cjs tests/workspace.test.cjs",
+    "test": "node --test tests/startup.test.cjs tests/onboarding.test.cjs tests/pet-assets.test.cjs tests/pet-menu.test.cjs tests/feishu-agent.test.cjs tests/agent-monitor.test.cjs tests/agent-debug.test.cjs tests/automation.test.cjs tests/release.test.cjs tests/video.test.cjs tests/local-sources.test.cjs tests/workspace.test.cjs tests/terminal.test.cjs",
     "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "framer-motion": "^11.11.0",
     "pixi-live2d-display": "0.4.0",
     "pixi.js": "6.5.10",

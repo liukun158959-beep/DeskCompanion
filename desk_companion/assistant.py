@@ -159,6 +159,9 @@ def build_agent(host):
     from .local_sources import tool_specs
     for spec in tool_specs():
         tools.register(**spec)
+    from .terminal import tool_specs as terminal_specs
+    for spec in terminal_specs(lambda: host.state.session_id):
+        tools.register(**spec)
     def search(args):
         return WEB_SEARCH_SPEC["func"](
             args, on_status=lambda text: host.ui(lambda: host.on_stream_status(text)))

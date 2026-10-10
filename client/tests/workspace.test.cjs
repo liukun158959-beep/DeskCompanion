@@ -25,7 +25,7 @@ const renderedText = node => typeof node === 'string' ? node : (node.children ||
 const button = (view, label) => view.root.findAllByType('button').find(b => renderedText(b) === label);
 const source = { id: 's1', name: '技术.md', kind: 'file', path: 'E:/fixture/技术.md', chars: 12 };
 const markdown = { Markdown: ({ text }) => React.createElement('article', { 'data-markdown': '' }, text), openableHref: url => /^https?:\/\//.test(url || '') ? url : null };
-const mocks = rpc => ({ './api': { rpc }, './Markdown': markdown, '@tauri-apps/api/core': { isTauri: () => false }, '@tauri-apps/api/event': {} });
+const mocks = rpc => ({ './api': { rpc }, './Markdown': markdown, './terminal': { TerminalPane: () => React.createElement('section', { 'data-terminal': '' }, '终端') }, '@tauri-apps/api/core': { isTauri: () => false }, '@tauri-apps/api/event': {} });
 const workspaceProps = { info: { port: 1, token: 'test' }, enabled: true, attachments: [], onAttach() {}, onDetach() {}, onLink() {}, onRequest() {}, children: React.createElement('textarea', { defaultValue: '保留草稿' }) };
 
 test('file preview paginates without attaching, and preserves the conversation across collapse and tab switches', async () => {
@@ -85,6 +85,18 @@ test('citations from different answers do not share stale source tabs', () => {
   const cite = { n: 1, doc_id: 'same', title: 'same', doc: 'same', text: 'same', context: '# 原文A' };
   assert.notEqual(quoteIdentity(cite), quoteIdentity({ ...cite, context: '# 原文B' }));
   assert.equal(quoteIdentity(cite), quoteIdentity({ ...cite }));
+});
+
+test('terminal opens in the shared sidebar, preserves chat draft, and can be reopened', async () => {
+  environment(); let requests = 0;
+  const { SideWorkspace, openTerminal } = load('side-workspace', mocks());
+  let view; await act(async () => { view = create(React.createElement(SideWorkspace, { ...workspaceProps, onRequest: () => requests++ })); });
+  const draft = view.root.findByType('textarea');
+  await act(async () => openTerminal()); assert.equal(requests, 1); assert.equal(view.root.findAllByProps({ 'data-terminal': '' }).length, 1);
+  await act(async () => openTerminal()); assert.equal(view.root.findAllByProps({ 'data-terminal': '' }).length, 1);
+  await act(async () => button(view, '收起').props.onClick()); assert.equal(view.root.findByType('textarea'), draft);
+  await act(async () => button(view, '打开侧栏').props.onClick()); assert.equal(view.root.findAllByProps({ 'data-terminal': '' }).length, 1);
+  await act(async () => view.unmount());
 });
 
 test('slash menu picks the actual category in All and shows purpose, source and selection separately', async () => {

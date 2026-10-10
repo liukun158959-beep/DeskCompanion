@@ -17,6 +17,10 @@ _context = contextvars.ContextVar("agent_debug_context", default={})
 _default = {}
 
 
+def metadata():
+    return {**_default, **_context.get()}
+
+
 def root():
     path = data_root() / "memory" / "agent_debug"
     path.mkdir(parents=True, exist_ok=True)
