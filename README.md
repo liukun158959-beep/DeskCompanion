@@ -1,101 +1,147 @@
 # 知行 · ZhiXing
 
-Windows 上常驻的个人 Agent 工作台：对话、记忆、任务执行、知识整理与飞书协作。Atlas 提供 Agent 能力，凯尔希桌宠是可选的交互入口。
+**个人 Agent 助手：把对话、资料、工具与执行结果放进同一个工作区。**
 
-提供 Windows x64 便携版，配置保存在本机。不接插件市场。
+基于 Atlas 的 Windows 个人 Agent 工作台。用自然语言处理日程与待办、检索个人知识库、学习视频、整理飞书文档，并在隔离终端验证结果。凯尔希 Live2D 桌宠是可选入口，未配置素材也能使用主工作台。
 
-## 下载与首次使用
+[下载 Windows 版](https://github.com/liukun158959-beep/ZhiXing/releases) · [开始使用](docs/GETTING_STARTED.md) · [功能与设置](docs/WORKBENCH_REFERENCE.md) · [反馈问题](https://github.com/liukun158959-beep/ZhiXing/issues)
 
-到 [GitHub Releases](https://github.com/liukun158959-beep/ZhiXing/releases) 下载 Windows x64 便携 ZIP，完整解压后运行入口程序。v0.2.2 起使用 `ZhiXing.exe`，此前版本使用 `DeskCompanion.exe`。无需自行安装 Python、Atlas、Node 或 Rust；需要 Windows 10/11 x64 和 WebView2 Runtime。首次使用按引导填写模型信息。完整步骤、可选功能、备份与升级见 [使用说明](docs/GETTING_STARTED.md)。
+![对话与资料侧栏](docs/images/workspace.png)
 
-项目原名 DeskCompanion。更名后仍沿用 `%LOCALAPPDATA%/DeskCompanion` 用户数据目录和原客户端标识，已有配置、聊天、记忆、素材及版本介绍偏好继续使用。源码目录和内部 Python 模块名保持兼容。
+*真实 React 客户端截图，使用匿名演示数据；示例回答、模型与用量不代表性能测评。*
 
-Live2D Core 和凯尔希素材不随公开包分发；未配置形象时桌宠窗口显示入口卡片，对话、记忆和笔记仍可使用。知识库检索运行库与权重、飞书 CLI、GitHub CLI 需按需另外安装。
+## 能做什么
 
-## 本机跑（当前 Tauri 客户端）
+| 场景 | 你可以这样使用 | 实现特点 |
+| --- | --- | --- |
+| 个人任务助手 | “查看今天的日程和未完成待办，整理工作总结” | Atlas 工具调用、按需读取 Skill、本轮接入 MCP 工具、流式反馈 |
+| 有来源的知识问答 | 导入飞书文档，勾选来源提问并保存笔记 | 本地 BGE 向量召回 + CrossEncoder 重排，点击引用查看 Markdown 原文 |
+| 视频学习与归档 | 发送 Bilibili / YouTube 链接，生成学习笔记 | 读取实际字幕、章节分段、断点笔记、自动归档飞书，嵌入原视频网页 |
+| 对话旁阅读与浏览 | 打开文件、文件夹或回答中的网页 | 共用可收起侧栏；阅读不自动发给模型，点击后才加入本轮资料 |
+| 可观察的 Agent 执行 | 查看每一步调用与实际发送的模型上下文 | 任务时间线、完整请求/响应、原始 SSE、相邻调用差异与 JSON 导出 |
+| 隔离命令执行 | 让 Agent 运行 Linux 命令，查看输出和结果文件 | xterm PTY、WSL + bubblewrap、默认关闭网络、独立工作目录与停止回执 |
+| 飞书与定时工作流 | 在本人飞书私聊使用助手，定时整理资讯 | 本地长连接、文档/知识库接入、归档回执、失败恢复和重复写入防护 |
 
-源码已支持顶部「终端」入口：用户和 Agent 共用侧栏命令记录，实时查看输出、输入、停止及退出码，支持附件复制和结果文件预览。默认接入本机 WSL + bubblewrap 沙箱，使用独立工作目录并关闭网络。依赖与执行边界见 [终端说明](docs/TERMINAL.md)。
+### 知识库与笔记
 
-源码版新增 **飞书 → 在飞书使用知行 Agent**，可复用本机 CLI 的应用接入本人私聊，调用模型、工具、技能、知识库和 MCP；长连接设置支持选择应用、更新密钥、自动连接、重连间隔和占用检查。配置与故障恢复见 [飞书 Agent 接入说明](docs/FEISHU_AGENT.md)。此功能尚未包含在 0.2.1 公开包中。
+先检索再回答，把引用、原文和已存笔记一起放在工作区。支持文档切分策略调整、来源范围选择、检索候选与重排结果查看，以及 Markdown / 飞书导出。
 
-需要 Windows、Python 3.11+、本机已 `pip install -e` 的 Atlas 源码、以及本机 `gh` / `lark-cli`（看板对应页才会通）。
+![笔记问答、已存笔记与原文引用](docs/images/notebook.png)
+
+*真实笔记界面，文档与笔记均为演示数据。*
+
+### 工具执行有进度，也能停止
+
+同一会话按顺序执行，不同会话按配置并发。Agent 任务在独立进程运行；取消或超时会停止对应进程树，保留部分答案与工具记录。继续任务前核对已有写入，避免重复创建文档或重复执行命令。
+
+侧栏终端与 Agent 使用同一个执行服务。可查看实时输出、退出码与历史记录，复制已选择附件，在命令停止后预览结果文件。
+
+<img src="docs/images/terminal.png" width="440" alt="终端侧栏：真实沙箱命令输出与退出码" />
+
+*真实终端组件及开发机沙箱执行结果；截图为组件独立验证界面。*
+
+### 看清每一次模型调用
+
+连续点击顶部版本号 **5 次** 打开 Agent 调试窗口：查看实际发送的完整消息、工具 Schema、参数、模型返回、原始事件流与耗时；比较相邻请求，也可按需调用模型协助解读。记录保存在本机，不记录鉴权头和 Cookie；正文可能包含个人资料，导出前应自行检查。详见 [调试说明](docs/AGENT_DEBUG.md)。
+
+## 开始使用
+
+### Windows 便携版
+
+1. 从 [Releases](https://github.com/liukun158959-beep/ZhiXing/releases) 下载 Windows x64 ZIP，完整解压后运行 `ZhiXing.exe`。
+2. 首次引导填写模型 Base URL、准确的模型 ID 和 API Key，点击“测试连通”。模型需兼容 OpenAI Chat Completions，工具执行需支持 tool calling。
+3. 按需配置飞书、GitHub、知识库模型或桌宠素材。基础对话无需启用所有集成。
+
+需要 Windows 10/11 x64 和 WebView2 Runtime；便携版不需要自行安装 Python、Node 或 Rust。测试模型连接会发送真实请求并可能计费。
+
+**版本说明：** 最新公开包为 **v0.2.3**。本文介绍当前 `main` 源码；新侧栏、菜单调整及隔离终端尚未重新打包，公开包功能以对应 Release 说明为准。
+
+### 从源码运行
+
+需要 Python 3.11+、Node / pnpm、Rust 与 Tauri 的 Windows 构建依赖，以及本地 Atlas 源码。**Atlas 仓库当前为私有，源码运行需要已有源码或仓库访问权限；无权限用户可使用 Windows 便携版。**
 
 ```powershell
-pip install -e <Atlas目录>
-pip install -e .
+git clone https://github.com/liukun158959-beep/ZhiXing.git
+cd ZhiXing
+$atlasSource = 'E:\path\to\Atlas' # 改成你已有的 Atlas 源码路径
+python -m pip install -e $atlasSource
+python -m pip install -e .
 cd client
 pnpm install
 pnpm tauri dev
 ```
 
-主窗启动时显示动画和当前准备阶段，助手连接、会话读取完成后切入主界面。失败会显示原因和「重新加载」；后端未能启动时按提示检查终端并重启客户端。
+| 可选能力 | 额外条件 | 指南 |
+| --- | --- | --- |
+| 飞书私聊、文档和日程 | `lark-cli`、应用机器人能力及对应用户权限 | [飞书 Agent](docs/FEISHU_AGENT.md) |
+| GitHub 查询 | `gh`，已登录可访问的账号 | [功能参考](docs/WORKBENCH_REFERENCE.md) |
+| 本地知识库问答 | sentence-transformers 运行库、Embedding 与 Reranker 权重 | 客户端“知识库”页下载并检查 |
+| 视频字幕 | yt-dlp 依赖；部分视频需在设置中配置登录或网络 | [视频总结](docs/VIDEO_SUMMARIES.md) |
+| 终端沙箱 | WSL Ubuntu、Python3、bubblewrap 与可用的 user namespace | [终端与执行边界](docs/TERMINAL.md) |
+| Live2D 桌宠 | 自行提供 Cubism Core 与授权形象素材 | [使用说明](docs/GETTING_STARTED.md) |
 
-顶部工具栏提供新对话、任务、视频与主题切换。连续点击版本号5次打开 Agent 调试弹窗，查看每次实际发送的完整消息、工具定义、模型返回与原始 SSE，比较相邻请求、检查工具结果，或按需调用模型协助解读。支持导出 JSON 与暂停记录；完整载荷从新调用开始保存在本机。见 [Agent 调试窗口](docs/AGENT_DEBUG.md)。
+模型权重、飞书 CLI、GitHub CLI、Live2D 素材不随公开包提供。旧版 Electron / pywebview 入口仍保留，运行方式见 [功能参考](docs/WORKBENCH_REFERENCE.md)。
 
-源码版已移除明日方舟清日常、仓库、培养计划及森空岛同步，旧游戏定时任务不再加载执行。原有本地账号配置与游戏安装保留。Agent 通用规则与视频规则已精简，保留日程、记忆、资料来源、字幕覆盖和保存回执等必要约束。
+## 如何工作
 
-没有模型配置时自动打开首次引导，按「了解功能 → 连接模型 → 可选功能」准备。API 地址填服务商的 Base URL（通常含 `/v1`），模型名填控制台的准确模型 ID，API Key 填独立密码框。支持 OpenAI Chat Completions 兼容接口；模型调用工具还需支持 tool calling。保存后点「测试连通」，测试会发一条简短请求并可能计费。已有配置不会强制重新引导；「设置 → 打开使用引导」可随时重新查看配置、数据目录和其他能力的入口。
+```mermaid
+flowchart TD
+    UI[React + TypeScript 工作台] --> Shell[Tauri 2 / Rust 壳]
+    Shell -->|启动本机后端| API[Python localhost WebSocket API]
+    UI <-->|进程 Token 认证 / 流式事件| API
+    API --> Queue[SQLite 任务队列]
+    Queue --> Worker[独立 Python 工作进程]
+    Worker --> Agent[Atlas Agent / 工具调用循环]
+    Agent <-->|OpenAI 兼容接口| LLM[模型服务]
+    Agent --> Tools[飞书 / GitHub / 搜索 / Skill / MCP]
+    API --> RAG[本地向量召回 + 重排 / 来源引用]
+    Worker -->|认证本地 RPC| Terminal[共享终端管理服务]
+    Terminal --> Sandbox[WSL + bubblewrap / PTY]
+    Worker --> Debug[实际 HTTP 请求与响应记录]
+```
 
-Live2D Cubism Core 和形象包不在本仓库。源码运行的 Core 放到 `client/public/Core/live2dcubismcore.js`，凯尔希形象放到 `client/public/skins/kaltsit/`（包含 `kaltsit.model3.json` 及其引用的素材）。便携版的素材位置在使用引导里显示，缺少素材时显示主窗入口卡片。
+桌面与飞书共用 Agent 业务逻辑；普通对话和笔记问答采用不同入口。普通对话按用户选择附加技能、文档和工具，笔记模式先限制来源，再检索与生成。LLM 的流式输出由后端转为 WebSocket 事件，客户端更新气泡与任务状态。
 
-旧入口仍保留：在 `pet-ui` 执行 `npm install`、`npm run build`，回到项目根目录执行 `python -m desk_companion`。旧入口使用 `pet-ui/public/Core/` 和 `skins/`，依然需要 Electron、pywebview 和托盘依赖。
+| 模块 | 主要代码 | 职责 |
+| --- | --- | --- |
+| 客户端与侧栏 | `client/src/client/` | 会话、菜单、引用、文件、网页、终端与调试界面 |
+| 本机 API | `desk_companion/local_api/` | Token 认证、RPC 白名单、任务及流式事件 |
+| Agent 组装 | `assistant.py`、`local_api/host.py` | 工具注册、上下文拼接、MCP 生命周期与 Atlas 调用 |
+| 任务可靠性 | `tasks.py`、`task_worker.py`、`task_process.py` | 排队、独立执行、超时、进程回收与恢复 |
+| 知识与记忆 | `knowledge.py`、`context_pack.py`、`facts.py` | 文档切分、检索重排、上下文压缩与可追溯事实 |
+| 视频分析 | `video.py`、`video_analysis.py`、`video_archive.py` | 字幕、分段检查点、学习笔记及归档回执 |
+| 可观测与执行 | `agent_debug.py`、`terminal.py`、`sandbox_driver.py` | 全量模型载荷记录、命令管理与 Linux 沙箱策略 |
 
-看板侧边栏「模型」填写 API 地址、模型名和 API Key。
+## 能力边界
 
-## 对话工作区与资料阅读
+- **面向个人本机使用。** 尚未提供多租户权限、服务集群或生产负载评测；不宣称高并发或企业级 SLA。
+- **检索在本机完成，回答调用模型服务。** 索引是 JSON 中保存的向量、点积召回与模型重排，当前没有使用 FAISS、Milvus 等向量数据库。只有明确选择的资料才进入对应请求。
+- **视频理解依赖字幕。** 没有字幕时不能分析全片，也没有声称识别视频画面；长视频失败可保留分段笔记继续处理。
+- **MCP 适配有兼容范围。** 当前客户端使用 stdio、Content-Length 分帧与固定初始化版本；尚未适配标准换行分帧和 Streamable HTTP，不能保证兼容任意 MCP Server。
+- **沙箱隔离取决于策略与内核。** WSL 本身不能替代隔离策略；bubblewrap 关闭网络、限制挂载与资源，自检失败拒绝执行。外部 MCP / CLI 不自动获得相同沙箱保护。
+- **记忆与调试可追溯。** 对话压缩保留原始记录，模型写入事实需引用本轮用户原话。调试只能显示服务实际返回的内容，不能还原未返回的内部推理。
 
-源码客户端的底部采用文字工作栏：模型与思考强度常驻，温度与 top_p 收入「参数」，上下文比例可展开检查。输入框支持多行，Enter 发送、Shift + Enter 换行；输入 `/` 打开分类菜单，↑/↓ 选择、Enter 加入、Alt + ←/→ 切换分类、Esc 关闭。GitHub 工具选完仓库后才加入本轮。
+源码默认使用本机项目数据，发布版沿用 `%LOCALAPPDATA%/DeskCompanion`。凭据、记忆、权重和 Live2D 资源不进 Git。备份与升级参见 [使用说明](docs/GETTING_STARTED.md)。
 
-附件名和笔记引用在共享侧栏打开，可切换阅读/源码、分段继续读取、拖动调整宽度、收起或关闭；加载中也能停止等待。Markdown 显示标题、表格、代码与引用，PDF/Office 当前显示提取正文。预览不会自动发给模型，需要点击「加入本轮资料」。已存笔记使用目录链接打开正文，导出、保存飞书和删除收在「更多」，合并总结只在「多选」中出现。
+## 开发与验证
 
-对话中的网页链接使用侧栏原生浏览器，支持地址输入、前进/后退、停止、刷新，网站新窗口请求回到同一侧栏；不创建浏览器浮窗。浏览只改变侧栏内容，点击「引用链接到草稿」才添加链接。远程网页没有本地助手权限。本机服务地址、文件协议和带账号密码的地址不开放；下载与依赖独立弹窗的网页登录流程暂不支持。视频平台的专用登录窗口仍由视频设置管理。
+```powershell
+# 在项目根目录执行
+python -m unittest discover -s tests -v
 
-加载光效保留常亮文字底层；减少动态效果或高对比度模式下关闭扫光。侧栏操作保留聊天草稿，窄窗口会重排阅读区与对话区。
+# 客户端
+cd client
+pnpm test
+pnpm exec tsc --noEmit
+pnpm build
+cd src-tauri
+cargo check --locked
+```
 
-## 视频信息与字幕总结
+普通测试使用临时数据和模拟服务；真实沙箱验证需显式开启环境开关，命令见 [终端说明](docs/TERMINAL.md)。界面截图使用当前客户端组件与匿名演示资料，终端截图执行了真实沙箱命令。
 
-源码版现已支持在桌面对话或飞书私聊发送 Bilibili / YouTube 链接，读取实际字幕并生成简洁学习笔记、继续追问，以及保存到飞书文档。内容围绕视频主题组织：概念科普讲清术语含义与关系，补充必要背景和短例子；当前技术能力可联网核实，补充知识与视频观点分开标明，也可明确要求进一步展开。监控台提供字幕状态、平台章节、视频网络/登录设置和保存入口。文档使用飞书内嵌网页呈现原视频，核心流程或概念关系可整理成飞书原生流程图。缺少字幕时只介绍已取得的元数据，不编造全片观点。详见 [视频总结说明](docs/VIDEO_SUMMARIES.md)。此功能从 v0.2.3 起包含在 Windows 发布包中。
+提交遵循本仓库约定：每项改动关联 issue，提交说明使用 `Fixes #编号: 中文说明。`，直接推送 `main`。旧入口与历史文档保留，当前行为以代码和最新功能说明为准。
 
-视频页与知识库页支持连接飞书知识空间，选择独立的视频笔记父文档，开启读取完成后自动生成子文档。知识空间中的文档可勾选加入现有本地检索库；日报继续写入资讯工作流自己的父文档。归档保留来源与保存回执，失败不丢失已完成答案，相同来源与正文复用链接。
+## 文档入口
 
-## 每日资讯与定时任务
-
-源码版在「看板 → 定时任务」配置采集主题、知识库父页面、机器人所在群和资讯多维表格。先保存设置并检查位置，再生成今日预览；可以仅归档文档和表格，或发布图文卡片到群。资讯表需要普通文本字段：资讯ID、日期、标题、类别、摘要、实践价值、来源链接、发布时间、每日文档、状态。
-
-日报读取官方网页正文，优先从国内外大厂的官方博客和官方开源仓库筛选五条近期技术动向，区分事实、实践建议与局限。日期无法核实时明确标注，不把旧资料当作今日新闻。网络失败或可核实来源不足时保留缺口，停止发布。卡片只保留一句摘要，知识库文档展开技术机制、证据、试用建议与局限；英文标题附中文译名。海报使用原创科技背景，叠加当期主线和五项重点，无每日图像生成费用或在线依赖。
-
-「定时任务管理」支持每天或每周执行，时间按北京时间。首轮检查完成后再启用每日 09:00 推送；桌宠必须保持运行，重新启动只补跑最新错过的一次。资讯与聊天共用独立任务队列，总执行预算 15 分钟，临时失败最多重试一次；停止任务会停止对应进程，关闭定时只影响后续触发。
-
-发布逐步保存文档、表格记录和消息回执，重试会先查重。写入结果不明确时停止重复创建；群消息采用一小时幂等窗口，超出窗口的未确认发送需要人工核实。设置保存在本机 `news_settings.json`，预览和回执位于 `memory/news/`，均不提交 Git。
-
-## 仓库里有什么
-
-- `desk_companion/` Python 壳：宠物窗、看板、飞书、GitHub 状态
-- `client/` Tauri + React 主客户端与 Live2D 宠物窗，本地 WebSocket 连接 Python 后端
-- `pet-ui/` 保留的 Electron 旧入口
-- `docs/prd_desktop_pet.md` 产品拍板
-- `skills/` 对话技能（写飞书总结、读日志、总结 GitHub）
-
-## 不会进 Git 的
-
-`.env`、`user_state.json`、`memory/`、`skins/` 素材、`_refs/`、Live2D Core。
-
-## GitHub 页
-
-看板 GitHub 读当前 `gh` 登录账号下全部未归档仓库。路线图只认带 milestone 的未关闭 issue；卡片上的总结由这些 issue 拼出来，不编。对话里「总结某仓库最近」走技能 `github-repo-summary`，只在气泡里说。
-
-合入：一刀一个 issue，提交说明写 `Fixes #6` 这种，直推 `main`，不开发 PR、不要求 review。GitHub 会关对应 issue。
-
-## 验证
-
-根目录执行 `python -m unittest discover -s tests -v`，测试在临时目录写样本，不修改个人记忆、账号和模型配置，也不发送飞书消息或启动游戏。
-
-主窗口「看板 → 聊天监控台」可查看新任务的聊天记录、工具时间线、排队与耗时，停止执行或继续同一段对话。续聊默认只保留在本地；勾选「将这次回答发送回原飞书私聊」才会回复飞书。普通桌面对话与飞书会话分别保存上下文，同一会话按顺序执行。停止或超时保留部分答案；已经尝试过的相同写入不会在继续任务时自动重做，未知结果应先查询核实。旧版任务没有完整工具时间线。
-
-监控台「执行设置」默认同时执行 2 个任务、单次调用 90 秒、任务总时限 300 秒，可调整并关闭凯尔希的进度反馈。任务在独立进程执行，到时限后会停止对应进程树；共享写入工具互斥。任务记录仅保存在本机 `memory/tasks.sqlite3`，关闭桌宠后未完成任务标为中断，不自动重新执行。
-
-桌面与飞书共用联网搜索接口。TLS 握手超时、连接中断或搜索服务临时错误会自动重试一次，并反馈重试进度；两次请求共用 60 秒请求预算，单次请求等待上限保持 30 秒，任务管理器仍按配置的调用和总时限停止任务。鉴权、证书校验错误及无结果不会重试，最终失败会在工具时间线显示失败。长时间等待提示按当前调用计时，避免刚开始调用工具就提示等待过久。
-
-飞书机器人需开通并发布 `cardkit:card:write` 才能使用流式回复卡片。记忆菜单的推送事件标识填写 `memory_request_from_feishu`，事件订阅添加 `application.bot.menu_v6` 并使用长连接，再发布应用；桌宠只响应绑定用户。点击菜单或私聊发送 `/memory` / `记忆`，直接展示长期事实与当前会话已有摘要，无需模型调用。较长内容自动分卡，完整聊天记录在监控台查看。卡片权限不可用时任务仍执行并降级回复，接入页会显示诊断。
-
-在 `client` 执行 `pnpm test`、`pnpm exec tsc --noEmit` 和 `pnpm build`，在 `client/src-tauri` 执行 `cargo check --locked`。旧入口在 `pet-ui` 执行 `npm run build`。Tauri 的 `gen/` 是自动生成目录，不进 Git。
+[首次使用](docs/GETTING_STARTED.md) · [完整功能参考](docs/WORKBENCH_REFERENCE.md) · [飞书接入](docs/FEISHU_AGENT.md) · [视频学习](docs/VIDEO_SUMMARIES.md) · [Agent 调试](docs/AGENT_DEBUG.md) · [终端与沙箱](docs/TERMINAL.md)
